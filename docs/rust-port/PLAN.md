@@ -518,6 +518,39 @@ Covered in §6/§7. **Deliverable:** Rust `.a` linked into the C build, probe mo
 
 **Lesson for later waves:** the C `gsub` keeps the substituted subject and its *length* in separate variables. Taking the whole buffer as the next subject produced trailing NULs; the port must truncate to the written length.
 
+### W4 — `utf8extra` (done)
+
+`rust/src/utf8.rs` (≈1.7k lines incl. the codepoint pattern engine) + generated `rust/src/unidata.rs`; `src/api/utf8.c` deleted from `src/meson.build`. `src/unidata.h` stays in the tree as the generator's source of truth. `api.c` unchanged.
+
+- **Parity:** `utf8` (780 observations: every export × 18 strings incl. malformed UTF-8, 40 patterns through find/match/gmatch/gsub, 15 digests over ~14k codepoints each for case conversion/width/class tables) and `utf8_edge` (717 observations: malformed/truncated patterns, empty subjects, `math.maxinteger`/`mininteger` arguments, replacement kinds, escapes, deep patterns, 100 kB subjects) are byte-identical to the C baseline. Both ran in debug **and** release (`-Dbuildtype=release`) builds.
+- **Tables are generated, not transcribed:** `scripts/rust-port/gen-unidata.lua [--check]` parses `src/unidata.h` into `rust/src/unidata.rs` (18 tables, entry counts + FNV-1a checksums in comments). The first run found 17 of 18 tables because `%w` excludes `_` in Lua patterns (`alnum_extend_table`); the script asserts exactly 18.
+- **Delegation failed, so don't repeat it:** a `worker` subagent given the 1.3k-line port timed out at 600 s and left a compressed, *functionally wrong* file (pattern engine stubbed as substring search). It was discarded. Porting by hand against the 1.5k-line oracle was faster and correct. Subagents are fine for investigation, not for large ports that need the C open.
+
+**Behaviours that were easy to get wrong (all caught by the oracle):**
+- `check_capture` does `l -= '1'` — the *character*, not the number 1 — so `%1` backrefs index capture 0.
+- `utf8_offset` computes `s + offset - 1` and can sit one byte *before* the string; Rust needs a signed index there (usize underflowed).
+- The C reads `*p` one past the end (the NUL terminator) in several places (`%b`, `escape`); the port uses `decode_at_end` for those and must not use the strict decoder.
+- C `int` truncation is observable: `relat` takes `int idx`, `widthindex`/`width` use `int` accumulators, so `math.maxinteger` acts like `-1`. Port with `as i32` and `wrapping_*`.
+- `matchdepth` is decremented/incremented around a function with many returns; Rust keeps it in a wrapper (`match_at` → `match_inner`) so it always balances. Note the C tests the *old* value (`matchdepth-- == 0`).
+- Debug builds panic on integer overflow where C wraps; `lua_Integer` index arithmetic uses `wrapping_*`. **`panic = "abort"` means any such panic would kill the editor**, which is why `utf8_edge` exists.
+
+**Performance (release, same machine, 200-line sample, lower is better):**
+
+| op | C | Rust | |
+|---|---|---|---|
+| `find` plain | 0.2 | 1.1 ms | 5× slower; `lmemfind` uses `windows().position` instead of `memchr`+`memcmp` |
+| `find` pattern | 2.4 | 2.7 | ≈ |
+| `gsub` | 43 | 57 | 1.3× |
+| `gmatch` | 22 | 39 | 1.7× — re-borrows both strings and rebuilds `MatchState` every call |
+| `len` | 17 | 26 | 1.5× — `decode` is not `#[inline]` |
+| `sub` | 180 | 280 | 1.6× — most of it is mlua call overhead (20k calls) |
+| `lower` | 21 | 23 | ≈ |
+| `width` | 106 | 125 | 1.2× |
+
+Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`width` called from `docview`. Candidates if it matters: `memchr` for plain find, `#[inline]` on `decode`/`next_i`, cache `MatchState` in the `gmatch` closure, avoid `Variadic` allocation (take fixed arg tuples). Not done: out of scope for a port, and unmeasured in the real editor.
+
+**Deviations (accepted):** error values are mlua userdata, not C strings (message text matches for most paths; the suites record status only). `to_utf8`/`lua_tolstring` on a non-string in `lower`/`width` was not exercised for exotic types beyond number/string.
+
 ---
 
 ## 9. Open decisions ledger (append as they settle)
@@ -641,7 +674,8 @@ Env vars: `LITE_PREFIX`, `LITE_USERDIR`, `LITE_XL_RUNTIME`, `LITE_SCALE`, `LITE_
 |---|---|---|---|
 | — | planning | done | This document. Decisions D1–D4 from the user; D-1..D-8 open in §9. |
 | 2026-10-16 | W0 | **done** | Added `rust/` (staticlib, `mlua 0.12` `lua54`+`module`, feature `probe`), Meson wiring in `src/meson.build`, option `core_features`, `tests/contract/` + `scripts/rust-port/verify.sh`, smoke baseline, `cargo`/`rustc` in the flake devShell. Probe verified end to end (`rust_probe.ping()` → `pong`) then removed from `api.c`; `api.c` is unchanged. **Next: W1 (`regex`).** Findings below. |
-| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor`) or W4 (`utf8extra`).** |
+| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor`) or W3 (`process`).** |
+| 2026-10-16 | W4 | **done** | `rust/src/utf8.rs` + generated `unidata.rs`; `src/api/utf8.c` removed. `verify.sh` green on 5 suites incl. `utf8` (780 obs) and `utf8_edge` (717 obs), debug and release. Worker subagent timed out; ported by hand. ≈1.2–1.7× slower than C on microbenchmarks (plain `find` 5×). **Next: W2 (`dirmonitor` + `custom_events`) or W3 (`process`).** |
 
 **W0 findings (these supersede the snippets in §3.3 / §7.4 where they differ):**
 - Meson reserves the `rust_` option prefix → option is `core_features` (`meson configure build -Dcore_features=probe`).
