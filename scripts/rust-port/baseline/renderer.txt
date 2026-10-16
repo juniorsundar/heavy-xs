@@ -110,14 +110,14 @@ show_debug no arg                            ERR bad argument #1 to 'renderer.sh
 show_debug false                             ok 
 get_size outside frame                       ok float:0.0,float:0.0
 mono none none                               41eb79ed/588
-mono none slight                             961b4f10/543
-mono none full                               961b4f10/543
+mono none slight                             edb35ba6/541
+mono none full                               edb35ba6/541
 mono grayscale none                          7c4e830f/1134
-mono grayscale slight                        152e4eb2/1093
-mono grayscale full                          1a8844ac/1212
+mono grayscale slight                        452993c1/1096
+mono grayscale full                          ee79c10c/1214
 mono subpixel none                           8917a284/1342
-mono subpixel slight                         a94c2600/1282
-mono subpixel full                           2b2681e0/1309
+mono subpixel slight                         035ad930/1285
+mono subpixel full                           d274e643/1313
 fira none none                               575662e4/569
 fira none slight                             efd56f77/494
 fira none full                               efd56f77/494
