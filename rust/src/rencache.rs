@@ -15,7 +15,7 @@ use std::ptr;
 
 use crate::renwindow::{
     expand_command_buffer, ren_get_size, ren_set_clip_rect, ren_update_rects, renwin_get_surface,
-    RenRect, RenSurface, RenWindow,
+    RenRect, RenWindow,
 };
 
 // ------------------------------------------------------------- the C types
@@ -37,11 +37,7 @@ pub struct RenTab {
     pub offset: f64,
 }
 
-/// `RenFont` stays in C (`src/renderer.c`); only arrays of pointers to it cross this boundary.
-#[repr(C)]
-pub struct RenFont {
-    _opaque: [u8; 0],
-}
+pub use crate::renderer::RenFont;
 
 pub const FONT_FALLBACK_MAX: usize = 10;
 
@@ -89,29 +85,10 @@ const CMD_BUF_RESIZE_RATE: f64 = 1.2;
 const CMD_BUF_INIT_SIZE: usize = 1024 * 512;
 const HASH_INITIAL: u32 = 2166136261;
 
-extern "C" {
-    fn ren_font_group_get_width(
-        font: *mut *mut RenFont,
-        text: *const c_char,
-        len: usize,
-        tab: RenTab,
-        x_offset: *mut c_int,
-    ) -> f64;
-    fn ren_font_group_get_height(font: *mut *mut RenFont) -> c_int;
-    fn ren_font_group_get_tab_size(font: *mut *mut RenFont) -> c_int;
-    fn ren_font_group_set_tab_size(font: *mut *mut RenFont, n: c_int);
-    fn ren_draw_text(
-        rs: *mut RenSurface,
-        font: *mut *mut RenFont,
-        text: *const c_char,
-        len: usize,
-        x: f32,
-        y: c_int,
-        color: RenColor,
-        tab: RenTab,
-    ) -> f64;
-    fn ren_draw_rect(rs: *mut RenSurface, rect: RenRect, color: RenColor);
-}
+use crate::renderer::{
+    ren_font_group_get_width, ren_font_group_get_height, ren_font_group_get_tab_size,
+    ren_font_group_set_tab_size, ren_draw_text, ren_draw_rect,
+};
 
 // ------------------------------------------------------------------- state
 
