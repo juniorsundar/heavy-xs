@@ -1,0 +1,717 @@
+## utf8_edge
+bad find 1                                   false
+bad match 1                                  false
+bad gsub 1                                   false
+bad gmatch 1                                 false
+bad find 2                                   false
+bad match 2                                  false
+bad gsub 2                                   false
+bad gmatch 2                                 false
+bad find 3                                   false
+bad match 3                                  false
+bad gsub 3                                   false
+bad gmatch 3                                 false
+bad find 4                                   false
+bad match 4                                  false
+bad gsub 4                                   false
+bad gmatch 4                                 false
+bad find 5                                   false
+bad match 5                                  false
+bad gsub 5                                   false
+bad gmatch 5                                 false
+bad find 6                                   false
+bad match 6                                  false
+bad gsub 6                                   false
+bad gmatch 6                                 false
+bad find 7                                   false
+bad match 7                                  false
+bad gsub 7                                   false
+bad gmatch 7                                 false
+bad find 8                                   false
+bad match 8                                  false
+bad gsub 8                                   true|xaxbxcx|4
+bad gmatch 8                                 false
+bad find 9                                   true|nil
+bad match 9                                  false
+bad gsub 9                                   false
+bad gmatch 9                                 false
+bad find 10                                  false
+bad match 10                                 false
+bad gsub 10                                  true|xaxbxcx|4
+bad gmatch 10                                false
+bad find 11                                  false
+bad match 11                                 false
+bad gsub 11                                  false
+bad gmatch 11                                false
+bad find 12                                  false
+bad match 12                                 false
+bad gsub 12                                  false
+bad gmatch 12                                false
+bad find 13                                  false
+bad match 13                                 false
+bad gsub 13                                  false
+bad gmatch 13                                false
+bad find 14                                  false
+bad match 14                                 false
+bad gsub 14                                  false
+bad gmatch 14                                false
+bad find 15                                  false
+bad match 15                                 false
+bad gsub 15                                  false
+bad gmatch 15                                false
+bad find 16                                  false
+bad match 16                                 false
+bad gsub 16                                  false
+bad gmatch 16                                false
+bad find 17                                  false
+bad match 17                                 false
+bad gsub 17                                  false
+bad gmatch 17                                false
+bad find 18                                  true|nil
+bad match 18                                 true|nil
+bad gsub 18                                  true|abc|0
+bad gmatch 18                                true|
+bad find 19                                  true|nil
+bad match 19                                 true|nil
+bad gsub 19                                  true|abc|0
+bad gmatch 19                                true|
+bad find 20                                  false
+bad match 20                                 false
+bad gsub 20                                  false
+bad gmatch 20                                false
+bad find 21                                  true|1|1
+bad match 21                                 true|a
+bad gsub 21                                  true|xbc|1
+bad gmatch 21                                true|a=nil
+bad find 22                                  true|1|1
+bad match 22                                 true|a
+bad gsub 22                                  true|xbc|1
+bad gmatch 22                                true|a=nil
+bad find 23                                  false
+bad match 23                                 false
+bad gsub 23                                  false
+bad gmatch 23                                false
+bad find 24                                  true|1|1
+bad match 24                                 true|a
+bad gsub 24                                  true|xxx|3
+bad gmatch 24                                true|a=nil|b=nil|c=nil
+bad find 25                                  false
+bad match 25                                 false
+bad gsub 25                                  true|xbc|1
+bad gmatch 25                                false
+bad find 26                                  true|nil
+bad match 26                                 false
+bad gsub 26                                  false
+bad gmatch 26                                false
+bad find 27                                  true|nil
+bad match 27                                 false
+bad gsub 27                                  false
+bad gmatch 27                                false
+bad find 28                                  true|nil
+bad match 28                                 false
+bad gsub 28                                  false
+bad gmatch 28                                false
+bad find 29                                  false
+bad match 29                                 false
+bad gsub 29                                  false
+bad gmatch 29                                false
+bad find 30                                  false
+bad match 30                                 false
+bad gsub 30                                  false
+bad gmatch 30                                false
+bad find 31                                  true|1|0
+bad match 31                                 true|
+bad gsub 31                                  true|xabc|1
+bad gmatch 31                                true|
+bad find 32                                  true|4|3
+bad match 32                                 true|
+bad gsub 32                                  true|abcx|1
+bad gmatch 32                                true|=nil
+bad find 33                                  true|nil
+bad match 33                                 true|nil
+bad gsub 33                                  true|abc|0
+bad gmatch 33                                true|
+bad find 34                                  true|nil
+bad match 34                                 true|nil
+bad gsub 34                                  true|abc|0
+bad gmatch 34                                true|
+bad find 35                                  true|nil
+bad match 35                                 true|nil
+bad gsub 35                                  true|abc|0
+bad gmatch 35                                true|
+bad find 36                                  true|1|0|1
+bad match 36                                 true|1
+bad gsub 36                                  true|xaxbxcx|4
+bad gmatch 36                                true|1=nil|2=nil|3=nil|4=nil
+bad find 37                                  true|1|0||1
+bad match 37                                 true||1
+bad gsub 37                                  true|xaxbxcx|4
+bad gmatch 37                                true|=1|=2|=3|=4
+empty find /                                 true|1|0
+empty gsub /                                 true|-|1
+empty gmatch /                               true|=nil
+empty find /.                                true|nil
+empty gsub /.                                true||0
+empty gmatch /.                              true|
+empty find /.*                               true|1|0
+empty gsub /.*                               true|-|1
+empty gmatch /.*                             true|=nil
+empty find /.-                               true|1|0
+empty gsub /.-                               true|-|1
+empty gmatch /.-                             true|=nil
+empty find /^                                true|1|0
+empty gsub /^                                true|-|1
+empty gmatch /^                              true|
+empty find /$                                true|1|0
+empty gsub /$                                true|-|1
+empty gmatch /$                              true|=nil
+empty find /()                               true|1|0|1
+empty gsub /()                               true|-|1
+empty gmatch /()                             true|1=nil
+empty find /%f[%w]                           true|nil
+empty gsub /%f[%w]                           true||0
+empty gmatch /%f[%w]                         true|
+empty find /%b()                             true|nil
+empty gsub /%b()                             true||0
+empty gmatch /%b()                           true|
+empty find /[^a]                             true|nil
+empty gsub /[^a]                             true||0
+empty gmatch /[^a]                           true|
+empty find /a?                               true|1|0
+empty gsub /a?                               true|-|1
+empty gmatch /a?                             true|=nil
+empty find a/                                true|1|0
+empty gsub a/                                true|-a-|2
+empty gmatch a/                              true|=nil|=nil
+empty find a/.                               true|1|1
+empty gsub a/.                               true|-|1
+empty gmatch a/.                             true|a=nil
+empty find a/.*                              true|1|1
+empty gsub a/.*                              true|--|2
+empty gmatch a/.*                            true|a=nil|=nil
+empty find a/.-                              true|1|0
+empty gsub a/.-                              true|-a-|2
+empty gmatch a/.-                            true|=nil|=nil
+empty find a/^                               true|1|0
+empty gsub a/^                               true|-a|1
+empty gmatch a/^                             true|
+empty find a/$                               true|2|1
+empty gsub a/$                               true|a-|1
+empty gmatch a/$                             true|=nil
+empty find a/()                              true|1|0|1
+empty gsub a/()                              true|-a-|2
+empty gmatch a/()                            true|1=nil|2=nil
+empty find a/%f[%w]                          true|1|0
+empty gsub a/%f[%w]                          true|-a|1
+empty gmatch a/%f[%w]                        true|=nil
+empty find a/%b()                            true|nil
+empty gsub a/%b()                            true|a|0
+empty gmatch a/%b()                          true|
+empty find a/[^a]                            true|nil
+empty gsub a/[^a]                            true|a|0
+empty gmatch a/[^a]                          true|
+empty find a/a?                              true|1|1
+empty gsub a/a?                              true|--|2
+empty gmatch a/a?                            true|a=nil|=nil
+empty find ˇ/                                true|1|0
+empty gsub ˇ/                                false
+empty gmatch ˇ/                              true|=nil|=nil
+empty find ˇ/.                               false
+empty gsub ˇ/.                               false
+empty gmatch ˇ/.                             false
+empty find ˇ/.*                              false
+empty gsub ˇ/.*                              false
+empty gmatch ˇ/.*                            false
+empty find ˇ/.-                              false
+empty gsub ˇ/.-                              false
+empty gmatch ˇ/.-                            false
+empty find ˇ/^                               true|1|0
+empty gsub ˇ/^                               false
+empty gmatch ˇ/^                             false
+empty find ˇ/$                               true|2|1
+empty gsub ˇ/$                               false
+empty gmatch ˇ/$                             true|=nil
+empty find ˇ/()                              true|1|0|1
+empty gsub ˇ/()                              false
+empty gmatch ˇ/()                            true|1=nil|2=nil
+empty find ˇ/%f[%w]                          true|nil
+empty gsub ˇ/%f[%w]                          false
+empty gmatch ˇ/%f[%w]                        true|
+empty find ˇ/%b()                            false
+empty gsub ˇ/%b()                            false
+empty gmatch ˇ/%b()                          false
+empty find ˇ/[^a]                            false
+empty gsub ˇ/[^a]                            false
+empty gmatch ˇ/[^a]                          false
+empty find ˇ/a?                              false
+empty gsub ˇ/a?                              false
+empty gmatch ˇ/a?                            false
+empty find Êó•/                              true|1|0
+empty gsub Êó•/                              true|-Êó•-|2
+empty gmatch Êó•/                            true|=nil|=nil|=nil|=nil
+empty find Êó•/.                             true|1|1
+empty gsub Êó•/.                             true|-|1
+empty gmatch Êó•/.                           true|Êó•=nil
+empty find Êó•/.*                            true|1|1
+empty gsub Êó•/.*                            true|--|2
+empty gmatch Êó•/.*                          true|Êó•=nil|=nil
+empty find Êó•/.-                            true|1|0
+empty gsub Êó•/.-                            true|-Êó•-|2
+empty gmatch Êó•/.-                          false
+empty find Êó•/^                             true|1|0
+empty gsub Êó•/^                             true|-Êó•|1
+empty gmatch Êó•/^                           true|
+empty find Êó•/$                             true|2|1
+empty gsub Êó•/$                             true|Êó•-|1
+empty gmatch Êó•/$                           true|=nil
+empty find Êó•/()                            true|1|0|1
+empty gsub Êó•/()                            true|-Êó•-|2
+empty gmatch Êó•/()                          true|1=nil|1=nil|1=nil|2=nil
+empty find Êó•/%f[%w]                        true|1|0
+empty gsub Êó•/%f[%w]                        true|-Êó•|1
+empty gmatch Êó•/%f[%w]                      true|=nil
+empty find Êó•/%b()                          true|nil
+empty gsub Êó•/%b()                          true|Êó•|0
+empty gmatch Êó•/%b()                        true|
+empty find Êó•/[^a]                          true|1|1
+empty gsub Êó•/[^a]                          true|-|1
+empty gmatch Êó•/[^a]                        true|Êó•=nil
+empty find Êó•/a?                            true|1|0
+empty gsub Êó•/a?                            true|-Êó•-|2
+empty gmatch Êó•/a?                          false
+find init -100                               true|3|3
+find plain init -100                         true|3|3
+match init -100                              true|l
+sub init -100                                true|h√©llo
+sub init,init -100                           true|
+len init -100                                false
+codepoint init -100                          false
+byte init -100                               true
+offset init -100                             false
+offset n -100                                true|nil
+charpos n -100                               true
+charpos off -100                             true|2|233
+next off -100                                true|1|104
+insert at -100                               false
+remove at -100                               true|
+remove range -100                            true|h√©llo
+widthindex -100                              true|1|-100|1
+find init -5                                 true|3|3
+find plain init -5                           true|3|3
+match init -5                                true|l
+sub init -5                                  true|h√©llo
+sub init,init -5                             true|h
+len init -5                                  true|4
+codepoint init -5                            true|233
+byte init -5                                 true|104
+offset init -5                               true|2
+offset n -5                                  true|1
+charpos n -5                                 true|1|104
+charpos off -5                               true|4|108
+next off -5                                  true|4|108
+insert at -5                                 true|Xh√©llo
+remove at -5                                 true|
+remove range -5                              true|√©llo
+widthindex -5                                true|1|-5|1
+find init -1                                 true|nil
+find plain init -1                           true|nil
+match init -1                                true|nil
+sub init -1                                  true|o
+sub init,init -1                             true|o
+len init -1                                  true|1
+codepoint init -1                            true|111
+byte init -1                                 true|111
+offset init -1                               true|6
+offset n -1                                  true|6
+charpos n -1                                 true|6|111
+charpos off -1                               true
+next off -1                                  true
+insert at -1                                 true|h√©llXo
+remove at -1                                 true|h√©ll
+remove range -1                              true|h√©ll
+widthindex -1                                true|1|-1|1
+find init 0                                  true|3|3
+find plain init 0                            true|3|3
+match init 0                                 true|l
+sub init 0                                   true|h√©llo
+sub init,init 0                              true|
+len init 0                                   false
+codepoint init 0                             false
+byte init 0                                  true
+offset init 0                                false
+offset n 0                                   true|1
+charpos n 0                                  true|1|104
+charpos off 0                                true|2|233
+next off 0                                   true|1|104
+insert at 0                                  true|h√©lloX
+remove at 0                                  true|
+remove range 0                               true|h√©llo
+widthindex 0                                 true|1|0|1
+find init 1                                  true|3|3
+find plain init 1                            true|3|3
+match init 1                                 true|l
+sub init 1                                   true|h√©llo
+sub init,init 1                              true|h
+len init 1                                   true|5
+codepoint init 1                             true|104
+byte init 1                                  true|104
+offset init 1                                true|1
+offset n 1                                   true|1
+charpos n 1                                  true|1|104
+charpos off 1                                true|2|233
+next off 1                                   true|2|233
+insert at 1                                  true|Xh√©llo
+remove at 1                                  true|
+remove range 1                               true|√©llo
+widthindex 1                                 true|1|1|1
+find init 2                                  true|3|3
+find plain init 2                            true|3|3
+match init 2                                 true|l
+sub init 2                                   true|√©llo
+sub init,init 2                              true|√©
+len init 2                                   true|4
+codepoint init 2                             true|233
+byte init 2                                  true|233
+offset init 2                                true|2
+offset n 2                                   true|2
+charpos n 2                                  true|2|233
+charpos off 2                                true|4|108
+next off 2                                   true|4|108
+insert at 2                                  true|hX√©llo
+remove at 2                                  true|h
+remove range 2                               true|hllo
+widthindex 2                                 true|2|1|1
+find init 3                                  true|3|3
+find plain init 3                            true|3|3
+match init 3                                 true|l
+sub init 3                                   true|llo
+sub init,init 3                              true|l
+len init 3                                   true|nil|3
+codepoint init 3                             false
+byte init 3                                  true|108
+offset init 3                                false
+offset n 3                                   true|4
+charpos n 3                                  true|4|108
+charpos off 3                                true|4|108
+next off 3                                   true|4|108
+insert at 3                                  true|h√©Xllo
+remove at 3                                  true|h√©
+remove range 3                               true|h√©lo
+widthindex 3                                 true|3|1|1
+find init 4                                  true|4|4
+find plain init 4                            true|4|4
+match init 4                                 true|l
+sub init 4                                   true|lo
+sub init,init 4                              true|l
+len init 4                                   true|3
+codepoint init 4                             true|108
+byte init 4                                  true|108
+offset init 4                                true|4
+offset n 4                                   true|5
+charpos n 4                                  true|5|108
+charpos off 4                                true|5|108
+next off 4                                   true|5|108
+insert at 4                                  true|h√©lXlo
+remove at 4                                  true|h√©l
+remove range 4                               true|h√©lo
+widthindex 4                                 true|4|1|1
+find init 5                                  true|nil
+find plain init 5                            true|nil
+match init 5                                 true|nil
+sub init 5                                   true|o
+sub init,init 5                              true|o
+len init 5                                   true|2
+codepoint init 5                             true|108
+byte init 5                                  true|111
+offset init 5                                true|5
+offset n 5                                   true|6
+charpos n 5                                  true|6|111
+charpos off 5                                true|6|111
+next off 5                                   true|6|111
+insert at 5                                  true|h√©llXo
+remove at 5                                  true|h√©ll
+remove range 5                               true|h√©ll
+widthindex 5                                 true|5|1|1
+find init 100                                true|nil
+find plain init 100                          true|nil
+match init 100                               true|nil
+sub init 100                                 true|
+sub init,init 100                            true|
+len init 100                                 false
+codepoint init 100                           false
+byte init 100                                true
+offset init 100                              false
+offset n 100                                 true|nil
+charpos n 100                                true
+charpos off 100                              true
+next off 100                                 true
+insert at 100                                false
+remove at 100                                true|h√©llo
+remove range 100                             true|h√©llo
+widthindex 100                               true|6
+find init 9223372036854775807                true|nil
+find plain init 9223372036854775807          true|nil
+match init 9223372036854775807               true|nil
+sub init 9223372036854775807                 true|o
+sub init,init 9223372036854775807            true|o
+len init 9223372036854775807                 false
+codepoint init 9223372036854775807           false
+byte init 9223372036854775807                true|111
+offset init 9223372036854775807              false
+offset n 9223372036854775807                 true|nil
+charpos n 9223372036854775807                true
+charpos off 9223372036854775807              true
+next off 9223372036854775807                 true
+insert at 9223372036854775807                true|h√©llXo
+remove at 9223372036854775807                true|h√©ll
+remove range 9223372036854775807             true|h√©ll
+widthindex 9223372036854775807               true|1|-1|1
+find init -9223372036854775808               true|3|3
+find plain init -9223372036854775808         true|3|3
+match init -9223372036854775808              true|l
+sub init -9223372036854775808                true|h√©llo
+sub init,init -9223372036854775808           true|
+len init -9223372036854775808                false
+codepoint init -9223372036854775808          false
+byte init -9223372036854775808               true
+offset init -9223372036854775808             false
+offset n -9223372036854775808                true|nil
+charpos n -9223372036854775808               true
+charpos off -9223372036854775808             true|2|233
+next off -9223372036854775808                true|1|104
+insert at -9223372036854775808               true|h√©lloX
+remove at -9223372036854775808               true|
+remove range -9223372036854775808            true|h√©llo
+widthindex -9223372036854775808              true|1|0|1
+gsub max_s 0                                 true|aaa|0
+gsub max_s -1                                true|aaa|0
+gsub max_s big                               true|bbb|3
+gsub anchored                                true|baa|1
+gsub anchored empty                          true|b|1
+deep pattern                                 false
+long subject                                 true|150000
+long find                                    true|100001|100001
+many captures                                false
+32 captures                                  true|1|1|a|||||||||||||||||||||||||||||||
+nested unfinished                            false
+backref past                                 false
+repl %                                       false
+repl %%                                      true|a%c|1
+repl %0                                      true|abc|1
+repl %1                                      true|abc|1
+repl %2                                      false
+repl %a                                      false
+repl x%                                      false
+repl %9                                      false
+repl number                                  true|a42c|1
+repl table nil                               true|abc|1
+repl table false                             true|abc|1
+repl table bad                               false
+repl fn bad                                  false
+repl fn num                                  true|a7c|1
+repl fn multi                                true|bac|1
+repl bool                                    false
+badsubj len1                                 true|nil|1
+badsubj sub1                                 true|ˇ
+badsubj reverse1                             true|ˇ
+badsubj byte1                                false
+badsubj codepoint1                           false
+badsubj lower1                               false
+badsubj upper1                               false
+badsubj width1                               false
+badsubj widthindex1                          false
+badsubj offset1                              true|1
+badsubj charpos1                             true|1|0
+badsubj next1                                true
+badsubj find 1                               false
+badsubj gsub 1                               false
+badsubj escape 1                             false
+badsubj insert 1                             true|xˇ
+badsubj remove 1                             true|
+badsubj codes 1                              false
+badsubj codes lax 1                          false
+badsubj len2                                 true|nil|1
+badsubj sub2                                 true|ÄÄ
+badsubj reverse2                             true|ÄÄ
+badsubj byte2                                false
+badsubj codepoint2                           false
+badsubj lower2                               false
+badsubj upper2                               false
+badsubj width2                               false
+badsubj widthindex2                          false
+badsubj offset2                              false
+badsubj charpos2                             true|1|0
+badsubj next2                                true
+badsubj find 2                               false
+badsubj gsub 2                               false
+badsubj escape 2                             false
+badsubj insert 2                             true|xÄÄ
+badsubj remove 2                             true|
+badsubj codes 2                              false
+badsubj codes lax 2                          false
+badsubj len3                                 true|nil|1
+badsubj sub3                                 true|√
+badsubj reverse3                             true|√
+badsubj byte3                                false
+badsubj codepoint3                           false
+badsubj lower3                               false
+badsubj upper3                               false
+badsubj width3                               false
+badsubj widthindex3                          false
+badsubj offset3                              true|1
+badsubj charpos3                             true|1|0
+badsubj next3                                true
+badsubj find 3                               false
+badsubj gsub 3                               false
+badsubj escape 3                             false
+badsubj insert 3                             true|x√
+badsubj remove 3                             true|
+badsubj codes 3                              false
+badsubj codes lax 3                          false
+badsubj len4                                 true|nil|1
+badsubj sub4                                 true|‚Ç
+badsubj reverse4                             true|‚Ç
+badsubj byte4                                false
+badsubj codepoint4                           false
+badsubj lower4                               false
+badsubj upper4                               false
+badsubj width4                               false
+badsubj widthindex4                          false
+badsubj offset4                              true|1
+badsubj charpos4                             true|1|0
+badsubj next4                                true
+badsubj find 4                               false
+badsubj gsub 4                               false
+badsubj escape 4                             false
+badsubj insert 4                             true|x‚Ç
+badsubj remove 4                             true|
+badsubj codes 4                              false
+badsubj codes lax 4                          false
+badsubj len5                                 true|nil|2
+badsubj sub5                                 true|aˇ
+badsubj reverse5                             true|ˇa
+badsubj byte5                                true|97
+badsubj codepoint5                           true|97
+badsubj lower5                               false
+badsubj upper5                               false
+badsubj width5                               false
+badsubj widthindex5                          true|1|1|1
+badsubj offset5                              true|1
+badsubj charpos5                             true|1|97
+badsubj next5                                true|2|0
+badsubj find 5                               true|1|1
+badsubj gsub 5                               false
+badsubj escape 5                             false
+badsubj insert 5                             true|xaˇ
+badsubj remove 5                             true|ˇ
+badsubj codes 5                              false
+badsubj codes lax 5                          false
+badsubj len6                                 true|nil|1
+badsubj sub6                                 true|¯àÄÄÄ
+badsubj reverse6                             true|¯àÄÄÄ
+badsubj byte6                                true|2097152
+badsubj codepoint6                           false
+badsubj lower6                               true|¯àÄÄÄ
+badsubj upper6                               true|¯àÄÄÄ
+badsubj width6                               true|1
+badsubj widthindex6                          true|1|1|1
+badsubj offset6                              true|1
+badsubj charpos6                             true|1|2097152
+badsubj next6                                true
+badsubj find 6                               true|1|1
+badsubj gsub 6                               true|x|1
+badsubj escape 6                             true|¯àÄÄÄ
+badsubj insert 6                             true|x¯àÄÄÄ
+badsubj remove 6                             true|
+badsubj codes 6                              false
+badsubj codes lax 6                          false
+badsubj len7                                 true|nil|1
+badsubj sub7                                 true|˝øøøøø
+badsubj reverse7                             true|˝øøøøø
+badsubj byte7                                true|2147483647
+badsubj codepoint7                           false
+badsubj lower7                               true|˝øøøøø
+badsubj upper7                               true|˝øøøøø
+badsubj width7                               true|1
+badsubj widthindex7                          true|1|1|1
+badsubj offset7                              true|1
+badsubj charpos7                             true|1|2147483647
+badsubj next7                                true
+badsubj find 7                               true|1|1
+badsubj gsub 7                               true|x|1
+badsubj escape 7                             true|˝øøøøø
+badsubj insert 7                             true|x˝øøøøø
+badsubj remove 7                             true|
+badsubj codes 7                              false
+badsubj codes lax 7                          false
+escape %                                     true|\x00
+escape %x                                    true|x
+escape %X                                    true|X
+escape %u                                    true|u
+escape %U                                    true|U
+escape %x4                                   true|\x04
+escape %xZZ                                  true|\x00ZZ
+escape %u{                                   true|\x00
+escape %u{41                                 true|)
+escape %u{4Z}                                false
+escape %{                                    true|\x00
+escape %{41}                                 true|)
+escape %1                                    true|\x01
+escape %12                                   true|\x0C
+escape %0                                    true|\x00
+escape %x{41}                                true|A
+escape a%                                    true|a\x00
+escape %%                                    true|%
+escape %%%                                   true|%\x00
+char -1                                      true|˛Éøøøøø
+lower num -1                                 true|4294967295
+width num -1                                 true|1
+char 0                                       true|\x00
+lower num 0                                  true|0
+width num 0                                  true|1
+char 127                                     true|\x7F
+lower num 127                                true|127
+width num 127                                true|1
+char 128                                     true|¬Ä
+lower num 128                                true|128
+width num 128                                true|1
+char 2047                                    true|ﬂø
+lower num 2047                               true|2047
+width num 2047                               true|1
+char 2048                                    true|‡†Ä
+lower num 2048                               true|2048
+width num 2048                               true|1
+char 65535                                   true|Ôøø
+lower num 65535                              true|65535
+width num 65535                              true|1
+char 65536                                   true|êÄÄ
+lower num 65536                              true|65536
+width num 65536                              true|1
+char 1114111                                 true|Ùèøø
+lower num 1114111                            true|1114111
+width num 1114111                            true|1
+char 1114112                                 false
+lower num 1114112                            true|1114112
+width num 1114112                            true|1
+char 2147483647                              false
+lower num 2147483647                         true|2147483647
+width num 2147483647                         true|1
+char 9223372036854775807                     false
+lower num 9223372036854775807                true|4294967295
+width num 9223372036854775807                true|1
+char non-number                              false
+char float                                   true|A
+char float frac                              false
+width bad                                    false
+sub huge                                     true|h√©llo
+codepoint huge                               false
+byte huge                                    true|104|233|108|108|111
+len huge                                     false
+offset huge                                  true|nil
+offset tiny                                  true|nil
+widthindex huge                              true|1|-1|1
+widthindex tiny                              true|1|0|1
+ncasecmp bad                                 false
+ncasecmp empty                               true|0
+ncasecmp empty/a                             true|-1
+ncasecmp a/empty                             true|1
