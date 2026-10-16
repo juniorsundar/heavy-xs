@@ -11,6 +11,8 @@ crate-type = ["staticlib"]
 [dependencies]
 # Lua itself comes from the C build, so `module` (no `vendored`).
 mlua = { version = "0.12", features = ["lua54", "module"] }
+# Raw POSIX calls for the process module (fork/exec, pipes, waitpid, signals).
+libc = "0.2"
 
 [features]
 # Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).

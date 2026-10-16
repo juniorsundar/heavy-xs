@@ -551,6 +551,27 @@ Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`widt
 
 **Deviations (accepted):** error values are mlua userdata, not C strings (message text matches for most paths; the suites record status only). `to_utf8`/`lua_tolstring` on a non-string in `lower`/`width` was not exercised for exotic types beyond number/string.
 
+### W3 — `process` (done)
+
+`rust/src/process.rs` (raw `libc` fork/exec, not `std::process`) replaces `src/api/process.c`; `api.c` unchanged. Adds the `libc` dependency.
+
+- **Parity:** the `process` suite (86 observations, baseline recorded from C first) is identical in debug and release builds and stable over repeated runs. It drives `core.process` (the real wrapper): constants (floats, as C's `lua_pushnumber`), exit codes, stdout/stderr, sized reads and EOF, `write`/`close_stream`, stream objects, every redirect, `cwd`, `env`, missing executables, bad arguments, `WAIT_DEADLINE`, all three signals, detached children, and a dropped userdata killing its child.
+- **Checked outside the harness:** a live child is killed at `lua_close` (module `__gc` joins the kill-list worker), a `detach = true` child survives it, and 300 started processes plus 300 failed `exec`s leave the editor at the same 5 fds with no zombies.
+- **Why raw `fork`, not `std::process`:** the `env` contract (a block of `K=V\0…\0\0` applied in the child), the exec-failure control pipe, and `setpgid`/`setsid` ordering are one-to-one with the C. `pre_exec` would have fought each of them. The child path uses only libc calls.
+- **Kill-list:** a `static` worker thread behind a `Mutex`+`Condvar`s, started at module load. The C keeps it in the Lua registry; equivalent because there is one Lua state. It never touches Lua. A `Drop` on the userdata replaces `__gc`.
+
+**Deviations (all on paths where the C is undefined or crashes):**
+- Closed fds use `-1`, not `0` (a real fd in C: writing to a closed stdin wrote to fd 0).
+- `stdout = REDIRECT_DEFAULT` read `child_pipes[-1]` in C; it now means the stream's own default.
+- `close_stream` with a stream outside 0–2 indexed out of bounds in C; it now raises.
+- A negative read size and an empty command (`start({})`, NULL `argv[0]`) now fail cleanly instead of misbehaving.
+- An env block entry without `=` ended the child via a NULL write; it now stops parsing.
+- Errors are mlua userdata rather than strings (same accepted deviation as W1/W4).
+
+**Not covered:** `process.start` with a string command is rejected in C and Rust alike (only the wrapper accepts one). `interrupt()` is asserted via the child dying, not the signal number. The Windows branch is not ported (Linux-first).
+
+**Lesson:** two of my own checks gave false results (a busy-wait that never ended, and counting fds while spawns were still in flight). Synchronize on a ready file, not a sleep.
+
 ---
 
 ## 9. Open decisions ledger (append as they settle)
@@ -674,7 +695,8 @@ Env vars: `LITE_PREFIX`, `LITE_USERDIR`, `LITE_XL_RUNTIME`, `LITE_SCALE`, `LITE_
 |---|---|---|---|
 | — | planning | done | This document. Decisions D1–D4 from the user; D-1..D-8 open in §9. |
 | 2026-10-16 | W0 | **done** | Added `rust/` (staticlib, `mlua 0.12` `lua54`+`module`, feature `probe`), Meson wiring in `src/meson.build`, option `core_features`, `tests/contract/` + `scripts/rust-port/verify.sh`, smoke baseline, `cargo`/`rustc` in the flake devShell. Probe verified end to end (`rust_probe.ping()` → `pong`) then removed from `api.c`; `api.c` is unchanged. **Next: W1 (`regex`).** Findings below. |
-| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor`) or W3 (`process`).** |
+| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor` + `custom_events`).** |
+| 2026-10-16 | W3 | **done** | `rust/src/process.rs` (raw libc fork/exec) + `libc` dep; `src/api/process.c` removed. `verify.sh` green on 6 suites incl. `process` (86 obs), debug and release; kill-at-`lua_close`, detach and fd-leak checks pass. **Next: W2.** |
 | 2026-10-16 | W4 | **done** | `rust/src/utf8.rs` + generated `unidata.rs`; `src/api/utf8.c` removed. `verify.sh` green on 5 suites incl. `utf8` (780 obs) and `utf8_edge` (717 obs), debug and release. Worker subagent timed out; ported by hand. ≈1.2–1.7× slower than C on microbenchmarks (plain `find` 5×). **Next: W2 (`dirmonitor` + `custom_events`) or W3 (`process`).** |
 
 **W0 findings (these supersede the snippets in §3.3 / §7.4 where they differ):**

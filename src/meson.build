@@ -3,7 +3,6 @@ lite_sources = [
     'api/renderer.c',
     'api/renwindow.c',
     'api/system.c',
-    'api/process.c',
     'arena_allocator.c',
     'custom_events.c',
     'renderer.c',
