@@ -1,0 +1,21 @@
+[package]
+name = "lite_xl_core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "lite_xl_core"
+crate-type = ["staticlib"]
+
+[dependencies]
+# Lua itself comes from the C build, so `module` (no `vendored`).
+mlua = { version = "0.12", features = ["lua54", "module"] }
+
+[features]
+# Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).
+probe = []
+
+[profile.release]
+panic = "abort"
+lto = "thin"
