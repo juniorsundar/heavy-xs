@@ -1,0 +1,544 @@
+//! `system`: ported piecemeal from `src/api/system.c`.
+//!
+//! W5 lands as an *overlay*: `src/api/api.c` still calls the C `luaopen_system`
+//! (which also registers the `dialogfinished` event and the `NativePlugin`
+//! metatable) and then hands the resulting table to `lxl_rust_system_overlay`
+//! below, which replaces entries with Rust functions. A function moves by being
+//! deleted from the C `lib[]` and added to `overlay`; the editor stays runnable
+//! and the contract suite stays comparable after every step. The last step
+//! deletes `system.c` and the hook.
+//!
+//! Deviations from the C are noted next to the code and listed in the plan.
+
+use std::ffi::{c_char, c_void, CStr, CString};
+
+use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
+use sdl3_sys::everything as sdl;
+
+// ------------------------------------------------------------- argument glue
+
+fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
+    LuaError::runtime(format!(
+        "bad argument #{} to '{}' ({} expected, got {})",
+        arg, fname, expected, got
+    ))
+}
+
+fn no_value() -> &'static str {
+    "no value"
+}
+
+/// `luaL_checkstring`: strings and numbers (coerced) only. Returns the bytes.
+fn check_string(lua: &Lua, args: &[Value], i: usize, fname: &str) -> LuaResult<LuaString> {
+    match args.get(i) {
+        Some(v) => lua
+            .coerce_string(v.clone())?
+            .ok_or_else(|| argerror(fname, i + 1, "string", v.type_name())),
+        None => Err(argerror(fname, i + 1, "string", no_value())),
+    }
+}
+
+/// A NUL-terminated copy for libc and SDL, cut at an embedded NUL as `const char *` would be.
+fn cstr(bytes: &[u8]) -> CString {
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    CString::new(&bytes[..end]).unwrap()
+}
+
+fn bytes_of(s: &LuaString) -> Vec<u8> {
+    s.as_bytes().to_vec()
+}
+
+/// `luaL_checknumber`.
+fn check_number(args: &[Value], i: usize, fname: &str) -> LuaResult<f64> {
+    match args.get(i) {
+        Some(Value::Integer(n)) => Ok(*n as f64),
+        Some(Value::Number(n)) => Ok(*n),
+        Some(Value::String(s)) => s
+            .to_str()
+            .ok()
+            .and_then(|s| s.trim().parse::<f64>().ok())
+            .ok_or_else(|| argerror(fname, i + 1, "number", "string")),
+        Some(v) => Err(argerror(fname, i + 1, "number", v.type_name())),
+        None => Err(argerror(fname, i + 1, "number", no_value())),
+    }
+}
+
+fn str_value(lua: &Lua, bytes: &[u8]) -> LuaResult<Value> {
+    Ok(Value::String(lua.create_string(bytes)?))
+}
+
+fn multi(values: Vec<Value>) -> MultiValue {
+    MultiValue::from_vec(values)
+}
+
+fn errno() -> i32 {
+    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
+}
+
+fn strerror(err: i32) -> String {
+    unsafe { CStr::from_ptr(libc::strerror(err)) }.to_string_lossy().into_owned()
+}
+
+fn sdl_error() -> String {
+    unsafe { CStr::from_ptr(sdl::SDL_GetError()) }.to_string_lossy().into_owned()
+}
+
+// --------------------------------------------------------- filesystem: info
+
+/// `f_get_file_info`: `{size, type?, modified, symlink?}`, or `nil, message`.
+fn get_file_info(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "get_file_info")?;
+    let path = cstr(&bytes_of(&path));
+
+    let mut st: libc::stat = unsafe { std::mem::zeroed() };
+    if unsafe { libc::stat(path.as_ptr(), &mut st) } < 0 {
+        return Ok(multi(vec![Value::Nil, str_value(lua, strerror(errno()).as_bytes())?]));
+    }
+
+    let info = lua.create_table()?;
+    info.raw_set("size", st.st_size as i64)?;
+    let kind = st.st_mode & libc::S_IFMT;
+    // A type that is neither a regular file nor a directory is nil, which Lua
+    // stores as an absent key (the C does `lua_pushnil` + `lua_setfield`).
+    match kind {
+        libc::S_IFREG => info.raw_set("type", "file")?,
+        libc::S_IFDIR => info.raw_set("type", "dir")?,
+        _ => {}
+    }
+    info.raw_set("modified", st.st_mtime as f64 + st.st_mtime_nsec as f64 / 1_000_000_000.0)?;
+
+    if kind == libc::S_IFDIR {
+        let mut lst: libc::stat = unsafe { std::mem::zeroed() };
+        if unsafe { libc::lstat(path.as_ptr(), &mut lst) } == 0 {
+            info.raw_set("symlink", (lst.st_mode & libc::S_IFMT) == libc::S_IFLNK)?;
+        }
+    }
+    Ok(multi(vec![Value::Table(info)]))
+}
+
+/// `f_absolute_path`: zero values (not nil) on failure.
+fn absolute_path(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "absolute_path")?;
+    let path = cstr(&bytes_of(&path));
+    let resolved = unsafe { libc::realpath(path.as_ptr(), std::ptr::null_mut()) };
+    if resolved.is_null() {
+        return Ok(MultiValue::new());
+    }
+    let bytes = unsafe { CStr::from_ptr(resolved) }.to_bytes().to_vec();
+    unsafe { libc::free(resolved as *mut c_void) };
+    Ok(multi(vec![str_value(lua, &bytes)?]))
+}
+
+/// `f_get_fs_type`: Linux magic numbers; unknown filesystems give "unknown".
+fn get_fs_type(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "get_fs_type")?;
+    let bytes = bytes_of(&path);
+    let c_path = cstr(&bytes);
+    let mut buf: libc::statfs = unsafe { std::mem::zeroed() };
+    if unsafe { libc::statfs(c_path.as_ptr(), &mut buf) } != 0 {
+        return Err(LuaError::runtime(format!(
+            "error calling statfs on {}",
+            String::from_utf8_lossy(c_path.to_bytes())
+        )));
+    }
+    const NAMES: [(u32, &str); 9] = [
+        (0xef53, "ext2/ext3"),
+        (0x6969, "nfs"),
+        (0x65735546, "fuse"),
+        (0x517b, "smb"),
+        (0xfe534d42, "smb2"),
+        (0x52654973, "reiserfs"),
+        (0x01021994, "tmpfs"),
+        (0x858458f6, "ramfs"),
+        (0x5346544e, "ntfs"),
+    ];
+    let name = NAMES
+        .iter()
+        .find(|(magic, _)| *magic == buf.f_type as u32)
+        .map_or("unknown", |(_, name)| name);
+    Ok(multi(vec![str_value(lua, name.as_bytes())?]))
+}
+
+// --------------------------------------------------- filesystem: directories
+
+/// `f_list_dir`: names in `SDL_EnumerateDirectory` order, or `nil, message`.
+fn list_dir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "list_dir")?;
+    let path = cstr(&bytes_of(&path));
+
+    unsafe extern "C" fn collect(
+        userdata: *mut c_void,
+        _dirname: *const c_char,
+        fname: *const c_char,
+    ) -> sdl::SDL_EnumerationResult {
+        let names = &mut *(userdata as *mut Vec<Vec<u8>>);
+        names.push(CStr::from_ptr(fname).to_bytes().to_vec());
+        sdl::SDL_EnumerationResult::CONTINUE
+    }
+
+    let mut names: Vec<Vec<u8>> = Vec::new();
+    let ok = unsafe {
+        sdl::SDL_EnumerateDirectory(path.as_ptr(), Some(collect), &mut names as *mut _ as *mut c_void)
+    };
+    if !ok {
+        return Ok(multi(vec![Value::Nil, str_value(lua, sdl_error().as_bytes())?]));
+    }
+    let list = lua.create_table()?;
+    for (i, name) in names.iter().enumerate() {
+        list.raw_set(i + 1, lua.create_string(name)?)?;
+    }
+    Ok(multi(vec![Value::Table(list)]))
+}
+
+/// `f_mkdir`: `true`, or `false, message`.
+fn mkdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "mkdir")?;
+    let path = cstr(&bytes_of(&path));
+    let mode = libc::S_IRUSR | libc::S_IWUSR | libc::S_IXUSR | libc::S_IRGRP | libc::S_IXGRP | libc::S_IROTH | libc::S_IXOTH;
+    if unsafe { libc::mkdir(path.as_ptr(), mode) } < 0 {
+        return Ok(multi(vec![Value::Boolean(false), str_value(lua, strerror(errno()).as_bytes())?]));
+    }
+    Ok(multi(vec![Value::Boolean(true)]))
+}
+
+/// `f_rmdir`: `SDL_RemovePath` (so it also removes files); `true`, or `false, message`.
+fn rmdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "rmdir")?;
+    let path = cstr(&bytes_of(&path));
+    if !unsafe { sdl::SDL_RemovePath(path.as_ptr()) } {
+        return Ok(multi(vec![Value::Boolean(false), str_value(lua, sdl_error().as_bytes())?]));
+    }
+    Ok(multi(vec![Value::Boolean(true)]))
+}
+
+/// `f_chdir`: raises on failure.
+fn chdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let path = check_string(lua, &args, 0, "chdir")?;
+    let path = cstr(&bytes_of(&path));
+    if unsafe { libc::chdir(path.as_ptr()) } != 0 {
+        return Err(LuaError::runtime(format!("chdir() failed: {}", strerror(errno()))));
+    }
+    Ok(MultiValue::new())
+}
+
+/// `f_ftruncate`: `luaL_checkudata(L, 1, LUA_FILEHANDLE)`, a `luaL_Stream`.
+fn ftruncate(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    #[repr(C)]
+    struct LuaStream {
+        f: *mut libc::FILE,
+        closef: *const c_void,
+    }
+
+    let handle = match args.first() {
+        Some(Value::UserData(ud)) => ud,
+        Some(v) => return Err(argerror("ftruncate", 1, "FILE*", v.type_name())),
+        None => return Err(argerror("ftruncate", 1, "FILE*", no_value())),
+    };
+    // `luaL_checkudata(L, 1, LUA_FILEHANDLE)`: the stream, only if the userdata
+    // carries Lua's "FILE*" metatable (mlua userdata do not).
+    let stream: usize = unsafe {
+        lua.exec_raw(handle.clone(), |state| {
+            let found = mlua::ffi::luaL_testudata(state, -1, c"FILE*".as_ptr());
+            mlua::ffi::lua_pop(state, 1); // exec_raw returns the whole stack above its start
+            mlua::ffi::lua_pushinteger(state, found as usize as mlua::ffi::lua_Integer);
+        })?
+    };
+    if stream == 0 {
+        return Err(argerror("ftruncate", 1, "FILE*", "userdata"));
+    }
+    let length = match args.get(1) {
+        None | Some(Value::Nil) => 0,
+        Some(Value::Integer(i)) => *i,
+        Some(Value::Number(n)) => *n as i64,
+        Some(v) => match lua.coerce_integer(v.clone())? {
+            Some(i) => i,
+            None => return Err(argerror("ftruncate", 2, "number", v.type_name())),
+        },
+    };
+
+    let file = unsafe { (*(stream as *const LuaStream)).f };
+    if file.is_null() {
+        // shortcut: the C passes a closed handle's NULL FILE* to fileno() and crashes.
+        return Err(LuaError::runtime("attempt to use a closed file"));
+    }
+    if unsafe { libc::ftruncate(libc::fileno(file), length as libc::off_t) } != 0 {
+        return Ok(multi(vec![
+            Value::Boolean(false),
+            str_value(lua, format!("ftruncate(): {}", strerror(errno())).as_bytes())?,
+        ]));
+    }
+    Ok(multi(vec![Value::Boolean(true)]))
+}
+
+// ------------------------------------------------- process, time, environment
+
+fn get_process_id(_: &Lua, _: Variadic<Value>) -> LuaResult<i64> {
+    Ok(std::process::id() as i64)
+}
+
+fn get_time(_: &Lua, _: Variadic<Value>) -> LuaResult<f64> {
+    unsafe { Ok(sdl::SDL_GetPerformanceCounter() as f64 / sdl::SDL_GetPerformanceFrequency() as f64) }
+}
+
+/// `f_sleep`: `SDL_Delay(n * 1000)`, truncated to whole milliseconds as the C does.
+fn sleep(_: &Lua, args: Variadic<Value>) -> LuaResult<()> {
+    let n = check_number(&args, 0, "sleep")?;
+    let n = if n < 0.0 { 0.0 } else { n };
+    unsafe { sdl::SDL_Delay((n * 1000.0) as u32) };
+    Ok(())
+}
+
+/// `f_exec`: runs `"<cmd> &"` through `system()`; never waits.
+fn exec(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
+    let cmd = check_string(lua, &args, 0, "exec")?;
+    let mut line = bytes_of(&cmd);
+    line.extend_from_slice(b" &");
+    let line = cstr(&line);
+    unsafe { libc::system(line.as_ptr()) };
+    Ok(())
+}
+
+/// `f_setenv`: always overwrites.
+fn setenv(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
+    let key = cstr(&bytes_of(&check_string(lua, &args, 0, "setenv")?));
+    let value = cstr(&bytes_of(&check_string(lua, &args, 1, "setenv")?));
+    Ok(unsafe { sdl::SDL_setenv_unsafe(key.as_ptr(), value.as_ptr(), 1) } == 0)
+}
+
+fn get_sandbox(_: &Lua, _: Variadic<Value>) -> LuaResult<&'static str> {
+    Ok(match unsafe { sdl::SDL_GetSandbox() } {
+        sdl::SDL_Sandbox::NONE => "none",
+        sdl::SDL_Sandbox::UNKNOWN_CONTAINER => "unknown",
+        sdl::SDL_Sandbox::FLATPAK => "flatpak",
+        sdl::SDL_Sandbox::SNAP => "snap",
+        sdl::SDL_Sandbox::MACOS => "macos",
+        _ => "unknown",
+    })
+}
+
+// ----------------------------------------------------------------- clipboard
+
+/// A string SDL allocated, copied into Lua and freed. `None` for NULL.
+fn take_sdl_text(text: *mut c_char) -> Option<Vec<u8>> {
+    if text.is_null() {
+        return None;
+    }
+    let bytes = unsafe { CStr::from_ptr(text) }.to_bytes().to_vec();
+    unsafe { sdl::SDL_free(text as *mut c_void) };
+    Some(bytes)
+}
+
+/// `f_get_clipboard`: zero values when SDL has no text.
+fn get_clipboard(lua: &Lua, _: Variadic<Value>) -> LuaResult<MultiValue> {
+    match take_sdl_text(unsafe { sdl::SDL_GetClipboardText() }) {
+        Some(text) => Ok(multi(vec![str_value(lua, &text)?])),
+        None => Ok(MultiValue::new()),
+    }
+}
+
+fn set_clipboard(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
+    let text = cstr(&bytes_of(&check_string(lua, &args, 0, "set_clipboard")?));
+    unsafe { sdl::SDL_SetClipboardText(text.as_ptr()) };
+    Ok(())
+}
+
+fn get_primary_selection(lua: &Lua, _: Variadic<Value>) -> LuaResult<MultiValue> {
+    match take_sdl_text(unsafe { sdl::SDL_GetPrimarySelectionText() }) {
+        Some(text) => Ok(multi(vec![str_value(lua, &text)?])),
+        None => Ok(MultiValue::new()),
+    }
+}
+
+fn set_primary_selection(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
+    let text = cstr(&bytes_of(&check_string(lua, &args, 0, "set_primary_selection")?));
+    unsafe { sdl::SDL_SetPrimarySelectionText(text.as_ptr()) };
+    Ok(())
+}
+
+// ------------------------------------------------------- fuzzy and path sorting
+
+/// `f_fuzzy_match`: case-insensitive subsequence score; 0 values for no match.
+/// The C walks NUL-terminated `const char *`, so an embedded NUL ends a string.
+fn fuzzy_match(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    let s = check_string(lua, &args, 0, "fuzzy_match")?;
+    let p = check_string(lua, &args, 1, "fuzzy_match")?;
+    let (s, p) = (bytes_of(&s), bytes_of(&p));
+    let (str_len, ptn_len) = (s.len() as i64, p.len() as i64);
+    let files = matches!(args.get(2), Some(Value::Boolean(true)));
+
+    // Indexing with `at`, which reads 0 outside the string like the C's terminator.
+    let at = |buf: &[u8], i: i64| -> u8 { if i >= 0 && (i as usize) < buf.len() { buf[i as usize] } else { 0 } };
+    let lower = |c: u8| c.to_ascii_lowercase();
+
+    let (mut score, mut run) = (0i32, 0i32);
+    let increment: i64 = if files { -1 } else { 1 };
+    let mut st = if files { str_len - 1 } else { 0 };
+    let mut pt = if files { ptn_len - 1 } else { 0 };
+
+    while st >= 0 && pt >= 0 && at(&s, st) != 0 && at(&p, pt) != 0 {
+        while st >= 0 && at(&s, st) == b' ' {
+            st += increment;
+        }
+        while pt >= 0 && at(&p, pt) == b' ' {
+            pt += increment;
+        }
+        if lower(at(&s, st)) == lower(at(&p, pt)) {
+            score += run * 10 - (at(&s, st) != at(&p, pt)) as i32;
+            run += 1;
+            pt += increment;
+        } else {
+            score -= 10;
+            run = 0;
+        }
+        st += increment;
+    }
+    if pt >= 0 && at(&p, pt) != 0 {
+        return Ok(MultiValue::new());
+    }
+    Ok(multi(vec![Value::Integer((score - (str_len as i32) * 10) as i64)]))
+}
+
+/// `f_path_compare`: directories first, numeric runs as integers, `/` as a terminator.
+fn path_compare(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
+    let p1 = bytes_of(&check_string(lua, &args, 0, "path_compare")?);
+    let t1 = bytes_of(&check_string(lua, &args, 1, "path_compare")?);
+    let p2 = bytes_of(&check_string(lua, &args, 2, "path_compare")?);
+    let t2 = bytes_of(&check_string(lua, &args, 3, "path_compare")?);
+    let (len1, len2) = (p1.len(), p2.len());
+
+    // Reads 0 past the end, like the C's terminator.
+    let at = |b: &[u8], i: usize| -> u8 { b.get(i).copied().unwrap_or(0) };
+    // `strcmp(type, "dir")` sees the type up to its first NUL.
+    let nul_cut = |b: &[u8]| -> Vec<u8> { b.iter().copied().take_while(|&c| c != 0).collect() };
+    let mut type1 = (nul_cut(&t1) != b"dir") as i32;
+    let mut type2 = (nul_cut(&t2) != b"dir") as i32;
+
+    let mut offset = 0usize;
+    let mut i = 0;
+    while i < len1 && i < len2 {
+        if p1[i] != p2[i] {
+            break;
+        }
+        if p1[i] == b'/' {
+            offset = i + 1;
+        }
+        i += 1;
+    }
+    // `strchr(path + offset, PATHSEP)` stops at the first NUL.
+    let has_sep = |b: &[u8]| b.iter().skip(offset).take_while(|&&c| c != 0).any(|&c| c == b'/');
+    if has_sep(&p1) {
+        type1 = 0;
+    }
+    if has_sep(&p2) {
+        type2 = 0;
+    }
+    if type1 != type2 {
+        return Ok(type1 < type2);
+    }
+
+    let mut cfr: i32 = -1;
+    let same_len = len1 == len2;
+    let (mut i, mut j) = (offset, offset);
+    while i <= len1 && j <= len2 {
+        let (a, b) = (at(&p1, i), at(&p2, j));
+        if a == 0 || b == 0 {
+            if cfr < 0 {
+                cfr = 0;
+            }
+            if !same_len {
+                cfr = (a == 0) as i32;
+            }
+        } else if a.is_ascii_digit() && b.is_ascii_digit() {
+            let (mut ii, mut ij) = (0usize, 0usize);
+            while at(&p1, i + ii).is_ascii_digit() {
+                ii += 1;
+            }
+            while at(&p2, j + ij).is_ascii_digit() {
+                ij += 1;
+            }
+            // size_t arithmetic in the C: wraps on overflow.
+            let (mut di, mut dj) = (0usize, 0usize);
+            for k in 0..ii {
+                di = di.wrapping_mul(10).wrapping_add((at(&p1, i + k) - b'0') as usize);
+            }
+            for k in 0..ij {
+                dj = dj.wrapping_mul(10).wrapping_add((at(&p2, j + k) - b'0') as usize);
+            }
+            if di == dj {
+                i += 1;
+                j += 1;
+                continue;
+            }
+            cfr = (di < dj) as i32;
+        } else if a == b {
+            i += 1;
+            j += 1;
+            continue;
+        } else if a == b'/' || b == b'/' {
+            cfr = (a == b'/') as i32;
+        } else {
+            let (la, lb) = (a.to_ascii_lowercase_c(), b.to_ascii_lowercase_c());
+            if la == lb {
+                if same_len && cfr < 0 {
+                    cfr = (a > b) as i32;
+                }
+                i += 1;
+                j += 1;
+                continue;
+            }
+            cfr = (la < lb) as i32;
+        }
+        break;
+    }
+    Ok(cfr != 0)
+}
+
+/// The C folds `'A'..='Z'` by adding 32 on a `char`; identical to this for ASCII.
+trait AsciiLowerC {
+    fn to_ascii_lowercase_c(self) -> u8;
+}
+impl AsciiLowerC for u8 {
+    fn to_ascii_lowercase_c(self) -> u8 {
+        if self.is_ascii_uppercase() { self + 32 } else { self }
+    }
+}
+
+// -------------------------------------------------------------- the overlay
+
+/// Replaces functions on `system` with their Rust versions.
+fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
+    macro_rules! set {
+        ($name:literal, $f:expr) => {
+            system.raw_set($name, lua.create_function($f)?)?
+        };
+    }
+    set!("get_file_info", get_file_info);
+    set!("absolute_path", absolute_path);
+    set!("get_fs_type", get_fs_type);
+    set!("list_dir", list_dir);
+    set!("mkdir", mkdir);
+    set!("rmdir", rmdir);
+    set!("chdir", chdir);
+    set!("ftruncate", ftruncate);
+    set!("get_process_id", get_process_id);
+    set!("get_time", get_time);
+    set!("sleep", sleep);
+    set!("exec", exec);
+    set!("setenv", setenv);
+    set!("get_sandbox", get_sandbox);
+    set!("get_clipboard", get_clipboard);
+    set!("set_clipboard", set_clipboard);
+    set!("get_primary_selection", get_primary_selection);
+    set!("set_primary_selection", set_primary_selection);
+    set!("fuzzy_match", fuzzy_match);
+    set!("path_compare", path_compare);
+    Ok(())
+}
+
+/// Called from `api_load_libs` after the C `luaopen_system` has run and the
+/// table is registered as the global `system`.
+pub fn install(lua: &Lua) -> LuaResult<()> {
+    let system: Table = lua.globals().get("system")?;
+    overlay(lua, &system)
+}
+
