@@ -13,6 +13,9 @@ crate-type = ["staticlib"]
 mlua = { version = "0.12", features = ["lua54", "module"] }
 # Raw POSIX calls for the process module (fork/exec, pipes, waitpid, signals).
 libc = "0.2"
+# Raw bindings only: C main.c still owns SDL init, the window and the event loop until W8,
+# and Meson links SDL3 itself, so the crate must not link a second copy ("no-link").
+sdl3-sys = { version = "0.7", default-features = false, features = ["no-link"] }
 
 [features]
 # Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).

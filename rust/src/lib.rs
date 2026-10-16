@@ -5,6 +5,7 @@
 mod dirmonitor;
 mod pcre;
 mod process;
+mod system;
 mod unidata;
 mod utf8;
 
@@ -34,4 +35,17 @@ fn entry_process(lua: &Lua) -> LuaResult<LuaTable> {
 #[mlua::lua_module(name = "utf8extra")]
 fn entry_utf8(lua: &Lua) -> LuaResult<LuaTable> {
     utf8::luaopen_utf8extra(lua)
+}
+
+/// Called by `api_load_libs` once the C `luaopen_system` has run and `system` is
+/// a global: replaces the functions that have been ported (see `system.rs`).
+///
+/// # Safety
+/// `state` must be the live Lua state `api_load_libs` is loading libraries into.
+#[no_mangle]
+pub unsafe extern "C" fn lxl_rust_system_overlay(state: *mut mlua::lua_State) {
+    let lua = Lua::get_or_init_from_ptr(state);
+    if let Err(error) = system::install(lua) {
+        eprintln!("lite-xl: cannot install Rust system overlay: {error}");
+    }
 }
