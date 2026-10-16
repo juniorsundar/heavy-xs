@@ -1,0 +1,780 @@
+## utf8
+charpattern len                              true|14
+charpattern bytes                            true|5B002D7FC22DF45D5B802DBF5D2A
+len[1]                                       true|0
+len lax[1]                                   true|0
+sub[1]                                       true|
+reverse[1]                                   true|
+byte[1]                                      true
+codepoint[1]                                 false
+codepoint lax[1]                             false
+lower[1]                                     true|
+upper[1]                                     true|
+title[1]                                     true|
+fold[1]                                      true|
+width[1]                                     true|0
+widthindex[1]                                true|1
+offset[1]                                    true|1
+charpos[1]                                   true
+next[1]                                      true
+codes[1]                                     false
+codes lax[1]                                 false
+find[1]                                      true|nil
+find magic[1]                                true|nil
+match[1]                                     true|nil
+gmatch[1]                                    true|
+gsub[1]                                      true||0
+ncasecmp[1]                                  true|0
+len[2]                                       true|1
+len lax[2]                                   true|1
+sub[2]                                       true|
+reverse[2]                                   true|a
+byte[2]                                      true|97
+codepoint[2]                                 false
+codepoint lax[2]                             false
+lower[2]                                     true|a
+upper[2]                                     true|A
+title[2]                                     true|A
+fold[2]                                      true|a
+width[2]                                     true|1
+widthindex[2]                                true|1|1|1
+offset[2]                                    true|1
+charpos[2]                                   true|1|97
+next[2]                                      true|1|97
+codes[2]                                     false
+codes lax[2]                                 false
+find[2]                                      true|1|1
+find magic[2]                                true|1|1
+match[2]                                     true|a
+gmatch[2]                                    true|a=nil
+gsub[2]                                      true|X|1
+ncasecmp[2]                                  true|0
+len[3]                                       true|3
+len lax[3]                                   true|3
+sub[3]                                       true|bc
+reverse[3]                                   true|cba
+byte[3]                                      true|97|98|99
+codepoint[3]                                 true|97|98|99
+codepoint lax[3]                             true|97|98|99
+lower[3]                                     true|abc
+upper[3]                                     true|ABC
+title[3]                                     true|ABC
+fold[3]                                      true|abc
+width[3]                                     true|3
+widthindex[3]                                true|1|1|1
+offset[3]                                    true|1
+charpos[3]                                   true|1|97
+next[3]                                      true|1|97
+codes[3]                                     false
+codes lax[3]                                 false
+find[3]                                      true|1|1
+find magic[3]                                true|1|1
+match[3]                                     true|a
+gmatch[3]                                    true|a=nil|b=nil|c=nil
+gsub[3]                                      true|Xbc|1
+ncasecmp[3]                                  true|0
+len[4]                                       true|5
+len lax[4]                                   true|5
+sub[4]                                       true|él
+reverse[4]                                   true|olléh
+byte[4]                                      true|104|233|108
+codepoint[4]                                 true|104|233
+codepoint lax[4]                             true|104|233
+lower[4]                                     true|héllo
+upper[4]                                     true|HÉLLO
+title[4]                                     true|HÉLLO
+fold[4]                                      true|héllo
+width[4]                                     true|5
+widthindex[4]                                true|1|1|1
+offset[4]                                    true|1
+charpos[4]                                   true|1|104
+next[4]                                      true|1|104
+codes[4]                                     false
+codes lax[4]                                 false
+find[4]                                      true|1|1
+find magic[4]                                true|1|1
+match[4]                                     true|h
+gmatch[4]                                    true|h=nil|é=nil|l=nil|l=nil|o=nil
+gsub[4]                                      true|héllo|0
+ncasecmp[4]                                  true|0
+len[5]                                       true|3
+len lax[5]                                   true|3
+sub[5]                                       true|本語
+reverse[5]                                   true|語本日
+byte[5]                                      true|26085|26412|35486
+codepoint[5]                                 true|26085
+codepoint lax[5]                             true|26085
+lower[5]                                     true|日本語
+upper[5]                                     true|日本語
+title[5]                                     true|日本語
+fold[5]                                      true|日本語
+width[5]                                     true|6
+widthindex[5]                                true|1|1|2
+offset[5]                                    true|1
+charpos[5]                                   true|1|26085
+next[5]                                      true|1|26085
+codes[5]                                     false
+codes lax[5]                                 false
+find[5]                                      true|1|1
+find magic[5]                                true|1|1
+match[5]                                     true|日
+gmatch[5]                                    true|日=nil|本=nil|語=nil
+gsub[5]                                      true|日本語|0
+ncasecmp[5]                                  true|0
+len[6]                                       true|2
+len lax[6]                                   true|2
+sub[6]                                       true|𝄞
+reverse[6]                                   true|𝄞𝄞
+byte[6]                                      true|119070|119070
+codepoint[6]                                 true|119070
+codepoint lax[6]                             true|119070
+lower[6]                                     true|𝄞𝄞
+upper[6]                                     true|𝄞𝄞
+title[6]                                     true|𝄞𝄞
+fold[6]                                      true|𝄞𝄞
+width[6]                                     true|2
+widthindex[6]                                true|1|1|1
+offset[6]                                    true|1
+charpos[6]                                   true|1|119070
+next[6]                                      true|1|119070
+codes[6]                                     false
+codes lax[6]                                 false
+find[6]                                      true|nil
+find magic[6]                                true|1|1
+match[6]                                     true|𝄞
+gmatch[6]                                    true|𝄞=nil|𝄞=nil
+gsub[6]                                      true|𝄞𝄞|0
+ncasecmp[6]                                  true|0
+len[7]                                       true|2
+len lax[7]                                   true|2
+sub[7]                                       true|́
+reverse[7]                                   true|á
+byte[7]                                      true|97|769
+codepoint[7]                                 true|97|769
+codepoint lax[7]                             true|97|769
+lower[7]                                     true|á
+upper[7]                                     true|Á
+title[7]                                     true|Á
+fold[7]                                      true|á
+width[7]                                     true|2
+widthindex[7]                                true|1|1|1
+offset[7]                                    true|1
+charpos[7]                                   true|1|97
+next[7]                                      true|1|97
+codes[7]                                     false
+codes lax[7]                                 false
+find[7]                                      true|1|1
+find magic[7]                                true|1|1
+match[7]                                     true|a
+gmatch[7]                                    true|a=nil|́=nil
+gsub[7]                                      true|X́|1
+ncasecmp[7]                                  true|0
+len[8]                                       true|nil|1
+len lax[8]                                   true|1
+sub[8]                                       true|
+reverse[8]                                   false
+byte[8]                                      false
+codepoint[8]                                 false
+codepoint lax[8]                             false
+lower[8]                                     false
+upper[8]                                     false
+title[8]                                     false
+fold[8]                                      false
+width[8]                                     false
+widthindex[8]                                false
+offset[8]                                    true|1
+charpos[8]                                   true|1|0
+next[8]                                      true|1|0
+codes[8]                                     false
+codes lax[8]                                 false
+find[8]                                      false
+find magic[8]                                false
+match[8]                                     false
+gmatch[8]                                    false
+gsub[8]                                      false
+ncasecmp[8]                                  false
+len[9]                                       true|nil|1
+len lax[9]                                   true|1
+sub[9]                                       true|
+reverse[9]                                   false
+byte[9]                                      false
+codepoint[9]                                 false
+codepoint lax[9]                             false
+lower[9]                                     false
+upper[9]                                     false
+title[9]                                     false
+fold[9]                                      false
+width[9]                                     false
+widthindex[9]                                false
+offset[9]                                    false
+charpos[9]                                   true|1|0
+next[9]                                      true|1|0
+codes[9]                                     false
+codes lax[9]                                 false
+find[9]                                      false
+find magic[9]                                false
+match[9]                                     false
+gmatch[9]                                    false
+gsub[9]                                      false
+ncasecmp[9]                                  false
+len[10]                                      true|nil|1
+len lax[10]                                  true|1
+sub[10]                                      true|
+reverse[10]                                  false
+byte[10]                                     false
+codepoint[10]                                false
+codepoint lax[10]                            false
+lower[10]                                    false
+upper[10]                                    false
+title[10]                                    false
+fold[10]                                     false
+width[10]                                    false
+widthindex[10]                               false
+offset[10]                                   true|1
+charpos[10]                                  true|1|0
+next[10]                                     true|1|0
+codes[10]                                    false
+codes lax[10]                                false
+find[10]                                     false
+find magic[10]                               false
+match[10]                                    false
+gmatch[10]                                   false
+gsub[10]                                     false
+ncasecmp[10]                                 false
+len[11]                                      true|nil|1
+len lax[11]                                  true|1
+sub[11]                                      true|
+reverse[11]                                  false
+byte[11]                                     false
+codepoint[11]                                false
+codepoint lax[11]                            false
+lower[11]                                    false
+upper[11]                                    false
+title[11]                                    false
+fold[11]                                     false
+width[11]                                    false
+widthindex[11]                               false
+offset[11]                                   true|1
+charpos[11]                                  true|1|0
+next[11]                                     true|1|0
+codes[11]                                    false
+codes lax[11]                                false
+find[11]                                     false
+find magic[11]                               false
+match[11]                                    false
+gmatch[11]                                   false
+gsub[11]                                     false
+ncasecmp[11]                                 false
+len[12]                                      true|nil|1
+len lax[12]                                  true|1
+sub[12]                                      true|
+reverse[12]                                  false
+byte[12]                                     false
+codepoint[12]                                false
+codepoint lax[12]                            false
+lower[12]                                    false
+upper[12]                                    false
+title[12]                                    false
+fold[12]                                     false
+width[12]                                    false
+widthindex[12]                               false
+offset[12]                                   true|1
+charpos[12]                                  true|1|0
+next[12]                                     true|1|0
+codes[12]                                    false
+codes lax[12]                                false
+find[12]                                     false
+find magic[12]                               false
+match[12]                                    false
+gmatch[12]                                   false
+gsub[12]                                     false
+ncasecmp[12]                                 false
+len[13]                                      true|nil|1
+len lax[13]                                  true|1
+sub[13]                                      true|
+reverse[13]                                  false
+byte[13]                                     true|55296
+codepoint[13]                                false
+codepoint lax[13]                            true|55296
+lower[13]                                    true|���
+upper[13]                                    true|���
+title[13]                                    true|���
+fold[13]                                     true|���
+width[13]                                    true|1
+widthindex[13]                               true|1|1|1
+offset[13]                                   true|1
+charpos[13]                                  true|1|55296
+next[13]                                     true|1|55296
+codes[13]                                    false
+codes lax[13]                                false
+find[13]                                     true|nil
+find magic[13]                               true|1|1
+match[13]                                    true|���
+gmatch[13]                                   true|���=nil
+gsub[13]                                     true|���|0
+ncasecmp[13]                                 true|0
+len[14]                                      true|3
+len lax[14]                                  true|3
+sub[14]                                      true|\x00b
+reverse[14]                                  true|b\x00a
+byte[14]                                     true|97|0|98
+codepoint[14]                                true|97|0|98
+codepoint lax[14]                            true|97|0|98
+lower[14]                                    true|a\x00b
+upper[14]                                    true|A\x00B
+title[14]                                    true|A\x00B
+fold[14]                                     true|a\x00b
+width[14]                                    true|3
+widthindex[14]                               true|1|1|1
+offset[14]                                   true|1
+charpos[14]                                  true|1|97
+next[14]                                     true|1|97
+codes[14]                                    false
+codes lax[14]                                false
+find[14]                                     true|1|1
+find magic[14]                               true|1|1
+match[14]                                    true|a
+gmatch[14]                                   true|a=nil|\x00=nil|b=nil
+gsub[14]                                     true|X\x00b|1
+ncasecmp[14]                                 true|0
+len[15]                                      true|10
+len lax[15]                                  true|10
+sub[15]                                      true|in
+reverse[15]                                  true|kaerb
+enil
+byte[15]                                     true|108|105|110
+codepoint[15]                                true|108|105|110
+codepoint lax[15]                            true|108|105|110
+lower[15]                                    true|line
+break
+upper[15]                                    true|LINE
+BREAK
+title[15]                                    true|LINE
+BREAK
+fold[15]                                     true|line
+break
+width[15]                                    true|10
+widthindex[15]                               true|1|1|1
+offset[15]                                   true|1
+charpos[15]                                  true|1|108
+next[15]                                     true|1|108
+codes[15]                                    false
+codes lax[15]                                false
+find[15]                                     true|1|1
+find magic[15]                               true|1|1
+match[15]                                    true|l
+gmatch[15]                                   true|l=nil|i=nil|n=nil|e=nil|
+=nil|b=nil|r=nil|e=nil|a=nil|k=nil
+gsub[15]                                     true|line
+breXk|1
+ncasecmp[15]                                 true|0
+len[16]                                      true|4
+len lax[16]                                  true|4
+sub[16]                                      true| x
+reverse[16]                                  true| x 	
+byte[16]                                     true|9|32|120
+codepoint[16]                                true|9|32|120
+codepoint lax[16]                            true|9|32|120
+lower[16]                                    true|	 x 
+upper[16]                                    true|	 X 
+title[16]                                    true|	 X 
+fold[16]                                     true|	 x 
+width[16]                                    true|4
+widthindex[16]                               true|1|1|1
+offset[16]                                   true|1
+charpos[16]                                  true|1|9
+next[16]                                     true|1|9
+codes[16]                                    false
+codes lax[16]                                false
+find[16]                                     true|3|3
+find magic[16]                               true|1|1
+match[16]                                    true|	
+gmatch[16]                                   true|	=nil| =nil|x=nil| =nil
+gsub[16]                                     true|	 x |0
+ncasecmp[16]                                 true|0
+len[17]                                      true|4
+len lax[17]                                  true|4
+sub[17]                                      true|23
+reverse[17]                                  true|4321
+byte[17]                                     true|49|50|51
+codepoint[17]                                true|49|50|51
+codepoint lax[17]                            true|49|50|51
+lower[17]                                    true|1234
+upper[17]                                    true|1234
+title[17]                                    true|1234
+fold[17]                                     true|1234
+width[17]                                    true|4
+widthindex[17]                               true|1|1|1
+offset[17]                                   true|1
+charpos[17]                                  true|1|49
+next[17]                                     true|1|49
+codes[17]                                    false
+codes lax[17]                                false
+find[17]                                     true|nil
+find magic[17]                               true|1|1
+match[17]                                    true|1
+gmatch[17]                                   true|1=nil|2=nil|3=nil|4=nil
+gsub[17]                                     true|1234|0
+ncasecmp[17]                                 true|0
+len[18]                                      true|3
+len lax[18]                                  true|3
+sub[18]                                      true|　 
+reverse[18]                                  true| 　 
+byte[18]                                     true|32|12288|32
+codepoint[18]                                true|32|12288
+codepoint lax[18]                            true|32|12288
+lower[18]                                    true| 　 
+upper[18]                                    true| 　 
+title[18]                                    true| 　 
+fold[18]                                     true| 　 
+width[18]                                    true|4
+widthindex[18]                               true|1|1|1
+offset[18]                                   true|1
+charpos[18]                                  true|1|32
+next[18]                                     true|1|32
+codes[18]                                    false
+codes lax[18]                                false
+find[18]                                     true|nil
+find magic[18]                               true|1|1
+match[18]                                    true| 
+gmatch[18]                                   true| =nil|　=nil| =nil
+gsub[18]                                     true| 　 |0
+ncasecmp[18]                                 true|0
+codepoint mixed                              true|104|233|108|108|111
+codepoint neg                                true|98
+codepoint empty                              true
+codepoint oor                                false
+codepoint surrogate lax                      true|55296
+codepoint surrogate strict                   false
+sub 2,4                                      true|éll
+sub -3,-2                                    true|ll
+sub 3,nil                                    true|llo
+sub 0,2                                      true|hé
+sub 0,nil                                    true|héllo
+sub -1,nil                                   true|o
+sub -20,20                                   true|héllo
+sub 4,2                                      true|
+offset n=1                                   true|1
+offset n=2                                   true|2
+offset n=3                                   true|4
+offset n=-1                                  true|6
+offset n=-2                                  true|5
+offset n=0                                   true|1
+offset n=9                                   true|nil
+offset n=-9                                  true|nil
+offset from                                  false
+offset n=0 from                              true|2
+charpos n=1                                  true|1|104
+charpos n=2                                  true|2|233
+charpos n=-1                                 true|6|111
+charpos n=-9                                 true
+charpos n=9                                  true
+charpos idx                                  true|4|108
+next i=3                                     true|4|108
+next i=-1                                    true
+next i=99                                    true
+next lax                                     false
+next strict                                  true|1|0
+char 1                                       true|h
+char multi                                   true|hée
+char max                                     true|􏿿
+char nul                                     true|\x00
+char invalid                                 false
+char surrogate                               true|���
+char neg                                     true|�������
+lower HeLLo                                  true|hello
+upper HeLLo                                  true|HELLO
+title HeLLo                                  true|HELLO
+fold HeLLo                                   true|hello
+lower ÉÀ                                   true|éà
+upper ÉÀ                                   true|ÉÀ
+title ÉÀ                                   true|ÉÀ
+fold ÉÀ                                    true|éà
+lower éà                                   true|éà
+upper éà                                   true|ÉÀ
+title éà                                   true|ÉÀ
+fold éà                                    true|éà
+lower İ                                     true|i
+upper İ                                     true|İ
+title İ                                     true|İ
+fold İ                                      true|İ
+lower ß                                     true|ß
+upper ß                                     true|ß
+title ß                                     true|ß
+fold ß                                      true|ß
+lower ΣΑΣ                                 true|σασ
+upper ΣΑΣ                                 true|ΣΑΣ
+title ΣΑΣ                                 true|ΣΑΣ
+fold ΣΑΣ                                  true|σασ
+lower σας                                 true|σας
+upper σας                                 true|ΣΑΣ
+title σας                                 true|ΣΑΣ
+fold σας                                  true|σασ
+lower ǅǆ                                   true|ǆǆ
+upper ǅǆ                                   true|ǄǄ
+title ǅǆ                                   true|ǅǅ
+fold ǅǆ                                    true|ǆǆ
+lower ЖУК                                 true|жук
+upper ЖУК                                 true|ЖУК
+title ЖУК                                 true|ЖУК
+fold ЖУК                                  true|жук
+lower ǰ                                     true|ǰ
+upper ǰ                                     true|ǰ
+title ǰ                                     true|ǰ
+fold ǰ                                      true|ǰ
+lower ᾼ                                    true|ᾳ
+upper ᾼ                                    true|ᾼ
+title ᾼ                                    true|ᾼ
+fold ᾼ                                     true|ᾳ
+escape a\tb                                  true|a\tb
+escape nohex a\tb                            true|a\tb
+escape a\65b                                 true|a\65b
+escape nohex a\65b                           true|a\65b
+escape a\x41b                                true|a\x41b
+escape nohex a\x41b                          true|a\x41b
+escape \u{48}                                true|\u{48}
+escape nohex \u{48}                          true|\u{48}
+escape \65\066\9                             true|\65\066\9
+escape nohex \65\066\9                       true|\65\066\9
+escape \q                                    true|\q
+escape nohex \q                              true|\q
+escape \u{1F600}                             true|\u{1F600}
+escape nohex \u{1F600}                       true|\u{1F600}
+escape \u{}                                  true|\u{}
+escape nohex \u{}                            true|\u{}
+escape trailing\                             true|trailing\
+escape nohex trailing\                       true|trailing\
+insert 2                                     true|hXéllo
+insert -1                                    true|héllXo
+insert 6                                     true|hélloX
+insert 3                                     false
+insert 0                                     true|hélloX
+insert 99                                    false
+remove 2,3                                   true|hlo
+remove 3,nil                                 true|hé
+remove -2,nil                                true|hél
+remove 2,99                                  true|h
+remove 0,nil                                 true|
+width ascii                                  true|3
+width cjk                                    true|4
+width mixed                                  true|4
+width ambi                                   true|1
+widthindex a日b,2                           true|2|1|2
+widthindex ±±,1                            true|1|1|1
+widthindex héllo,3                          true|3|1|1
+widthindex 日本,2                          true|1|2|2
+ncasecmp Hello,hello                         true|0
+ncasecmp Hello,world                         true|-1
+ncasecmp ÉÀ,éà                           true|0
+ncasecmp abc,ab                              true|1
+find[1]                                      true|1|3
+match[1]                                     true|abc
+gmatch[1]                                    true|abc=nil|abc=nil
+gsub[1]                                      true|X X|2
+find[2]                                      true|1|3|abc
+match[2]                                     true|abc
+gmatch[2]                                    true|abc=nil|abc=nil
+gsub[2]                                      true|X X|2
+find[3]                                      true|2|2
+match[3]                                     true|1
+gmatch[3]                                    true|1=nil|2=nil|3=nil
+gsub[3]                                      true|aXbXcX|3
+find[4]                                      true|1|1
+match[4]                                     true| 
+gmatch[4]                                    true| =nil| =nil| =nil| =nil
+gsub[4]                                      true|XXxXX|4
+find[5]                                      true|2|2
+match[5]                                     true|.
+gmatch[5]                                    true|.=nil|,=nil
+gsub[5]                                      true|aXbXc|2
+find[6]                                      true|1|4
+match[6]                                     true|0x1F
+gmatch[6]                                    true|0x1F=nil
+gsub[6]                                      true|X|1
+find[7]                                      true|nil
+match[7]                                     true|nil
+gmatch[7]                                    true|
+gsub[7]                                      true|x|0
+find[8]                                      true|1|11|hello|world
+match[8]                                     true|hello|world
+gmatch[8]                                    true|hello=world
+gsub[8]                                      true|X|1
+find[9]                                      true|1|6|abc
+match[9]                                     true|abc
+gmatch[9]                                    true|abc=nil
+gsub[9]                                      true|X|1
+find[10]                                     true|2|2|2
+match[10]                                    true|2
+gmatch[10]                                   true|2=nil|5=nil
+gsub[10]                                     true|aXcaXc|2
+find[11]                                     true|1|1
+match[11]                                    true|a
+gmatch[11]                                   true|
+gsub[11]                                     true|Xbc|1
+find[12]                                     true|3|3
+match[12]                                    true|c
+gmatch[12]                                   true|c=nil
+gsub[12]                                     true|abX|1
+find[13]                                     true|3|6
+match[13]                                    true|(bc)
+gmatch[13]                                   true|(bc)=nil
+gsub[13]                                     true|abXcd|1
+find[14]                                     true|1|5
+match[14]                                    true|hello
+gmatch[14]                                   true|hello=nil|world=nil
+gsub[14]                                     true|X X|2
+find[15]                                     true|2|2
+match[15]                                    true|X
+gmatch[15]                                   true|X=nil|X=nil
+gsub[15]                                     true|aXbXc|2
+find[16]                                     true|1|1
+match[16]                                    true|日
+gmatch[16]                                   true|日=nil|本=nil|語=nil
+gsub[16]                                     true|XXX|3
+find[17]                                     true|1|0
+match[17]                                    true|
+gmatch[17]                                   true|=nil|=nil|=nil|=nil
+gsub[17]                                     true|XaXaXaX|4
+find[18]                                     true|1|3
+match[18]                                    true|aaa
+gmatch[18]                                   true|aaa=nil|=nil
+gsub[18]                                     true|XX|2
+find[19]                                     true|1|1
+match[19]                                    true|a
+gmatch[19]                                   true|a=nil|c=nil
+gsub[19]                                     true|XbX|2
+find[20]                                     true|1|1
+match[20]                                    true|a
+gmatch[20]                                   true|a=nil|B=nil|c=nil
+gsub[20]                                     true|XXX|3
+find[21]                                     true|1|1
+match[21]                                    true|a
+gmatch[21]                                   true|a=nil|
+=nil|b=nil
+gsub[21]                                     true|XXX|3
+find[22]                                     true|2|2
+match[22]                                    true|
+
+gmatch[22]                                   true|
+=nil
+gsub[22]                                     true|aXb|1
+find[23]                                     true|1|3|x|1
+match[23]                                    true|x|1
+gmatch[23]                                   true|x=1
+gsub[23]                                     true|X|1
+find[24]                                     true|1|0
+match[24]                                    true|
+gmatch[24]                                   true|=nil|b=nil|=nil|=nil
+gsub[24]                                     true|XaXXcX|4
+find[25]                                     true|1|0
+match[25]                                    true|
+gmatch[25]                                   true|=nil|=nil|=nil|=nil|=nil|=nil|=nil|=nil|=nil|=nil|=nil
+gsub[25]                                     true|XtXeXxXtX-X-XmXoXrXeX|11
+find[26]                                     true|1|1
+match[26]                                    true|高
+gmatch[26]                                   true|高=nil
+gsub[26]                                     true|X|1
+find[27]                                     true|1|1
+match[27]                                    true|３
+gmatch[27]                                   true|３=nil|４=nil
+gsub[27]                                     true|XX|2
+find[28]                                     true|nil
+match[28]                                    true|nil
+gmatch[28]                                   true|
+gsub[28]                                     true|abc|0
+find[29]                                     true|1|1
+match[29]                                    true|a
+gmatch[29]                                   true|a=nil|b=nil|c=nil
+gsub[29]                                     true|XXX|3
+find[30]                                     true|nil
+match[30]                                    true|nil
+gmatch[30]                                   true|
+gsub[30]                                     true|abc|0
+find[31]                                     true|1|1
+match[31]                                    true|a
+gmatch[31]                                   true|a=nil|b=nil|c=nil
+gsub[31]                                     true|XXX|3
+find[32]                                     true|1|1
+match[32]                                    true|a
+gmatch[32]                                   true|a=nil|b=nil|c=nil
+gsub[32]                                     true|XXX|3
+find[33]                                     true|nil
+match[33]                                    true|nil
+gmatch[33]                                   true|
+gsub[33]                                     true|abc|0
+find[34]                                     true|1|1
+match[34]                                    true|a
+gmatch[34]                                   true|a=nil|b=nil|c=nil
+gsub[34]                                     true|XXX|3
+find[35]                                     true|nil
+match[35]                                    true|nil
+gmatch[35]                                   true|
+gsub[35]                                     true|abc|0
+find[36]                                     true|1|1
+match[36]                                    true|%
+gmatch[36]                                   true|%=nil
+gsub[36]                                     true|X|1
+find[37]                                     true|1|2
+match[37]                                    true|ab
+gmatch[37]                                   true|ab=nil|cd=nil
+gsub[37]                                     true|XXe|2
+find[38]                                     true|nil
+match[38]                                    true|nil
+gmatch[38]                                   true|
+gsub[38]                                     true|aaa|0
+find[39]                                     true|nil
+match[39]                                    true|nil
+gmatch[39]                                   true|
+gsub[39]                                     true|abc|0
+find[40]                                     true|nil
+match[40]                                    true|nil
+gmatch[40]                                   true|
+gsub[40]                                     true|abc|0
+find[41]                                     true|1|1
+match[41]                                    true|-
+gmatch[41]                                   true|-=nil
+gsub[41]                                     true|X|1
+find init                                    true|3|3
+find init neg                                true|5|7
+find init plain                              true|1|3
+find init plain 2                            true|1|3
+find anchor init                             true|2|2
+gmatch cap                                   true|k=v|l=w
+gsub-case[1]                                 true|X X|2
+gsub-case[2]                                 true|he[ll]o|1
+gsub-case[3]                                 true||3
+gsub-case[4]                                 true|heLlo|1
+gsub-case[5]                                 true|heLLo|2
+gsub-case[6]                                 true|abc|0
+gsub-case[7]                                 true|he%%o|2
+gsub-case[8]                                 true|aabbcc|3
+gsub-case[9]                                 true|-a-a-a-|4
+gsub-case[10]                                true||a|b|c||4
+gsub fn repl                                 true|a#b#|2
+gsub table repl                              true|aonebtwo|2
+gsub bad repl                                false
+gsub bad fn                                  false
+gsub no string                               false
+type len                                     true|2
+type sub                                     false
+type find                                    false
+type match                                   false
+type byte                                    true|52
+type width                                   false
+type reverse                                 false
+type lower                                   true|42
+digest lower                                 true|2135903807
+digest upper                                 true|1634979559
+digest title                                 true|2133579079
+digest fold                                  true|3477936728
+digest width                                 true|2757031532
+digest %a                                    true|466520092
+digest %d                                    true|2159022143
+digest %l                                    true|1494522664
+digest %u                                    true|945853128
+digest %s                                    true|1884766980
+digest %p                                    true|4272472565
+digest %c                                    true|1371259793
+digest %x                                    true|862843974
+digest %w                                    true|4294709019
+digest %g                                    true|1503785434

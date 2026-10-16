@@ -35,8 +35,12 @@ for s in $(echo "$suites" | tr , ' '); do
   fi
   base=$root/scripts/rust-port/baseline/$s.txt
   if [ "${RECORD:-}" = 1 ]; then
-    cp "$out" "$base"
-    echo "recorded $base (exit $rc)"
+    # A suite that errored or crashed must never become a baseline.
+    if [ "$rc" != 0 ]; then
+      echo "REFUSING to record $s: exit $rc"; sed -n '$p' "$out"; status=1
+    else
+      cp "$out" "$base"; echo "recorded $base"
+    fi
   elif [ "$rc" != 0 ]; then
     echo "FAIL $s (exit $rc)"; sed -n '$p' "$out"; status=1
   elif diff -u "$base" "$out"; then
