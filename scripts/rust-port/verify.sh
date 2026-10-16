@@ -26,7 +26,7 @@ cp "$root"/tests/contract/cases/*.lua "$share/contract_cases/"
 # normal build never ships with it.
 needs_hooks=0
 for s in $(echo "$suites" | tr , ' '); do
-  case $s in sysevents) needs_hooks=1 ;; esac
+  case $s in sysevents|syswindow) needs_hooks=1 ;; esac
 done
 prev_features=$(meson introspect "$build" --buildoptions 2>/dev/null | tr ',' '\n' | grep -A1 '"name": "core_features"' | grep -o '"value": "[^"]*"' | head -1 | cut -d'"' -f4 || true)
 if [ "$needs_hooks" = 1 ]; then
@@ -43,7 +43,7 @@ for s in $(echo "$suites" | tr , ' '); do
   # RECORD=1 on an event suite records the C poll_event/wait_event (the same binary
   # can run either; see rust/src/system.rs).
   c_events=
-  if [ "${RECORD:-}" = 1 ] && [ "$s" = sysevents ]; then c_events=1; fi
+  if [ "${RECORD:-}" = 1 ]; then case $s in sysevents|syswindow) c_events=1 ;; esac; fi
   if LXL_TEST_C_EVENTS=${c_events:-} CONTRACT_SUITES=$s SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-offscreen} \
       LITE_PREFIX=$stage LITE_XL_RUNTIME=contract \
       timeout 60 "$build/src/lite-xl" >"$out" 2>&1; then
