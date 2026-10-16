@@ -12,15 +12,25 @@ function M.init()
   local function rec(key, ...)
     local n, parts = select("#", ...), {}
     for i = 1, n do parts[i] = tostring((select(i, ...))) end
-    emit(("%-44s %s"):format(key, table.concat(parts, " ")))
+    -- Keep baselines text-only: raw control bytes would make diff call them binary.
+    local value = table.concat(parts, " ")
+    value = value:gsub("[%z\1-\8\11\12\14-\31\127]", function(c)
+      return ("\\x%02X"):format(c:byte())
+    end)
+    emit(("%-44s %s"):format(key, value))
   end
 
+  local failed = false
   for name in (os.getenv("CONTRACT_SUITES") or "smoke"):gmatch("[^,]+") do
     emit("## " .. name)
     local ok, err = pcall(function() require("contract_cases." .. name)(rec) end)
-    if not ok then emit("SUITE ERROR: " .. tostring(err)) end
+    if not ok then
+      emit("SUITE ERROR: " .. tostring(err))
+      failed = true
+    end
   end
-  os.exit(0)
+  -- A suite that aborts must never be recordable as a baseline.
+  os.exit(failed and 2 or 0)
 end
 
 function M.run() end
