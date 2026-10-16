@@ -1,0 +1,30 @@
+## rencache
+size outside frame                           0.0
+size in frame                                800.0
+second frame                                 0,0,800,480
+third frame                                  
+fourth frame                                 
+one rect                                     0,0,96,96
+same rect                                    
+rect moved one cell                          0,0,192,96
+rect moved back                              0,0,192,96
+wide rect                                    0,0,480,96
+wide rect again                              
+wide rect recoloured                         0,0,480,96
+two far rects                                0,0,480,96 672,384,96,96
+two far rects again                          
+zero-size rect                               0,0,96,96 672,384,96,96
+zero-height rect                             
+clip excludes rect                           0,0,192,192
+clip includes rect                           0,0,96,96
+clip same, rect moved                        0,0,96,96
+clip changed                                 0,0,192,192 288,192,192,192
+text                                         0,0,192,96 288,192,192,192
+text again                                   
+text changed                                 0,0,192,96
+text moved down                              0,0,192,192
+text empty                                   0,96,192,96
+offscreen rect                               
+rect past right edge                         768,0,32,96
+rect past bottom edge                        768,0,32,96 0,384,96,96
+before resize                                0,384,96,96
