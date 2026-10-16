@@ -62,6 +62,62 @@ fn dirty_rects(_: &Lua, _: ()) -> LuaResult<String> {
     Ok(out.join(" "))
 }
 
+/// `RenSurface` from renderer.h.
+#[repr(C)]
+struct RenSurfaceRaw {
+    surface: *mut sdl::SDL_Surface,
+    scale: c_int,
+}
+
+extern "C" {
+    fn renwin_get_surface(ren: *mut c_void) -> RenSurfaceRaw;
+    fn SDL_GetPixelFormatDetails(format: sdl::SDL_PixelFormat) -> *const sdl::SDL_PixelFormatDetails;
+    fn SDL_GetRGBA(
+        pixel: u32,
+        format: *const sdl::SDL_PixelFormatDetails,
+        palette: *const sdl::SDL_Palette,
+        r: *mut u8,
+        g: *mut u8,
+        b: *mut u8,
+        a: *mut u8,
+    );
+}
+
+/// The b,g,r,a bytes of one surface pixel of a window, or nil when it is out of bounds. Used to
+/// check that a replayed dirty rect really painted: dirty rects alone would not catch a replay
+/// that draws nothing.
+fn pixel(_: &Lua, (window, x, y): (mlua::AnyUserData, c_int, c_int)) -> LuaResult<Option<String>> {
+    // The userdata holds a RenWindow*, like the C's `RenWindow **`.
+    let ren = unsafe { *(window.to_pointer() as *mut *mut c_void) };
+    let rs = unsafe { renwin_get_surface(ren) };
+    if rs.surface.is_null() {
+        return Ok(None);
+    }
+    let surface = unsafe { &*rs.surface };
+    if x < 0 || y < 0 || x >= surface.w || y >= surface.h || surface.pixels.is_null() {
+        return Ok(None);
+    }
+    let bytes_per_pixel = sdl::SDL_BYTESPERPIXEL(surface.format) as usize;
+    let offset = y as usize * surface.pitch as usize + x as usize * bytes_per_pixel;
+    // Read through the format so the value is the logical r,g,b,a: the window surface and the
+    // SDL renderer's texture surface use different byte orders, and the test must not care.
+    let mut pixel: u32 = 0;
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            (surface.pixels as *const u8).add(offset),
+            &mut pixel as *mut u32 as *mut u8,
+            bytes_per_pixel.min(4),
+        )
+    };
+    let details = unsafe { SDL_GetPixelFormatDetails(surface.format) };
+    let (mut r, mut g, mut b, mut a) = (0u8, 0u8, 0u8, 0u8);
+    unsafe { SDL_GetRGBA(pixel, details, std::ptr::null(), &mut r, &mut g, &mut b, &mut a) };
+    // Colour only: alpha is 0 in some surface formats and 255 in others for an untouched
+    // pixel, which is a format artifact rather than cache behaviour.
+    let _ = a;
+    Ok(Some(format!("{r:02x}{g:02x}{b:02x}")))
+}
+
 fn custom_register(_: &Lua, (name, kind): (String, String)) -> LuaResult<bool> {
     let name = CString::new(name).unwrap_or_default();
     let callback: CustomEventCallback = match kind.as_str() {
@@ -263,6 +319,7 @@ pub fn install(lua: &Lua) -> LuaResult<()> {
     let hooks = lua.create_table()?;
     hooks.raw_set("push_event", lua.create_function(push_event)?)?;
     hooks.raw_set("dirty_rects", lua.create_function(dirty_rects)?)?;
+    hooks.raw_set("pixel", lua.create_function(pixel)?)?;
     hooks.raw_set("custom_register", lua.create_function(custom_register)?)?;
     hooks.raw_set("custom_push", lua.create_function(custom_push)?)?;
     hooks.raw_set("custom_type", lua.create_function(custom_type)?)?;

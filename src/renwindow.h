@@ -1,34 +1,12 @@
-#include <SDL3/SDL.h>
+#ifndef RENWINDOW_H
+#define RENWINDOW_H
+
 #include "renderer.h"
 
-struct RenWindow {
-  SDL_Window *window;
-  uint8_t *command_buf;
-  size_t command_buf_idx;
-  size_t command_buf_size;
-  float scale_x;
-  float scale_y;
-#ifdef LITE_USE_SDL_RENDERER
-  SDL_Renderer *renderer;
-  SDL_Texture *texture;
-  RenSurface rensurface;
-#endif
-};
-typedef struct RenWindow RenWindow;
+/* struct RenWindow and the renwin_* helpers now live in rust/src/renwindow.rs, which owns the
+** struct: its layout changes with LITE_USE_SDL_RENDERER, so C must not mirror it. The one
+** function the remaining C (renderer.c's update_font_scale) still calls is declared here. */
 
-void renwin_init_surface(RenWindow *ren);
-void renwin_init_command_buf(RenWindow *ren);
-void renwin_clip_to_surface(RenWindow *ren);
-void renwin_set_clip_rect(RenWindow *ren, RenRect rect);
-void renwin_resize_surface(RenWindow *ren);
-void renwin_update_scale(RenWindow *ren);
-void renwin_show_window(RenWindow *ren);
-void renwin_update_rects(RenWindow *ren, RenRect *rects, int count);
-void renwin_free(RenWindow *ren);
 RenSurface renwin_get_surface(RenWindow *ren);
 
-
-float ren_get_scale_x(RenWindow *ren);
-float ren_get_scale_y(RenWindow *ren);
-SDL_Window *ren_get_sdl_window(RenWindow *ren);
-void ren_refresh_after_foreground(void);
+#endif
