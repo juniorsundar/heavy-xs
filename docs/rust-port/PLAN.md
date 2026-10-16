@@ -572,6 +572,23 @@ Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`widt
 
 **Lesson:** two of my own checks gave false results (a busy-wait that never ended, and counting fds while spawns were still in flight). Synchronize on a ready file, not a sleep.
 
+### W2 — `dirmonitor` (done; `custom_events` deliberately not)
+
+`rust/src/dirmonitor.rs` (Linux/inotify only, `libc` directly) replaces `src/api/dirmonitor.c` **and** `src/api/dirmonitor/inotify.c`. `src/custom_events.c` stays in C and Rust calls it through `extern "C"` (`register_custom_event`, `push_custom_event`, with `CustomEvent` declared `#[repr(C)]`), as the plan recommended. `api.c` is unchanged.
+
+- **Parity:** the `dirmonitor` suite (43 observations, baseline recorded from C first) is identical in debug and release, stable over 5 repeated runs. It exercises real inotify events: create, burst (deduplicated to one report per watch per check), delete, move across directories, unwatch, callback errors routed to the error callback and swallowed without one, bad arguments, independent monitors, and 300 create/drop cycles.
+- **Checked outside the harness:** the real `core.dirwatch` + `system.wait_event` loop sees both watched paths and the event loop is woken by the worker's custom event; shutdown with 5 live monitors exits 0 five times; 200 create/drop cycles leave fds and threads unchanged (5 / 2).
+- **Meson:** on `inotify` neither `api/dirmonitor.c` nor the backend is compiled. Other backends (fsevents, kqueue, win32, dummy) keep the C module, so macOS/Windows builds are unaffected. Marked with a `shortcut:` comment.
+
+**Deviations (the first two fix real C bugs):**
+- **The C's inotify walker is wrong.** It steps `sizeof(struct inotify_event)` (16) instead of `16 + len`, so for any event with a file name it also "reports" garbage watch ids made of name bytes (observed: real id `1`, delivered `1,6f6c5f61,742e656d` — the ASCII of the file name). `dirwatch.lua` ignores unknown ids, so nothing visible breaks. Rust walks events correctly; the suite only records known ids so both agree. This is a bug fix, not parity.
+- **C shutdown races its worker.** `__gc` closes the inotify and pipe fds *before* joining the thread blocked in `poll` on them, and relies on closing to wake it. Rust writes to the self-pipe, joins, *then* closes.
+- `check` releases the mutex before running Lua callbacks (the C holds it, so a callback calling back into the monitor would deadlock).
+- The inotify fd is non-blocking and `poll`/`read` retry on `EINTR`/`EAGAIN`.
+- The module table is a plain table with `new` and `mode`; the C returned its metatable (with methods on it). `data/` only calls `dirmonitor.new()` and instance methods.
+
+**Not done / not covered:** `custom_events.c` itself (moves in W5 with `system`). The macOS, Windows and kqueue backends. The `dummy` backend's `mode() == "single"` path is untouched C. A `"single"`-mode Rust backend does not exist.
+
 ---
 
 ## 9. Open decisions ledger (append as they settle)
@@ -695,7 +712,8 @@ Env vars: `LITE_PREFIX`, `LITE_USERDIR`, `LITE_XL_RUNTIME`, `LITE_SCALE`, `LITE_
 |---|---|---|---|
 | — | planning | done | This document. Decisions D1–D4 from the user; D-1..D-8 open in §9. |
 | 2026-10-16 | W0 | **done** | Added `rust/` (staticlib, `mlua 0.12` `lua54`+`module`, feature `probe`), Meson wiring in `src/meson.build`, option `core_features`, `tests/contract/` + `scripts/rust-port/verify.sh`, smoke baseline, `cargo`/`rustc` in the flake devShell. Probe verified end to end (`rust_probe.ping()` → `pong`) then removed from `api.c`; `api.c` is unchanged. **Next: W1 (`regex`).** Findings below. |
-| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor` + `custom_events`).** |
+| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W5 (`system`, + `custom_events`).** |
+| 2026-10-16 | W2 | **done** | `rust/src/dirmonitor.rs` (inotify, Linux) replaces `dirmonitor.c` + `inotify.c`; `custom_events.c` stays C. `verify.sh` green on 7 suites incl. `dirmonitor` (43 obs), debug and release; real `dirwatch` loop, shutdown and leak checks pass. Fixes two C bugs (event-walk stride, shutdown race). **Next: W5.** |
 | 2026-10-16 | W3 | **done** | `rust/src/process.rs` (raw libc fork/exec) + `libc` dep; `src/api/process.c` removed. `verify.sh` green on 6 suites incl. `process` (86 obs), debug and release; kill-at-`lua_close`, detach and fd-leak checks pass. **Next: W2.** |
 | 2026-10-16 | W4 | **done** | `rust/src/utf8.rs` + generated `unidata.rs`; `src/api/utf8.c` removed. `verify.sh` green on 5 suites incl. `utf8` (780 obs) and `utf8_edge` (717 obs), debug and release. Worker subagent timed out; ported by hand. ≈1.2–1.7× slower than C on microbenchmarks (plain `find` 5×). **Next: W2 (`dirmonitor` + `custom_events`) or W3 (`process`).** |
 

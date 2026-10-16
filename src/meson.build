@@ -80,8 +80,10 @@ rust_lib = custom_target('lite_xl_core',
 )
 lite_deps += declare_dependency(sources: rust_lib, link_args: ['-lpthread', '-ldl', '-lm'])
 
-lite_sources += 'api/dirmonitor.c'
-# dirmonitor backend
+# dirmonitor backend. On Linux (inotify) the whole module lives in rust/src/dirmonitor.rs;
+# the other platforms still use the C module with their backend.
+# shortcut: the Rust module is compiled on Linux only, so a non-Linux host must not
+# pick the inotify backend; port the other backends before dropping dirmonitor.c.
 if get_option('dirmonitor_backend') == ''
     if cc.has_function('inotify_init', prefix : '#include<sys/inotify.h>')
         dirmonitor_backend = 'inotify'
@@ -103,8 +105,13 @@ else
     dirmonitor_backend = get_option('dirmonitor_backend')
 endif
 
+if dirmonitor_backend != 'inotify'
+    lite_sources += 'api/dirmonitor.c'
+endif
+
 if dirmonitor_backend == 'inotify'
-    lite_sources += 'api' / 'dirmonitor' / 'inotify.c'
+    # Nothing to compile: rust/src/dirmonitor.rs provides luaopen_dirmonitor.
+    message('dirmonitor: Rust inotify implementation')
 elif dirmonitor_backend == 'fsevents'
     lite_sources += 'api' / 'dirmonitor' / 'fsevents.c'
 elif dirmonitor_backend == 'kqueue'
