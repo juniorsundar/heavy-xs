@@ -43,7 +43,7 @@ for s in $(echo "$suites" | tr , ' '); do
   # RECORD=1 on an event suite records the C poll_event/wait_event (the same binary
   # can run either; see rust/src/system.rs).
   c_events=
-  if [ "${RECORD:-}" = 1 ]; then case $s in sysevents|syswindow|sysplugin|customevents|rencache) c_events=1 ;; esac; fi
+  if [ "${RECORD:-}" = 1 ]; then case $s in sysevents|syswindow|sysplugin|customevents) c_events=1 ;; esac; fi
   # Never let a suite open a real dialog on the developer's desktop: no session bus (the
   # portal is reached over D-Bus) and no forced dialog driver, so SDL answers with an
   # "error" event instead. This applies to every suite, not just the dialog one.

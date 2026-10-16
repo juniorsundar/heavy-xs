@@ -16,9 +16,6 @@
 // uncomment the line below for more debugging information through printf
 // #define RENDERER_DEBUG
 
-static RenWindow **window_list = NULL;
-static RenWindow *target_window = NULL;
-static size_t window_count = 0;
 
 // draw_rect_surface is used as a 1x1 surface to simplify ren_draw_rect with blending
 static SDL_Surface *draw_rect_surface = NULL;
@@ -751,23 +748,6 @@ void ren_draw_rect(RenSurface *rs, RenRect rect, RenColor color) {
   }
 }
 
-/*************** Window Management ****************/
-static void ren_add_window(RenWindow *window_renderer) {
-  window_count += 1;
-  window_list = SDL_realloc(window_list, window_count * sizeof(RenWindow*));
-  window_list[window_count-1] = window_renderer;
-}
-
-static void ren_remove_window(RenWindow *window_renderer) {
-  for (size_t i = 0; i < window_count; ++i) {
-    if (window_list[i] == window_renderer) {
-      window_count -= 1;
-      memmove(&window_list[i], &window_list[i+1], window_count - i);
-      return;
-    }
-  }
-}
-
 int video_init(void) {
   static int ren_inited = 0;
   if (!ren_inited) {
@@ -810,87 +790,3 @@ void ren_free(void) {
   FT_Done_FreeType(library);
 }
 
-RenWindow* ren_create(SDL_Window *win) {
-  assert(win);
-  RenWindow* window_renderer = SDL_calloc(1, sizeof(RenWindow));
-
-  window_renderer->window = win;
-  renwin_init_surface(window_renderer);
-  renwin_init_command_buf(window_renderer);
-  renwin_clip_to_surface(window_renderer);
-
-  ren_add_window(window_renderer);
-  return window_renderer;
-}
-
-void ren_destroy(RenWindow* window_renderer) {
-  assert(window_renderer);
-  ren_remove_window(window_renderer);
-  renwin_free(window_renderer);
-  SDL_free(window_renderer->command_buf);
-  window_renderer->command_buf = NULL;
-  window_renderer->command_buf_size = 0;
-  SDL_free(window_renderer);
-}
-
-void ren_resize_window(RenWindow *window_renderer) {
-  renwin_resize_surface(window_renderer);
-  renwin_update_scale(window_renderer);
-}
-
-// TODO: Does not work nicely with multiple windows
-void ren_update_rects(RenWindow *window_renderer, RenRect *rects, int count) {
-  static bool initial_frame = true;
-  renwin_update_rects(window_renderer, rects, count);
-  if (initial_frame) {
-    renwin_show_window(window_renderer);
-    initial_frame = false;
-  }
-}
-
-
-void ren_set_clip_rect(RenWindow *window_renderer, RenRect rect) {
-  renwin_set_clip_rect(window_renderer, rect);
-}
-
-
-void ren_get_size(RenWindow *window_renderer, int *x, int *y) {
-  RenSurface rs = renwin_get_surface(window_renderer);
-  *x = rs.surface->w;
-  *y = rs.surface->h;
-#ifdef LITE_USE_SDL_RENDERER
-  *x /= rs.scale;
-  *y /= rs.scale;
-#endif
-}
-
-size_t ren_get_window_list(RenWindow ***window_list_dest) {
-  *window_list_dest = window_list;
-  return window_count;
-}
-
-RenWindow* ren_find_window(SDL_Window *window) {
-  for (size_t i = 0; i < window_count; ++i) {
-    RenWindow* window_renderer = window_list[i];
-    if (window_renderer->window == window) {
-      return window_renderer;
-    }
-  }
-
-  return NULL;
-}
-
-RenWindow* ren_find_window_from_id(uint32_t id) {
-  SDL_Window *window = SDL_GetWindowFromID(id);
-  return ren_find_window(window);
-}
-
-RenWindow* ren_get_target_window(void)
-{
-  return target_window;
-}
-
-void ren_set_target_window(RenWindow *window)
-{
-  target_window = window;
-}

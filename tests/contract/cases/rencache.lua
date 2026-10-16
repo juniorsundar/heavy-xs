@@ -113,8 +113,63 @@ return function(rec)
   rec("rect past right edge", frame(function() renderer.draw_rect(790, 10, 100, 10, {255, 0, 0, 255}) end))
   rec("rect past bottom edge", frame(function() renderer.draw_rect(10, 470, 10, 100, {255, 0, 0, 255}) end))
 
-  -- Resizing invalidates every cell, so the next frame repaints the whole screen.
-  renderer.begin_frame(win)
-  renderer.end_frame()
-  rec("before resize", lxl_test.dirty_rects())
+  -- Resizing invalidates every cell, so the next frame repaints the whole new screen area.
+  local function size_in_frame()
+    renderer.begin_frame(win)
+    local size = table.concat({renderer.get_size()}, "x")
+    renderer.end_frame()
+    return size
+  end
+  rec("size steady", size_in_frame())
+  system.set_window_size(win, 400, 300, 0, 0)
+  rec("size after resize", size_in_frame())
+  rec("frame after resize", lxl_test.dirty_rects())
+  frame(function() end)
+  rec("frame after resize again", lxl_test.dirty_rects())
+  system.set_window_size(win, 800, 480, 0, 0)
+  rec("size after growing back", size_in_frame())
+  rec("frame after growing back", lxl_test.dirty_rects())
+  frame(function() end)
+  rec("settled after resize", lxl_test.dirty_rects())
+-- Pixel checks: dirty rects only prove *which* regions were replayed, not that anything was
+-- actually drawn into them. These read the surface back and pin the exact bytes, so a replay
+-- loop that forgets to draw, or draws at the wrong offset, fails.
+local function pixels(win, coords)
+  local out = {}
+  for _, c in ipairs(coords) do
+    out[#out + 1] = ("%d,%d=%s"):format(c[1], c[2], tostring(lxl_test.pixel(win, c[1], c[2])))
+  end
+  return table.concat(out, " ")
+end
+
+renderer.begin_frame(win)
+renderer.draw_rect(100, 100, 10, 10, {255, 0, 0, 255})
+renderer.end_frame()
+rec("red pixel inside rect", pixels(win, {{100, 100}, {105, 105}, {109, 109}}))
+rec("pixel outside rect", pixels(win, {{99, 100}, {110, 100}, {100, 99}, {100, 110}}))
+
+renderer.begin_frame(win)
+renderer.draw_rect(100, 100, 10, 10, {0, 255, 0, 255})
+renderer.end_frame()
+rec("green pixel after repaint", pixels(win, {{100, 100}, {109, 109}}))
+
+-- The clip rect must confine the replay: a rect drawn outside the clip is not drawn at all.
+renderer.begin_frame(win)
+renderer.set_clip_rect(0, 0, 96, 96)
+renderer.draw_rect(200, 200, 10, 10, {0, 0, 255, 255})
+renderer.end_frame()
+rec("clipped-out rect left nothing", pixels(win, {{200, 200}, {205, 205}}))
+
+-- ...and one inside the clip is drawn.
+renderer.begin_frame(win)
+renderer.set_clip_rect(0, 0, 96, 96)
+renderer.draw_rect(90, 90, 10, 10, {255, 255, 0, 255})
+renderer.end_frame()
+rec("clipped-in rect drew", pixels(win, {{90, 90}, {95, 95}}))
+rec("outside the clip still empty", pixels(win, {{96, 96}, {99, 99}}))
+
+-- An unchanged frame repaints nothing, so the pixels must survive it.
+renderer.begin_frame(win)
+renderer.end_frame()
+rec("pixels survive a clean frame", pixels(win, {{90, 90}, {100, 100}}))
 end

@@ -4,8 +4,6 @@ lite_sources = [
     'api/renwindow.c',
     'arena_allocator.c',
     'renderer.c',
-    'renwindow.c',
-    'rencache.c',
     'main.c',
 ]
 
@@ -62,6 +60,12 @@ lite_deps = [lua_dep, sdl_dep, freetype_dep, pcre2_dep, libm, libdl]
 
 # Rust core (docs/rust-port/PLAN.md). cargo owns incremental builds, so always run it.
 rust_profile = get_option('buildtype') == 'release' ? 'release' : 'debug'
+# LITE_USE_SDL_RENDERER (macOS, or -Drenderer=true) swaps the window's surface handling in
+# rust/src/renwindow.rs; the Rust core needs to be told with a cargo feature.
+rust_features = get_option('core_features')
+if get_option('renderer') or host_machine.system() == 'darwin'
+    rust_features = rust_features == '' ? 'sdl_renderer' : rust_features + ',sdl_renderer'
+endif
 rust_target_dir = meson.project_build_root() / 'rust-target'
 rust_lib = custom_target('lite_xl_core',
     output: 'liblite_xl_core.a',
@@ -69,7 +73,7 @@ rust_lib = custom_target('lite_xl_core',
         find_program('sh'), '-c',
         'cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" && cp "$2/$5/liblite_xl_core.a" "$6"',
         'sh', meson.project_source_root() / 'rust', rust_target_dir,
-        rust_profile == 'debug' ? 'dev' : 'release', get_option('core_features'),
+        rust_profile == 'debug' ? 'dev' : 'release', rust_features,
         rust_profile, '@OUTPUT@',
     ],
     console: true,

@@ -2,6 +2,8 @@
 //! existing `src/api/api.c` registration table keeps working unchanged.
 
 mod custom_events;
+mod rencache;
+mod renwindow;
 #[cfg(target_os = "linux")]
 mod dirmonitor;
 mod pcre;
