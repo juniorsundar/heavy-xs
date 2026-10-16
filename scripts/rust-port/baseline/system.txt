@@ -1,0 +1,210 @@
+## system
+exports                                      41 absolute_path:function chdir:function clear_ime:function exec:function ftruncate:function fuzzy_match:function get_clipboard:function get_file_info:function get_fs_type:function get_primary_selection:function get_process_id:function get_sandbox:function get_time:function get_window_mode:function get_window_size:function list_dir:function load_native_plugin:function mkdir:function open_directory_dialog:function open_file_dialog:function path_compare:function poll_event:function raise_window:function rmdir:function save_file_dialog:function set_clipboard:function set_cursor:function set_primary_selection:function set_text_input_rect:function set_window_bordered:function set_window_hit_test:function set_window_mode:function set_window_opacity:function set_window_size:function set_window_title:function setenv:function show_fatal_error:function sleep:function text_input:function wait_event:function window_has_focus:function
+info file                                    modified=number:1577919845.6789;size=number:5;type=string:file
+info modified %.6f                           1577919845.678901
+info dir keys                                modified=N;size=number:4096;symlink=boolean:false;type=string:dir
+info dirlink keys                            modified=N;size=number:4096;symlink=boolean:true;type=string:dir
+info filelink keys                           modified=N;size=number:5;type=string:file
+info dangling                                nil|No such file or directory
+info fifo keys                               modified=N;size=number:0
+info missing                                 nil|No such file or directory
+info empty path                              nil|No such file or directory
+info too long                                nil|File name too long
+info not a dir                               nil|Not a directory
+info number arg                              2:nil,No such file or directory
+info no arg                                  ERR
+info table arg                               ERR
+info /dev/null type                          nil
+abs file                                     1:/tmp/lxl_system_contract/file.txt
+abs dotdot                                   1:/tmp/lxl_system_contract/file.txt
+abs symlink                                  1:/tmp/lxl_system_contract/dir
+abs trailing slash                           1:/tmp/lxl_system_contract/dir
+abs missing                                  <none>
+abs empty                                    <none>
+abs dangling                                 <none>
+abs root                                     1:/
+abs no arg                                   ERR
+abs number                                   <none>
+chdir ok                                     <none>
+cwd after chdir                              1:/tmp/lxl_system_contract/dir
+rel path after chdir                         1:/tmp/lxl_system_contract/file.txt
+chdir missing                                ERR
+chdir file                                   ERR
+chdir no arg                                 ERR
+cwd unchanged by failure                     1:/tmp/lxl_system_contract/dir
+mkdir new                                    1:true
+mkdir exists                                 2:false,File exists
+mkdir nested missing                         2:false,No such file or directory
+mkdir over file                              2:false,File exists
+mkdir empty                                  2:false,No such file or directory
+mkdir no arg                                 ERR
+mkdir is dir                                 dir
+mkdir mode                                   75x 1
+rmdir non-empty                              false|true
+rmdir empty                                  1:true
+rmdir gone                                   nil
+rmdir missing                                true|false
+rmdir file                                   true
+rmdir no arg                                 ERR
+list_dir                                     .hidden|a|b|sub
+list_dir count                               4
+list_dir empty                               1:0
+list_dir type                                table
+list_dir missing                             nil|string
+list_dir on file                             nil|string
+list_dir no arg                              ERR
+list_dir symlink                             
+fs_type /proc                                1:unknown
+fs_type /sys                                 1:unknown
+fs_type root type                            string
+fs_type tmp type                             string
+fs_type missing                              ERR
+fs_type no arg                               ERR
+ftruncate 4                                  1:true
+ftruncate content                            0123
+ftruncate grow                               1:true
+ftruncate grow content                       01230000
+ftruncate default                            1:true
+ftruncate default size                       0
+ftruncate read-only                          2:false,ftruncate(): Invalid argument
+ftruncate negative                           2:false,ftruncate(): Invalid argument
+ftruncate non-file                           ERR
+ftruncate nil                                ERR
+ftruncate string                             ERR
+pid matches                                  true
+pid type                                     integer
+time type                                    float
+sleep 0.05 waits                             true
+sleep returns                                <none>
+sleep negative                               <none>
+sleep string                                 <none>
+sleep bad                                    ERR
+sleep none                                   ERR
+time monotonic                               true
+exec returns                                 <none>
+exec ran in background                       ran\n
+exec failing cmd                             <none>
+exec no arg                                  ERR
+exec does not block                          true
+setenv                                       1:true
+getenv sees it                               one
+setenv overwrite                             1:true
+getenv overwritten                           two
+setenv empty value                           1:true
+getenv empty                                 []
+setenv eq in key                             1:false
+setenv empty key                             1:false
+setenv number                                1:true
+getenv number                                5
+setenv missing value                         ERR
+setenv no args                               ERR
+sandbox                                      1:none
+sandbox type                                 string
+set_clipboard returns                        <none>
+get_clipboard                                1:
+set_clipboard empty                          <none>
+get_clipboard empty                          1:
+clipboard newline                            
+set_clipboard no arg                         ERR
+set_clipboard number                         <none>
+get_clipboard number                         1:
+set_primary returns                          <none>
+get_primary                                  1:
+set_primary no arg                           ERR
+fuzzy 1 fwd                                  1:integer:-20
+fuzzy 1 files                                1:integer:-60
+fuzzy 2 fwd                                  1:integer:30
+fuzzy 2 files                                1:integer:120
+fuzzy 3 fwd                                  <none>
+fuzzy 3 files                                <none>
+fuzzy 4 fwd                                  1:integer:0
+fuzzy 4 files                                1:integer:0
+fuzzy 5 fwd                                  1:integer:-3
+fuzzy 5 files                                1:integer:-3
+fuzzy 6 fwd                                  1:integer:-3
+fuzzy 6 files                                1:integer:-3
+fuzzy 7 fwd                                  1:integer:-30
+fuzzy 7 files                                1:integer:-30
+fuzzy 8 fwd                                  1:integer:0
+fuzzy 8 files                                1:integer:0
+fuzzy 9 fwd                                  <none>
+fuzzy 9 files                                <none>
+fuzzy 10 fwd                                 1:integer:-20
+fuzzy 10 files                               1:integer:-20
+fuzzy 11 fwd                                 1:integer:0
+fuzzy 11 files                               1:integer:0
+fuzzy 12 fwd                                 <none>
+fuzzy 12 files                               <none>
+fuzzy 13 fwd                                 1:integer:-30
+fuzzy 13 files                               1:integer:-30
+fuzzy 14 fwd                                 1:integer:-90
+fuzzy 14 files                               1:integer:-80
+fuzzy 15 fwd                                 1:integer:-150
+fuzzy 15 files                               1:integer:-190
+fuzzy 16 fwd                                 <none>
+fuzzy 16 files                               <none>
+fuzzy 17 fwd                                 1:integer:-20
+fuzzy 17 files                               1:integer:-20
+fuzzy 18 fwd                                 1:integer:-20
+fuzzy 18 files                               1:integer:-20
+fuzzy 19 fwd                                 1:integer:-30
+fuzzy 19 files                               1:integer:-30
+fuzzy 20 fwd                                 1:integer:-120
+fuzzy 20 files                               1:integer:-120
+fuzzy 21 fwd                                 1:integer:-160
+fuzzy 21 files                               1:integer:-80
+fuzzy 22 fwd                                 1:integer:-170
+fuzzy 22 files                               1:integer:-190
+fuzzy 23 fwd                                 <none>
+fuzzy 23 files                               <none>
+fuzzy 24 fwd                                 1:integer:-10
+fuzzy 24 files                               1:integer:-10
+fuzzy 25 fwd                                 <none>
+fuzzy 25 files                               <none>
+fuzzy 26 fwd                                 1:integer:-20
+fuzzy 26 files                               1:integer:-20
+fuzzy 27 fwd                                 1:integer:-41
+fuzzy 27 files                               1:integer:-81
+fuzzy 28 fwd                                 1:integer:-60
+fuzzy 28 files                               1:integer:-120
+fuzzy 29 fwd                                 1:integer:-120
+fuzzy 29 files                               1:integer:-60
+fuzzy files=false                            1:integer:30
+fuzzy files=1                                1:integer:30
+fuzzy files='x'                              1:integer:30
+fuzzy number args                            1:integer:-40
+fuzzy one arg                                ERR
+fuzzy no arg                                 ERR
+fuzzy long                                   1:integer:-100010
+path_compare row 01                          01100111100000001001100
+path_compare row 02                          00000111100000000000000
+path_compare row 03                          01000111100000000000000
+path_compare row 04                          11101111111111111111100
+path_compare row 05                          11100111111111111111100
+path_compare row 06                          00000011100000000000000
+path_compare row 07                          00000001000000000000000
+path_compare row 08                          00000000000000000000000
+path_compare row 09                          00000011000000000000000
+path_compare row 10                          11100111101010011111100
+path_compare row 11                          11100111100010011111100
+path_compare row 12                          11100111111011111111100
+path_compare row 13                          11100111100000011111100
+path_compare row 14                          11100111111010011111100
+path_compare row 15                          11100111111011011111100
+path_compare row 16                          11100111100000001111100
+path_compare row 17                          01100111100000000001100
+path_compare row 18                          11100111100000001001100
+path_compare row 19                          11100111100000001101100
+path_compare row 20                          01100111100000000000100
+path_compare row 21                          01100111100000000000000
+path_compare row 22                          11111111111111111111100
+path_compare row 23                          11111111111111111111110
+path_compare returns                         1:true
+path_compare same                            1:false
+path_compare big numbers                     1:true
+path_compare numbers eq                      1:true
+path_compare bad type                        1:false
+path_compare 3 args                          ERR
+path_compare no args                         ERR
+path_compare number args                     1:true
+path_compare nul                             1:false
