@@ -2,6 +2,9 @@
 //! existing `src/api/api.c` registration table keeps working unchanged.
 
 mod custom_events;
+mod ft;
+mod renderer;
+mod renderer_api;
 mod rencache;
 mod renwindow;
 #[cfg(target_os = "linux")]
