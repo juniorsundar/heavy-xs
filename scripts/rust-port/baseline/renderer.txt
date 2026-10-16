@@ -1,0 +1,200 @@
+## renderer
+mono size/height                             14.0 18.0
+fira size/height                             14.0 16.0
+icons size/height                            14.0 15.0
+mono path is the path                        true
+mono widths A/AB/empty                       8.40625 16.8125 0.0
+fira widths A/AV/space                       8.015625 15.796875 3.703125
+icons width any                              14.0 14.0 14.0
+fira missing glyphs                          9.328125 9.328125 9.328125
+width of NUL / controls                      9.328125 27.984375
+width, invalid utf8                          9.328125 15.625 9.328125
+width, overlong/surrogate                    9.328125 9.328125
+width, max codepoint                         9.328125 9.328125
+tab alone                                    16.8125 16.8125 13.3125
+tab after char                               33.625 25.21875 38.53125
+tab offsets                                  15.8125 18.625 18.8125
+tab nearly at stop                           16.825000762939 17.72500038147 8.4125003814697
+tab, fira (proportional)                     7.40625 14.8125 14.8125
+tab size 4                                   33.625 42.03125
+tab size 0                                   0.0 true
+tab size 8                                   67.25 64.25
+tab_offset bad type                          ERR bad argument #-1 to '?' (number expected, got string)
+tab arg bad type                             ERR bad argument #3 to '?' (table expected, got number)
+tab arg nil                                  ok float:67.25
+set_size resets tab size                     16.8125
+tab size float truncates                     25.21875
+after set_size 30                            30.0 39.0 18.0
+after set_size 7.5                           7.5 9.0 4.203125
+after set_size 1                             1.0 1.0 0.59375
+set_size 0                                   ok  0.0 0.0
+set_size negative                            ok 
+set_size missing                             ERR bad argument #2 to '?' (number expected, got no value)
+set_size huge                                ok  528.0
+load fractional size                         13.60000038147 17.0 7.796875
+load tiny size                               ok userdata
+load size 0                                  ok userdata
+load negative size                           ok userdata
+load size huge                               ok userdata
+load no such file                            ERR failed to load font: Couldn't open /nonexistent/font.ttf: No such file or directory
+load empty path                              ERR failed to load font: Parameter 'file' is invalid
+load a directory                             ERR failed to load font: /home/juniorsundar/Documents/casual/lite-xl/build/stage/usr/local/share/lite-xl/fonts/ is a directory
+load not a font                              ERR failed to load font: unknown file format
+load no args                                 ERR bad argument #1 to '?' (string expected, got no value)
+load missing size                            ERR bad argument #2 to '?' (number expected, got no value)
+load size not a number                       ERR bad argument #2 to '?' (number expected, got string)
+load number path                             ERR failed to load font: Couldn't open 5: No such file or directory
+options antialiasing=none                    16.8125 18.0
+options antialiasing=grayscale               16.8125 18.0
+options antialiasing=subpixel                16.8125 18.0
+options hinting=none                         16.8125 18.0
+options hinting=slight                       16.8125 18.0
+options hinting=full                         16.8125 18.0
+options italic=true                          16.8125 18.0
+options bold=true                            16.8125 18.0
+options underline=true                       16.8125 18.0
+options smoothing=true                       16.8125 18.0
+options strikethrough=true                   16.8125 18.0
+options bold=true,italic=true                16.8125 18.0
+options italic=false                         16.8125 18.0
+options bold=1                               16.8125 18.0
+options {}                                   16.8125 18.0
+options antialiasing=5                       ERR 
+options hinting=false                        16.8125 18.0
+options antialiasing=none,bold=true,hinting=none 16.8125 18.0
+bad antialiasing                             error in font options, unknown antialiasing option: "fancy"
+bad hinting raises                           true
+options not a table                          ok userdata
+options nil                                  ok userdata
+copy size 20                                 20.0 26.0 12.0 true
+copy default size = height                   18.0 23.0
+copy keeps path                              true 18.84375
+copy keeps options (-1 sentinels)            16.8125 16.8125
+copy bad size                                ERR bad argument #2 to '?' (number expected, got string)
+copy bad options                             ERR error in font options, unknown antialiasing option: "x"
+group type                                   table true
+group size/height/width                      14.0 18.0 8.40625
+group width falls back                       8.40625 9.328125 8.40625
+group path                                   ok integer:2,true,true
+group copy                                   ok table,integer:2,float:20.0,float:20.0
+group tab size                               ok float:42.03125
+group set_size                               ok float:22.0,float:29.0,float:22.0,float:22.0
+group of one                                 ok float:29.0
+group empty                                  ERR failed to create font group: table is empty
+group non-table                              ERR bad argument #1 to '?' (table expected, got Font)
+group with non-font                          ERR bad argument #-1 to '?' (Font(userdata) expected, got number)
+group with nested group                      ERR bad argument #-1 to '?' (Font(userdata) expected, got Font)
+group of 10                                  ok float:29.0
+group of 11                                  ERR failed to create font group: table size too large
+group of 11 as a plain table                 ok float:29.0
+groups gc cleanly                            ok ok
+draw_text outside a frame                    ok float:44.609375
+draw_text returns x                          ok float:45.109375
+draw_text group                              ok float:27.859375
+draw_text no color                           ok float:39.609375
+draw_text bad color value                    ERR bad argument #5 to 'renderer.draw_text' (table[2]: number expected, got string)
+draw_text color short                        ERR bad argument #5 to 'renderer.draw_text' (table[3]: number expected, got nil)
+draw_text color not table                    ERR bad argument #5 to 'renderer.draw_text' (table expected, got number)
+draw_text color userdata value               ERR bad argument #5 to 'renderer.draw_text' (table[2]: number expected, got Font)
+draw_text color boolean value                ERR bad argument #5 to 'renderer.draw_text' (table[4]: number expected, got boolean)
+draw_text color floats                       ok float:39.609375
+draw_text font missing                       ERR bad argument #1 to 'renderer.draw_text' (Font expected, got no value)
+draw_text font wrong type                    ERR bad argument #1 to 'renderer.draw_text' (Font expected, got number)
+draw_text text not string                    ERR bad argument #2 to 'renderer.draw_text' (string expected, got table)
+draw_text number text                        ok float:26.40625
+draw_text y float                            ok float:13.203125
+draw_text empty string                       ok float:7.0
+draw_rect bad color                          ERR bad argument #5 to 'renderer.draw_rect' (table[3]: number expected, got string)
+set_clip_rect bad arg                        ERR bad argument #4 to 'renderer.set_clip_rect' (number expected, got string)
+show_debug no arg                            ERR bad argument #1 to 'renderer.show_debug' (value expected)
+show_debug false                             ok 
+get_size outside frame                       ok float:0.0,float:0.0
+mono none none                               41eb79ed/588
+mono none slight                             961b4f10/543
+mono none full                               961b4f10/543
+mono grayscale none                          7c4e830f/1134
+mono grayscale slight                        152e4eb2/1093
+mono grayscale full                          1a8844ac/1212
+mono subpixel none                           8917a284/1342
+mono subpixel slight                         a94c2600/1282
+mono subpixel full                           2b2681e0/1309
+fira none none                               575662e4/569
+fira none slight                             efd56f77/494
+fira none full                               efd56f77/494
+fira grayscale none                          1da9d677/1060
+fira grayscale slight                        c1841e62/1073
+fira grayscale full                          a108f2f6/1174
+fira subpixel none                           8d099911/1260
+fira subpixel slight                         238d8b9b/1264
+fira subpixel full                           d32948d2/1268
+size 6                                       ebe2645a/92
+size 8                                       eea7abcd/150
+size 11                                      4cc41a90/262
+size 13.5                                    7eefdd6a/335
+size 18                                      e4b8d9ea/592
+size 24                                      b8e6ef42/909
+size 36                                      632e65ee/1889
+size 48                                      6d7ca66a/3055
+subpixel x=10                                7ce06f45/311
+subpixel x=10.2                              cc7eda6f/308
+subpixel x=10.34                             83222181/296
+subpixel x=10.5                              7e647d0b/297
+subpixel x=10.67                             f1d5a802/297
+subpixel x=10.99                             3a456130/309
+subpixel string drift                        b991769f/1839
+style bold (subpixel)                        9a270a49/830
+style bold (none)                            6633f397/528
+style italic (subpixel)                      57622690/768
+style italic (none)                          7c7d310e/399
+style bold italic (subpixel)                 c62e4c38/843
+style bold italic (none)                     a316f0f2/487
+style smoothing (subpixel)                   2fea6d15/917
+style smoothing (none)                       3147ddb2/603
+style underline (subpixel)                   8a388303/968
+style underline (none)                       3e3d0d80/601
+style strikethrough (subpixel)               0502da4e/838
+style strikethrough (none)                   d891faea/535
+style underline+strike (subpixel)            26784fca/1026
+style underline+strike (none)                9a2cca66/723
+style all (subpixel)                         25bdd301/1225
+style all (none)                             8e5cb8e7/922
+color 255,0,0,255                            22c2d142/72800
+color 10,200,90,255                          61d454bc/72800
+color 255,255,255,128                        b32622ca/72800
+color 255,255,255,1                          12cbf92d/72800
+color 255,255,255,254                        e630516e/72800
+color 200,100,50,77                          f8c18d78/72800
+color 255,255,255,0                          ced034c5/72800
+color 0,0,0,255                              b076004d/72594
+rect alpha over rect                         721fbbd9/20500
+rect alpha, odd sizes                        548b80c1/1708
+clip left                                    cad5edb0/715
+clip right                                   59f124e1/523
+clip top                                     f652b90f/725
+clip bottom                                  f5a3afe3/502
+clip window                                  8ac7251a/303
+clip empty                                   3e132845/0
+clip subpixel                                07c0ee27/331
+text starting off the left edge              3293a310/715
+text off the right edge                      2ce34d55/179
+text above/below                             2d682d1a/236
+tabs rendered                                337926e8/461
+group mono+fira                              7ed5c4bc/524
+group fira+icons                             4eb9eacf/1059
+single font, missing glyph                   c9cbc8ff/322
+box glyph itself missing                     cd1e75de/201
+whitespace kinds                             9b4c7e87/628
+group underline                              87c56f84/612
+group strikethrough mixed                    8aed9293/350
+empty string                                 3e132845/0
+invalid utf8                                 edf32ce5/211
+controls                                     141bbc9b/466
+NUL inside                                   804ef69d/279
+long line                                    b71e9b2d/2678
+many small draws                             7d6d4bfa/3052
+same font after set_size                     1017a92f/904
+font copy renders like original              659cf8dd/684
+draw_text return, mono                       49.609375
+draw_text return, fira+tab                   44.875
+draw_text return, group                      32.84375
+draw_text return, empty                      3.25

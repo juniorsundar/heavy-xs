@@ -118,6 +118,44 @@ fn pixel(_: &Lua, (window, x, y): (mlua::AnyUserData, c_int, c_int)) -> LuaResul
     Ok(Some(format!("{r:02x}{g:02x}{b:02x}")))
 }
 
+/// FNV-1a over the logical r,g,b of every pixel in a rectangle of the window surface, plus the
+/// count of non-background pixels. One short string pins a whole rendered text run: a glyph that
+/// is a pixel off, hinted differently or blended differently changes it. Alpha is excluded for
+/// the same reason `pixel` excludes it.
+fn surface_hash(
+    _: &Lua,
+    (window, rx, ry, rw, rh): (mlua::AnyUserData, c_int, c_int, c_int, c_int),
+) -> LuaResult<String> {
+    let ren = unsafe { *(window.to_pointer() as *mut *mut c_void) };
+    let rs = unsafe { renwin_get_surface(ren) };
+    let surface = unsafe { &*rs.surface };
+    let bytes_per_pixel = sdl::SDL_BYTESPERPIXEL(surface.format) as usize;
+    let details = unsafe { SDL_GetPixelFormatDetails(surface.format) };
+    let (mut hash, mut lit) = (2166136261u32, 0usize);
+    for y in ry.max(0)..(ry + rh).min(surface.h) {
+        for x in rx.max(0)..(rx + rw).min(surface.w) {
+            let offset = y as usize * surface.pitch as usize + x as usize * bytes_per_pixel;
+            let mut pixel: u32 = 0;
+            unsafe {
+                std::ptr::copy_nonoverlapping(
+                    (surface.pixels as *const u8).add(offset),
+                    &mut pixel as *mut u32 as *mut u8,
+                    bytes_per_pixel.min(4),
+                )
+            };
+            let (mut r, mut g, mut b, mut a) = (0u8, 0u8, 0u8, 0u8);
+            unsafe { SDL_GetRGBA(pixel, details, std::ptr::null(), &mut r, &mut g, &mut b, &mut a) };
+            for byte in [r, g, b] {
+                hash = (hash ^ byte as u32).wrapping_mul(16777619);
+            }
+            if (r, g, b) != (0, 0, 0) {
+                lit += 1;
+            }
+        }
+    }
+    Ok(format!("{hash:08x}/{lit}"))
+}
+
 fn custom_register(_: &Lua, (name, kind): (String, String)) -> LuaResult<bool> {
     let name = CString::new(name).unwrap_or_default();
     let callback: CustomEventCallback = match kind.as_str() {
@@ -320,6 +358,7 @@ pub fn install(lua: &Lua) -> LuaResult<()> {
     hooks.raw_set("push_event", lua.create_function(push_event)?)?;
     hooks.raw_set("dirty_rects", lua.create_function(dirty_rects)?)?;
     hooks.raw_set("pixel", lua.create_function(pixel)?)?;
+    hooks.raw_set("surface_hash", lua.create_function(surface_hash)?)?;
     hooks.raw_set("custom_register", lua.create_function(custom_register)?)?;
     hooks.raw_set("custom_push", lua.create_function(custom_push)?)?;
     hooks.raw_set("custom_type", lua.create_function(custom_type)?)?;
