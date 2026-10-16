@@ -1,14 +1,14 @@
 //! `system`: ported piecemeal from `src/api/system.c`.
 //!
-//! W5 lands as an *overlay*: `src/api/api.c` still calls the C `luaopen_system`
-//! (which also registers the `dialogfinished` event and the `NativePlugin`
-//! metatable) and then hands the resulting table to `lxl_rust_system_overlay`
-//! below, which replaces entries with Rust functions. A function moves by being
-//! deleted from the C `lib[]` and added to `overlay`; the editor stays runnable
-//! and the contract suite stays comparable after every step. The last step
-//! deletes `system.c` and the hook.
+//! `luaopen_system` builds the module table, creates the `NativePlugin` metatable and registers
+//! the `dialogfinished` custom event. `src/api/api.c` registers it like any other library
+//! (`luaL_requiref(..., global = 1)`), so `system` is both a global and in `package.loaded`.
 //!
-//! Deviations from the C are noted next to the code and listed in the plan.
+//! The port landed as an overlay of Rust functions on the C table, one group at a time, so the
+//! editor stayed runnable and the contract suite comparable after every step; this file keeps
+//! that shape (`overlay`) because it is also the list of what the module exports.
+//!
+//! Deviations from the C are noted next to the code and listed in docs/rust-port/PLAN.md.
 
 use std::ffi::{c_char, c_void, CStr, CString};
 
@@ -578,10 +578,29 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
 
 /// Called from `api_load_libs` after the C `luaopen_system` has run and the
 /// table is registered as the global `system`.
-pub fn install(lua: &Lua) -> LuaResult<()> {
+/// `luaopen_system`: returns the module table. Fails (like the C's `luaL_error`) if the
+/// `dialogfinished` event cannot be registered.
+pub fn luaopen_system(lua: &Lua) -> LuaResult<Table> {
+    unsafe {
+        if !crate::custom_events::register_custom_event(
+            c"dialogfinished".as_ptr(),
+            Some(crate::sysplugin::dialogfinished_callback),
+        ) {
+            return Err(LuaError::runtime(format!(
+                "Unable to register custom dialogfinished event: {}",
+                sdl_error()
+            )));
+        }
+        // The NativePlugin metatable is looked up by name (luaL_setmetatable) when a plugin loads.
+        mlua::ffi::luaL_newmetatable(lua.state(), c"NativePlugin".as_ptr());
+        mlua::ffi::lua_pushcclosure(lua.state(), crate::sysplugin::library_gc, 0);
+        mlua::ffi::lua_setfield(lua.state(), -2, c"__gc".as_ptr());
+        mlua::ffi::lua_settop(lua.state(), mlua::ffi::lua_gettop(lua.state()) - 1);
+    }
     #[cfg(feature = "test_hooks")]
     crate::test_hooks::install(lua)?;
-    let system: Table = lua.globals().get("system")?;
-    overlay(lua, &system)
+    let system = lua.create_table()?;
+    overlay(lua, &system)?;
+    Ok(system)
 }
 

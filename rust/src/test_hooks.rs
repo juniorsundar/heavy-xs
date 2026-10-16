@@ -13,8 +13,73 @@ use std::ffi::{c_void, CString};
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
 use sdl3_sys::everything as sdl;
 
+use crate::custom_events::{
+    get_custom_event_callback_by_name, get_custom_event_name, push_custom_event, register_custom_event,
+    CustomEvent, CustomEventCallback,
+};
+
 extern "C" {
     fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
+}
+
+/// A callback that pushes ("custom", code, data1 as integer) so a test can see it ran.
+unsafe extern "C" fn tracer(l: *mut mlua::lua_State, e: *mut sdl::SDL_Event) -> std::ffi::c_int {
+    mlua::ffi::lua_pushstring(l, c"custom".as_ptr());
+    mlua::ffi::lua_pushinteger(l, (*e).user.code as i64);
+    mlua::ffi::lua_pushinteger(l, (*e).user.data1 as usize as i64);
+    3
+}
+
+/// A callback that returns 0 values, which poll_event must treat as "next event".
+unsafe extern "C" fn silent(_l: *mut mlua::lua_State, _e: *mut sdl::SDL_Event) -> std::ffi::c_int {
+    0
+}
+
+fn custom_register(_: &Lua, (name, kind): (String, String)) -> LuaResult<bool> {
+    let name = CString::new(name).unwrap_or_default();
+    let callback: CustomEventCallback = match kind.as_str() {
+        "tracer" => Some(tracer),
+        "silent" => Some(silent),
+        _ => None,
+    };
+    Ok(unsafe { register_custom_event(name.as_ptr(), callback) })
+}
+
+fn custom_push(_: &Lua, (name, code, data1): (String, i32, i64)) -> LuaResult<bool> {
+    let name = CString::new(name).unwrap_or_default();
+    let mut event = CustomEvent {
+        window_id: 0,
+        code,
+        data1: data1 as usize as *mut c_void,
+        data2: std::ptr::null_mut(),
+    };
+    Ok(unsafe { push_custom_event(name.as_ptr(), &mut event) })
+}
+
+/// The type number of a registered name (the first SDL user event is 0x8000), or nil.
+fn custom_type(_: &Lua, name: String) -> LuaResult<Option<i64>> {
+    // Walk the user range: the API only maps type -> name, so invert it.
+    for ty in 0x8000u32..0x8040 {
+        let found = get_custom_event_name(ty);
+        if !found.is_null() && unsafe { std::ffi::CStr::from_ptr(found) }.to_bytes() == name.as_bytes() {
+            return Ok(Some((ty - 0x8000) as i64));
+        }
+    }
+    Ok(None)
+}
+
+fn custom_name(_: &Lua, offset: i64) -> LuaResult<Option<String>> {
+    let found = get_custom_event_name(0x8000u32.wrapping_add(offset as u32));
+    Ok(if found.is_null() {
+        None
+    } else {
+        Some(unsafe { std::ffi::CStr::from_ptr(found) }.to_string_lossy().into_owned())
+    })
+}
+
+fn custom_has_callback(_: &Lua, name: String) -> LuaResult<bool> {
+    let name = CString::new(name).unwrap_or_default();
+    Ok(unsafe { get_custom_event_callback_by_name(name.as_ptr()) }.is_some())
 }
 
 fn num(t: &Table, key: &str) -> LuaResult<f64> {
@@ -170,6 +235,11 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
 pub fn install(lua: &Lua) -> LuaResult<()> {
     let hooks = lua.create_table()?;
     hooks.raw_set("push_event", lua.create_function(push_event)?)?;
+    hooks.raw_set("custom_register", lua.create_function(custom_register)?)?;
+    hooks.raw_set("custom_push", lua.create_function(custom_push)?)?;
+    hooks.raw_set("custom_type", lua.create_function(custom_type)?)?;
+    hooks.raw_set("custom_name", lua.create_function(custom_name)?)?;
+    hooks.raw_set("custom_has_callback", lua.create_function(custom_has_callback)?)?;
     for (name, ty) in [
         ("EVENT_WINDOW_SHOWN", sdl::SDL_EventType::WINDOW_SHOWN),
         ("EVENT_WINDOW_EXPOSED", sdl::SDL_EventType::WINDOW_EXPOSED),

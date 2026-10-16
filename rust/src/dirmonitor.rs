@@ -4,7 +4,7 @@
 //! One userdata owns an inotify instance, a self-pipe and, once the first watch
 //! exists, a worker thread. The thread blocks in `poll`, stores the raw inotify
 //! bytes for `check` to translate, and wakes the SDL event loop by pushing the
-//! "dirmonitor" custom event (still implemented by `src/custom_events.c`).
+//! "dirmonitor" custom event (see `custom_events.rs`).
 //! The thread never touches Lua.
 //!
 //! Linux only. Other platforms keep the C backends in `src/api/dirmonitor/`.
@@ -20,12 +20,13 @@
 //!     may call back into the monitor.
 
 use std::collections::HashSet;
-use std::ffi::{c_char, c_int, c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::os::unix::io::RawFd;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
+use crate::custom_events::{push_custom_event, register_custom_event, CustomEvent};
 use mlua::{
     Error as LuaError, Function, Lua, MultiValue, Result as LuaResult, Table, UserData,
     UserDataMethods, Value, Variadic,
@@ -36,25 +37,7 @@ const BUFFER_SIZE: usize = 64512;
 const API_TYPE_DIRMONITOR: &str = "Dirmonitor";
 const INOTIFY_HEADER: usize = 16; // sizeof(struct inotify_event) without the name
 
-// ------------------------------------------------------- custom_events seam
-
-/// `CustomEvent` from `src/custom_events.h`. A plain C struct, so declared here
-/// with its exact layout rather than through a header.
-#[repr(C)]
-struct CustomEvent {
-    window_id: u32, // SDL_WindowID
-    code: i32,
-    data1: *mut c_void,
-    data2: *mut c_void,
-}
-
-type CustomEventCallback = Option<unsafe extern "C" fn(*mut c_void, *mut c_void) -> c_int>;
-
-extern "C" {
-    fn register_custom_event(name: *const c_char, callback: CustomEventCallback) -> bool;
-    fn push_custom_event(name: *const c_char, event: *mut CustomEvent) -> bool;
-    fn SDL_GetError() -> *const c_char;
-}
+// ------------------------------------------------------------ custom events
 
 fn wake_event_loop() {
     let mut event = CustomEvent {
@@ -341,7 +324,7 @@ impl UserData for DirMonitor {
 /// and the methods of the instances.
 pub fn luaopen_dirmonitor(lua: &Lua) -> LuaResult<Table> {
     if !unsafe { register_custom_event(c"dirmonitor".as_ptr(), None) } {
-        let reason = unsafe { CStr::from_ptr(SDL_GetError()) }.to_string_lossy().into_owned();
+        let reason = unsafe { CStr::from_ptr(sdl3_sys::everything::SDL_GetError()) }.to_string_lossy().into_owned();
         return Err(LuaError::runtime(format!(
             "Unable to register custom dirmonitor event: {}",
             reason
