@@ -27,3 +27,8 @@ void renwin_update_rects(RenWindow *ren, RenRect *rects, int count);
 void renwin_free(RenWindow *ren);
 RenSurface renwin_get_surface(RenWindow *ren);
 
+
+float ren_get_scale_x(RenWindow *ren);
+float ren_get_scale_y(RenWindow *ren);
+SDL_Window *ren_get_sdl_window(RenWindow *ren);
+void ren_refresh_after_foreground(void);
