@@ -502,6 +502,22 @@ Covered in §6/§7. **Deliverable:** Rust `.a` linked into the C build, probe mo
 
 **Done when** a test `.so` with `luaopen_lite_xl_test(L, XL)` loads via `require` and can call `luaL_newlib`-equivalent functions through `XL`.
 
+### W1 — `regex` (done)
+
+`rust/src/pcre.rs` (hand-written PCRE2 8-bit FFI) + `rust/src/regex.rs`; `src/api/regex.c` deleted from `src/meson.build`. `src/api/api.c` needed no change, as predicted.
+
+- **Parity:** `scripts/rust-port/verify.sh` green. `regex` (54 observations) and `tokenizer` (11 lines) are byte-identical to the C baseline. Covers compile options, offsets, negative offsets, `NOTBOL`, empty captures, `gmatch` with/without groups, `gsub` global/limited/growing/escapes/empty matches, `re[1]`, method-call syntax, constants, and error text.
+- **`tokenizer` suite added:** drives the real `core.syntax` + `core.tokenizer` + `plugins.language_lua` path (the heaviest regex consumer) and threads the tokenizer state across lines, as `Highlighter` does.
+- **D-4 resolved:** raw FFI, not the `pcre2` crate. 13 extern functions, no build-script or vendoring risk, and the exact C semantics (including `PCRE2_SUBSTITUTE_OVERFLOW_LENGTH`) stay visible.
+- **D-1 resolved:** compiled patterns stay a Lua *table* with the module table as metatable (`type(re) == "table"`, `type(re[1]) == "userdata"`, `getmetatable(re) == regex`), because `data/plugins/detectindent.lua:104,117` inspects the value and plugins use method syntax.
+- **D-3 confirmed:** `ENDANCHORED` still aliases `ANCHORED`, with a `shortcut:` comment in `rust/src/regex.rs`.
+
+**Pre-existing C bug found (not introduced by the port):** `f_pcre_match` calls `lua_rawgeti(L, 1, 1)` unconditionally, so passing a *string* pattern to `regex.cmatch` reads a Lua string as a table and segfaults. `data/core/regex.lua:21` compiles the pattern first, so the Lua layer never hits it, and the Rust port handles string patterns correctly. The C fix would be to move that `lua_rawgeti` into the `LUA_TTABLE` branch. The contract suite therefore always compiles before `cmatch`.
+
+**Known deviation (accepted):** C raises errors with `luaL_error` (a plain string); mlua raises a userdata whose `tostring` is `"<message>\ntraceback"`. The message text is made byte-identical (`bad argument #2 to 'regex.cmatch' (string expected, got nil)`), so only `type(err)` and the extra traceback line differ. `tests/contract/cases/regex.lua` normalises this. Revisit if a plugin ever string-matches an error value.
+
+**Lesson for later waves:** the C `gsub` keeps the substituted subject and its *length* in separate variables. Taking the whole buffer as the next subject produced trailing NULs; the port must truncate to the written length.
+
 ---
 
 ## 9. Open decisions ledger (append as they settle)
@@ -625,6 +641,7 @@ Env vars: `LITE_PREFIX`, `LITE_USERDIR`, `LITE_XL_RUNTIME`, `LITE_SCALE`, `LITE_
 |---|---|---|---|
 | — | planning | done | This document. Decisions D1–D4 from the user; D-1..D-8 open in §9. |
 | 2026-10-16 | W0 | **done** | Added `rust/` (staticlib, `mlua 0.12` `lua54`+`module`, feature `probe`), Meson wiring in `src/meson.build`, option `core_features`, `tests/contract/` + `scripts/rust-port/verify.sh`, smoke baseline, `cargo`/`rustc` in the flake devShell. Probe verified end to end (`rust_probe.ping()` → `pong`) then removed from `api.c`; `api.c` is unchanged. **Next: W1 (`regex`).** Findings below. |
+| 2026-10-16 | W1 | **done** | `rust/src/pcre.rs` + `rust/src/regex.rs`; `src/api/regex.c` removed. `verify.sh` green: `regex` (54 obs) and `tokenizer` (11 obs, the real syntax-highlighting path) match the C baseline exactly. Found a pre-existing segfault in C `regex.cmatch` with string patterns. **Next: W2 (`dirmonitor`) or W4 (`utf8extra`).** |
 
 **W0 findings (these supersede the snippets in §3.3 / §7.4 where they differ):**
 - Meson reserves the `rust_` option prefix → option is `core_features` (`meson configure build -Dcore_features=probe`).
