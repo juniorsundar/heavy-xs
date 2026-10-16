@@ -1,26 +1,47 @@
 [package]
 name = "lite_xl_core"
-version = "0.1.0"
+# Must equal `version` in meson.build (the Meson build still reads its own); build.rs adds the git suffix.
+version = "2.1.7"
 edition = "2021"
 publish = false
+build = "build.rs"
 
 [lib]
 name = "lite_xl_core"
-crate-type = ["staticlib"]
+# staticlib: linked into the Meson build (non-Linux platforms); rlib: used by the `lite-xl` binary.
+crate-type = ["staticlib", "rlib"]
+
+[[bin]]
+name = "lite-xl"
+path = "src/main.rs"
+required-features = ["standalone"]
 
 [dependencies]
-# Lua itself comes from the C build, so `module` (no `vendored`).
-mlua = { version = "0.12", features = ["lua54", "module"] }
+mlua = { version = "0.12", default-features = false, features = ["lua54"] }
 # Raw POSIX calls for the process module (fork/exec, pipes, waitpid, signals).
 libc = "0.2"
-# Raw bindings only: C main.c still owns SDL init, the window and the event loop until W8,
-# and Meson links SDL3 itself, so the crate must not link a second copy ("no-link").
-sdl3-sys = { version = "0.7", default-features = false, features = ["no-link"] }
-# Bindings only for W7: the final Meson link supplies its pinned FreeType 2.14.1.
-# Do not enable bundled: the crate vendors 2.13.2, which changes hinted pixels.
+# SDL3 bindings. `standalone` links the system SDL3 through pkg-config; the Meson build
+# links SDL3 itself, so `module` adds "no-link" to avoid a second copy.
+sdl3-sys = { version = "0.7", default-features = false }
+# Bindings; `standalone` also builds the vendored FreeType (see the `standalone` feature).
 freetype-rs = "0.38"
+# Optional sources of the C libraries that Meson otherwise provides.
+pcre2-sys = { version = "0.2", optional = true }
 
 [features]
+default = ["standalone"]
+# `cargo build` produces the whole editor with no C build system: Lua 5.4 (mlua vendored),
+# PCRE2 (pcre2-sys, forced static by .cargo/config.toml), FreeType 2.13.2 (freetype-sys bundled)
+# and the system SDL3. Linux only for now.
+standalone = [
+    "mlua/vendored",
+    "sdl3-sys/use-pkg-config",
+    "freetype-rs/bundled",
+    "dep:pcre2-sys",
+]
+# Static library linked by Meson (macOS/Windows keep that build). Lua, PCRE2, FreeType and SDL3
+# come from Meson, so none of them is built or linked here. Build with --no-default-features.
+module = ["mlua/module", "sdl3-sys/no-link"]
 # Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).
 probe = []
 # Test-only synthetic event injection (rust/src/test_hooks.rs). Never enable in a shipping build.

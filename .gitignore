@@ -25,4 +25,9 @@ LiteXL*
 !resources/macos/*.py
 !scripts/innosetup/lite-xl@*.bmp
 !scripts/innosetup/lite-xl-banner@*.bmp
+
+# direnv cache
+.direnv/
+/.pi/subagents
 rust/target/
+result

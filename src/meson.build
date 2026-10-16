@@ -61,16 +61,20 @@ lite_deps = [lua_dep, sdl_dep, freetype_dep, pcre2_dep, libm, libdl]
 rust_profile = get_option('buildtype') == 'release' ? 'release' : 'debug'
 # LITE_USE_SDL_RENDERER (macOS, or -Drenderer=true) swaps the window's surface handling in
 # rust/src/renwindow.rs; the Rust core needs to be told with a cargo feature.
-rust_features = get_option('core_features')
+# `module`: this build supplies Lua, PCRE2, FreeType and SDL3 itself (see rust/Cargo.toml).
+rust_features = 'module'
+if get_option('core_features') != ''
+    rust_features += ',' + get_option('core_features')
+endif
 if get_option('renderer') or host_machine.system() == 'darwin'
-    rust_features = rust_features == '' ? 'sdl_renderer' : rust_features + ',sdl_renderer'
+    rust_features += ',sdl_renderer'
 endif
 rust_target_dir = meson.project_build_root() / 'rust-target'
 rust_lib = custom_target('lite_xl_core',
     output: 'liblite_xl_core.a',
     command: [
         find_program('sh'), '-c',
-        'PKG_CONFIG_PATH="$7${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" && cp "$2/$5/liblite_xl_core.a" "$6"',
+        'PKG_CONFIG_PATH="$7${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" --no-default-features && cp "$2/$5/liblite_xl_core.a" "$6"',
         'sh', meson.project_source_root() / 'rust', rust_target_dir,
         rust_profile == 'debug' ? 'dev' : 'release', rust_features,
         rust_profile, '@OUTPUT@', meson.project_build_root() / 'meson-uninstalled',

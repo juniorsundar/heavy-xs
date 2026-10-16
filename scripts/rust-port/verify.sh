@@ -1,40 +1,38 @@
 #!/usr/bin/env sh
-# Build, stage, run the headless contract runtime, and diff against the recorded C baseline.
-#   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: smoke)
+# Build with Cargo, stage, run the headless contract runtime, and diff against the recorded baseline.
+#   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: every suite with a baseline)
 #   RECORD=1 scripts/rust-port/verify.sh suite      (re)record the baseline for each suite
+# Environment: CARGO_ARGS (extra cargo flags, e.g. "--release" or "--features sdl_renderer"),
+# TARGET_DIR (cargo target dir; default rust/target, use another one per configuration).
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-build=${BUILD_DIR:-$root/build}
-stage=$build/stage/usr/local
-# Default: every suite that has a recorded baseline.
+target=${TARGET_DIR:-$root/rust/target}
+case " ${CARGO_ARGS:-} " in *" --release "*) profile=release ;; *) profile=debug ;; esac
+bin=$target/$profile/lite-xl
+stage=${STAGE_DIR:-$target/stage}/usr/local
 suites=${1:-$(ls "$root/scripts/rust-port/baseline" 2>/dev/null | sed "s/\.txt$//" | tr "\n" "," | sed "s/,$//")}
 
-if ! ninja -C "$build"; then
-  exit 1
-fi
-meson install -C "$build" --destdir "$build/stage" >/dev/null 2>&1
+# Suites that inject synthetic SDL events need the Rust `test_hooks` feature
+# (rust/src/test_hooks.rs). It is enabled only for those runs, so a normal build never ships it.
+needs_hooks=0
+for s in $(echo "$suites" | tr , ' '); do
+  case $s in sysevents|syswindow|sysplugin|customevents|rencache|renderer|restart) needs_hooks=1 ;; esac
+done
+features=
+[ "$needs_hooks" = 1 ] && features="--features test_hooks"
 
+# shellcheck disable=SC2086
+cargo build --manifest-path "$root/rust/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} $features >&2
+
+# A release binary carries no "(git-xxxx)" suffix (rust/build.rs), so its start.lua must not either.
+release=; [ "$profile" = release ] && release=1
+LITE_RELEASE=$release "$root/scripts/install-linux.sh" "$bin" "$target/stage" /usr/local >/dev/null
 # Install the harness next to the data dir so `require` finds it without
 # touching anything in data/. The editor selects it with LITE_XL_RUNTIME.
 share=$stage/share/lite-xl
 mkdir -p "$share/contract_cases"
 cp "$root/tests/contract/contract.lua" "$share/contract.lua"
 cp "$root"/tests/contract/cases/*.lua "$share/contract_cases/"
-
-# Suites that inject synthetic SDL events need the Rust `test_hooks` feature
-# (rust/src/test_hooks.rs). It is enabled for the run and restored afterwards, so a
-# normal build never ships with it.
-needs_hooks=0
-for s in $(echo "$suites" | tr , ' '); do
-  case $s in sysevents|syswindow|sysplugin|customevents|rencache|renderer) needs_hooks=1 ;; esac
-done
-prev_features=$(meson introspect "$build" --buildoptions 2>/dev/null | tr ',' '\n' | grep -A1 '"name": "core_features"' | grep -o '"value": "[^"]*"' | head -1 | cut -d'"' -f4 || true)
-if [ "$needs_hooks" = 1 ]; then
-  meson configure "$build" -Dcore_features=test_hooks >/dev/null
-  ninja -C "$build" >/dev/null
-  meson install -C "$build" --destdir "$build/stage" >/dev/null 2>&1
-  trap 'meson configure "$build" -Dcore_features="${prev_features:-}" >/dev/null; ninja -C "$build" >/dev/null' EXIT
-fi
 
 status=0
 for s in $(echo "$suites" | tr , ' '); do
@@ -51,7 +49,7 @@ for s in $(echo "$suites" | tr , ' '); do
       LXL_PLUGIN_SRC=$root/tests/contract/plugin LXL_PLUGIN_INC=$root/resources/include \
       LXL_TEST_C_EVENTS=${c_events:-} CONTRACT_SUITES=$s SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-offscreen} \
       LITE_PREFIX=$stage LITE_XL_RUNTIME=contract \
-      timeout 60 "$build/src/lite-xl" >"$out" 2>&1; then
+      timeout -k 2 60 "$bin" >"$out" 2>&1; then
     rc=0
   else
     rc=$?
