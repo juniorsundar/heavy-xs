@@ -123,6 +123,38 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
                 e.common.r#type = num(&spec, "etype")? as u32;
             }
             "other" => e.common.r#type = num(&spec, "etype")? as u32,
+            "dialog_finished" => {
+                // A forged `dialogfinished` event: what dialog_callback pushes when a dialog
+                // ends. `paths` is a Lua list; data2 is the "a\0b\0\0" block the callback
+                // expects (SDL_malloc'd, because the callback SDL_free()s it).
+                let code = num(&spec, "code")? as i32;
+                let paths: Vec<String> = spec.raw_get::<Option<Vec<String>>>("paths")?.unwrap_or_default();
+                let mut block: Vec<u8> = Vec::new();
+                for p in &paths {
+                    block.extend_from_slice(p.as_bytes());
+                    block.push(0);
+                }
+                block.push(0);
+                let heap = if code == 1 && paths.is_empty() && text.as_bytes().is_empty() {
+                    std::ptr::null_mut() // DIALOG_CANCEL carries no data
+                } else if code == 0 {
+                    let m = sdl::SDL_malloc(block.len()) as *mut u8;
+                    std::ptr::copy_nonoverlapping(block.as_ptr(), m, block.len());
+                    m as *mut c_void
+                } else {
+                    sdl::SDL_strdup(text.as_ptr()) as *mut c_void // DIALOG_ERROR message
+                };
+                e.user.r#type = sdl::SDL_EventType::USER.0; // "dialogfinished" is registered first
+                e.user.code = code;
+                e.user.data1 = num(&spec, "id")? as usize as *mut c_void;
+                e.user.data2 = heap;
+                let pushed = sdl::SDL_PushEvent(&mut e);
+                if !pushed {
+                    sdl::SDL_free(heap);
+                }
+                sdl::SDL_free(owned_text as *mut c_void);
+                return Ok(pushed);
+            }
             other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
         }
         let pushed = sdl::SDL_PushEvent(&mut e);
