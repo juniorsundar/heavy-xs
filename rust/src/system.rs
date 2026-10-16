@@ -534,13 +534,33 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
     set!("path_compare", path_compare);
 
     // Raw lua_CFunctions: poll_event returns 0-6 values and drives C callbacks that push directly.
-    // With test hooks, LXL_TEST_C_EVENTS=1 keeps the C versions so one binary can record the
+    // With test hooks, LXL_TEST_C_EVENTS=1 keeps the C versions (events and window functions) so one binary can record the
     // C baseline and verify the Rust port with the same injected events.
     #[cfg(feature = "test_hooks")]
     if std::env::var_os("LXL_TEST_C_EVENTS").is_some_and(|v| !v.is_empty()) {
         return Ok(());
     }
     unsafe {
+        use crate::syswindow as w;
+        for (name, f) in [
+            ("set_cursor", w::set_cursor as mlua::lua_CFunction),
+            ("set_window_title", w::set_window_title),
+            ("set_window_mode", w::set_window_mode),
+            ("get_window_mode", w::get_window_mode),
+            ("set_window_bordered", w::set_window_bordered),
+            ("set_window_hit_test", w::set_window_hit_test),
+            ("get_window_size", w::get_window_size),
+            ("set_window_size", w::set_window_size),
+            ("set_text_input_rect", w::set_text_input_rect),
+            ("clear_ime", w::clear_ime),
+            ("window_has_focus", w::window_has_focus),
+            ("raise_window", w::raise_window),
+            ("show_fatal_error", w::show_fatal_error),
+            ("set_window_opacity", w::set_window_opacity),
+            ("text_input", w::text_input),
+        ] {
+            system.raw_set(name, lua.create_c_function(f)?)?;
+        }
         system.raw_set("poll_event", lua.create_c_function(crate::sysevents::poll_event)?)?;
         system.raw_set("wait_event", lua.create_c_function(crate::sysevents::wait_event)?)?;
     }

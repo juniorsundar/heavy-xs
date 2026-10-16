@@ -4,8 +4,10 @@
 #[cfg(target_os = "linux")]
 mod dirmonitor;
 mod pcre;
+mod hit;
 mod process;
 mod system;
+mod syswindow;
 mod sysevents;
 mod unidata;
 mod utf8;
