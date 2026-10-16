@@ -27,4 +27,17 @@ text empty                                   0,96,192,96
 offscreen rect                               
 rect past right edge                         768,0,32,96
 rect past bottom edge                        768,0,32,96 0,384,96,96
-before resize                                0,384,96,96
+size steady                                  800.0x480.0
+size after resize                            400.0x300.0
+frame after resize                           0,0,400,300
+frame after resize again                     
+size after growing back                      800.0x480.0
+frame after growing back                     0,0,800,480
+settled after resize                         
+red pixel inside rect                        100,100=ff0000 105,105=ff0000 109,109=ff0000
+pixel outside rect                           99,100=000000 110,100=000000 100,99=000000 100,110=000000
+green pixel after repaint                    100,100=00ff00 109,109=00ff00
+clipped-out rect left nothing                200,200=000000 205,205=000000
+clipped-in rect drew                         90,90=ffff00 95,95=ffff00
+outside the clip still empty                 96,96=000000 99,99=000000
+pixels survive a clean frame                 90,90=ffff00 100,100=00ff00
