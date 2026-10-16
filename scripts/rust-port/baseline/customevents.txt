@@ -1,0 +1,67 @@
+## customevents
+dialogfinished type                          0
+dirmonitor type                              1
+type 0 name                                  dialogfinished
+type 1 name                                  dirmonitor
+type 2 name (unused)                         nil
+type 500 name (unused)                       nil
+dialogfinished has callback                  true
+dirmonitor has callback (noop)               true
+unknown has callback                         false
+register new/tracer                          true
+t_one is next type                           2
+register second                              true
+t_two follows                                3
+register no callback                         true
+t_three follows                              4
+name round trip                              t_two
+has callback: tracer                         true
+has callback: none (noop)                    true
+re-register same name                        true
+type unchanged                               true
+no extra type consumed                       nil
+push after override to silent                true
+poll: silent callback swallows it            0
+override to tracer again                     true
+override keeps type                          true
+next registration right after                true:3
+push after override to tracer                true
+poll: tracer callback delivers it            3,custom,integer:12,integer:112
+override to no callback                      true
+push after override to none                  true
+poll: noop swallows it                       0
+register empty                               false
+register '#'                                 false
+register '#name'                             false
+register '#1' (a type key)                   false
+'#'-name not stored                          nil
+register with space                          true
+register unicode                             true
+register long name                           true
+long name is distinct                        true
+name with trailing char differs              true
+case sensitive                               true
+prefix is not a match                        false
+push tracer                                  true
+poll tracer                                  3,custom,integer:7,integer:99
+push tracer negative code                    true
+poll tracer negative                         3,custom,integer:-5,integer:-1
+push tracer zero                             true
+poll tracer zero                             3,custom,integer:0,integer:0
+push silent                                  true
+poll silent (swallowed)                      0
+push no-callback                             true
+poll no-callback (swallowed)                 0
+push dirmonitor (swallowed)                  true
+poll dirmonitor                              0
+ordered delivery                             3,custom,integer:1,integer:10 | 3,custom,integer:3,integer:30 | 3,custom,integer:5,integer:50
+push unknown                                 false
+push empty name                              false
+push '#8'                                    false
+push '#'                                     false
+push after refusal still works               true
+poll after refusal                           3,custom,integer:9,integer:9
+40 bulk registrations                        40
+bulk types are consecutive                   true
+last bulk event delivered                    3,custom,integer:40,integer:400
+bulk_1 name round trip                       bulk_1
