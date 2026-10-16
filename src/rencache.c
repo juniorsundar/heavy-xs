@@ -73,6 +73,15 @@ static RenRect screen_rect;
 static RenRect last_clip_rect;
 static bool show_debug;
 
+/* W6 baseline readout: the dirty rects produced by the last rencache_end_frame. This exists
+** only to record the contract baseline from the C implementation, and is deleted with this
+** file once rencache is ported. */
+static int debug_rect_count = 0;
+size_t rencache_debug_rects(RenRect **rects_dest) {
+  *rects_dest = rect_buf;
+  return (size_t) debug_rect_count;
+}
+
 static inline int rencache_min(int a, int b) { return a < b ? a : b; }
 static inline int rencache_max(int a, int b) { return a > b ? a : b; }
 
@@ -339,6 +348,8 @@ void rencache_end_frame(RenWindow *window_renderer) {
   if (rect_count > 0) {
     ren_update_rects(window_renderer, rect_buf, rect_count);
   }
+
+  debug_rect_count = rect_count;
 
   /* swap cell buffer and reset */
   unsigned *tmp = cells;
