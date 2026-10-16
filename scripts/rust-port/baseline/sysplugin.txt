@@ -1,0 +1,74 @@
+## sysplugin
+native_plugins table                         table
+load_native_plugin type                      function
+searcher installed                           true
+require contractplug                         true:table
+native_plugins entry                         table
+native_plugins handle type                   userdata
+native_plugins metatable                     true
+native_plugins mt __gc                       function
+native_plugins mt __name                     NativePlugin
+plugin exports                               add:function call:function fail:function gc_count:function join:function table:function typename:function userdata:function version:function
+add                                          1,integer:42
+add negative                                 1,integer:-2
+add large                                    1,integer:-9223372036854775808
+add strings                                  1,integer:15
+add bad arg                                  ERR
+add missing arg                              ERR
+join                                         1,1|two|3.5|nil|true
+join empty                                   1,
+table                                        1,4,9,v,3
+call ok                                      2,integer:0,integer:42
+call lua error                               true:2:lua boom
+call not a function                          ERR
+fail                                         false:plugin error 42
+lua_version                                  1,float:504.0
+lua_typename                                 1,number 1,string 1,table 1,no value
+userdata __gc ran                            25
+resolver                                     <empty>=false LUA_pushinteger=false api_load_libs=true luaL_checkversion_=true lua_=false lua_pushinteger=true lua_resetthread=true luaopen_base=true no_such_symbol=false
+resolver knows lua_closethread (C: false, Rust: true; see PLAN.md) n/a
+plain luaopen_ fallback                      true
+plain plugin registered                      table
+entrypoint returns 0                         false:entrypoint must return a value
+no entrypoint                                false:Can't find luaopen_emptyplug
+missing file                                 false:message
+load_native_plugin no args                   ERR
+load_native_plugin one arg                   ERR
+load_native_plugin tables                    ERR
+dotted name                                  true:table
+dotted name registered                       table
+second load                                  true:table
+second load add                              1,integer:3
+second copy has its own counter              true
+open_file_dialog returns                     0
+open_file_dialog event                       dialogfinished,11,error,File dialog driver unsupported (...)
+save_file_dialog returns                     0
+save_file_dialog event                       dialogfinished,12,error,File dialog driver unsupported (...)
+open_directory_dialog returns                0
+open_directory_dialog event                  dialogfinished,13,error,File dialog driver unsupported (...)
+dialog with filters                          0
+dialog with filters event                    dialogfinished,14,error,File dialog driver unsupported (...)
+dialog id is arbitrary                       0
+dialog id event                              dialogfinished,123456789,error,File dialog driver unsupported (...)
+dialog bad window                            ERR
+dialog no window                             ERR
+dialog no id                                 ERR
+dialog id not a number                       ERR
+dialog options not a table                   ERR
+dialog filters not tables                    ERR
+dialog filter missing pattern                ERR
+dialog filter name not string                ERR
+dialog title not string                      ERR
+dialog empty options                         0
+dialog empty options event                   dialogfinished,20,error,File dialog driver unsupported (...)
+forged accept, 1 path                        dialogfinished,31,accept,{/tmp/a b.txt}
+forged accept, 3 paths                       dialogfinished,32,accept,{/x/1,/x/2,/x/3}
+forged accept, 0 paths                       dialogfinished,33,accept,{}
+forged accept, unicode                       dialogfinished,34,accept,{/tmp/日本語.txt,/tmp/é}
+forged accept, long path                     dialogfinished,35,accept,{/<3000 bytes>}
+forged cancel                                dialogfinished,36,cancel
+forged error                                 dialogfinished,37,error,something broke
+forged error, empty                          dialogfinished,38,error,
+forged unknown code                          dialogfinished,39,unknown
+forged id 0                                  dialogfinished,0,cancel
+forged id large                              dialogfinished,1099511627776,cancel

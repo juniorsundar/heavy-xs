@@ -1,18 +1,14 @@
 #!/usr/bin/env sh
-# Diffs the Rust window hit-test (rust/src/hit.rs) against the C hit_test() in
-# src/api/system.c over a coordinate grid. It needs no window or display: the C function
-# is compiled verbatim with a stub SDL_GetWindowSize that returns the grid's size.
-# Delete with system.c in W5 step 4 (the C function goes away; the Rust grid stays valuable
-# as a unit test via `rustc --test`).
+# Diffs the Rust window hit-test (rust/src/hit.rs) against the original C hit_test() over a
+# coordinate grid. It needs no window or display: the C function (kept verbatim in
+# fixtures/hit_test_reference.h, copied from the deleted src/api/system.c) is compiled with a
+# stub SDL_GetWindowSize that returns the grid's size.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 
-# Pull hit_test() and its struct out of system.c exactly as written.
-sed -n '/^struct HitTestInfo {/,/^typedef struct HitTestInfo HitTestInfo;/p' "$root/src/api/system.c" > "$tmp/c_body.h"
-sed -n '/^#define RESIZE_FROM_TOP/,/^#define RESIZE_FROM_RIGHT/p' "$root/src/api/system.c" >> "$tmp/c_body.h"
-sed -n '/^static SDL_HitTestResult SDLCALL hit_test/,/^}$/p' "$root/src/api/system.c" >> "$tmp/c_body.h"
+cp "$root/scripts/rust-port/fixtures/hit_test_reference.h" "$tmp/c_body.h"
 
 cat > "$tmp/c_main.c" <<'C'
 #include <stdio.h>
