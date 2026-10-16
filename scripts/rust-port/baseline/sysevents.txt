@@ -1,0 +1,109 @@
+## sysevents
+window pixel size                            400.0x300.0
+poll empty                                   0
+poll empty arity                             0
+quit                                         1,quit
+window MINIMIZED                             1,minimized
+window MAXIMIZED                             1,maximized
+window RESTORED                              1,restored
+window MOUSE_LEAVE                           1,mouseleft
+window FOCUS_LOST                            1,focuslost
+window EXPOSED                               1,exposed
+app WILL_ENTER_BACKGROUND                    1,enteringbackground
+app DID_ENTER_BACKGROUND                     1,enteredbackground
+app WILL_ENTER_FOREGROUND                    1,enteringforeground
+app DID_ENTER_FOREGROUND                     1,enteredforeground
+resized                                      3,resized,integer:123,integer:77
+pixel size after resized                     400.0x300.0
+pixel size changed (swallowed)               0
+display scale changed (swallowed)            0
+focus gained flushes key_down                2,keypressed,tab | 2,keypressed,tab
+focus gained skipped to next                 1,focuslost
+key_down a                                   2,keypressed,a
+key_down A (shifted letter code)             2,keypressed,a
+key_down z                                   2,keypressed,z
+key_down 0                                   2,keypressed,0
+key_down space                               2,keypressed,space
+key_down return                              2,keypressed,return
+key_down escape                              2,keypressed,escape
+key_down tab                                 2,keypressed,tab
+key_down backspace                           2,keypressed,backspace
+key_down delete                              2,keypressed,delete
+key_down F1                                  2,keypressed,f1
+key_down left                                2,keypressed,left
+key_down right                               2,keypressed,right
+key_down lctrl                               2,keypressed,left ctrl
+key_down lshift                              2,keypressed,left shift
+key_down lalt                                2,keypressed,left alt
+key_down lgui                                2,keypressed,left gui
+key_down home                                2,keypressed,home
+key_down pagedown                            2,keypressed,pagedown
+key_down capslock                            2,keypressed,capslock
+key_down printscreen                         2,keypressed,printscreen
+key_down cyrillic                            2,keypressed,a
+key_down greek                               2,keypressed,b
+key_down cjk                                 2,keypressed,c
+key_down punct [                             2,keypressed,[
+key_down punct `                             2,keypressed,`
+key_down punct ~                             2,keypressed,~
+key_down kp memstore                         2,keypressed,keypad memstore
+key_down kp plusminus                        2,keypressed,keypad +/-
+key_down unknown scancode                    2,keypressed,
+key_down zero key                            2,keypressed,
+key_up a                                     2,keyreleased,a
+keypad 00                                    2,keypressed,end || 2,keypressed,keypad 1
+keypad 01                                    2,keypressed,down || 2,keypressed,keypad 2
+keypad 02                                    2,keypressed,pagedown || 2,keypressed,keypad 3
+keypad 03                                    2,keypressed,left || 2,keypressed,keypad 4
+keypad 04                                    2,keypressed, || 2,keypressed,keypad 5
+keypad 05                                    2,keypressed,right || 2,keypressed,keypad 6
+keypad 06                                    2,keypressed,home || 2,keypressed,keypad 7
+keypad 07                                    2,keypressed,up || 2,keypressed,keypad 8
+keypad 08                                    2,keypressed,pageup || 2,keypressed,keypad 9
+keypad 09                                    2,keypressed,ins || 2,keypressed,keypad 0
+keypad 10                                    2,keypressed,delete || 2,keypressed,keypad .
+keypad enter (outside range)                 2,keypressed,keypad enter
+textinput                                    2,textinput,héllo
+textinput empty                              2,textinput,
+textediting                                  4,textediting,ab,integer:1,integer:2
+textediting empty                            4,textediting,,integer:0,integer:0
+mouse_down button 1                          5,mousepressed,left,integer:10,integer:20,integer:2
+mouse_down button 2                          5,mousepressed,middle,integer:10,integer:20,integer:3
+mouse_down button 3                          5,mousepressed,right,integer:10,integer:20,integer:1
+mouse_down button 4                          5,mousepressed,x,integer:10,integer:20,integer:2
+mouse_down button 5                          5,mousepressed,y,integer:10,integer:20,integer:3
+mouse_down button 6                          5,mousepressed,?,integer:10,integer:20,integer:1
+mouse_down button 0                          5,mousepressed,?,integer:10,integer:20,integer:1
+mouse_up                                     4,mousereleased,left,integer:5,integer:6
+mouse_up right                               4,mousereleased,right,integer:5,integer:6
+mouse_motion                                 5,mousemoved,integer:100,integer:50,integer:3,integer:-2
+mouse_motion coalesced                       5,mousemoved,integer:50,integer:25,integer:15,integer:-15
+mouse_motion coalesced leftover              0
+mouse_wheel                                  3,mousewheel,float:-2.5,float:-1.5
+mouse_wheel zero                             3,mousewheel,float:0.0,float:-0.0
+window size (points)                         400x300
+touchpressed                                 4,touchpressed,integer:200,integer:75,integer:7
+touchreleased                                4,touchreleased,integer:300,integer:300,integer:7
+touchmoved                                   6,touchmoved,integer:40,integer:60,integer:20,integer:-15,integer:7
+touchmoved coalesced                         6,touchmoved,integer:160,integer:120,integer:16,integer:24,integer:9
+filedropped                                  4,filedropped,/tmp/some file.txt,integer:0,integer:0
+dirmonitor module present                    true
+registered, no callback                      0
+unknown low type                             0
+user range, nothing registered               0
+high type, nothing registered                0
+ordered queue                                2,textinput,1 | 2,keypressed,a | 1,quit | 2,textinput,2
+filedropped, no window                       4,filedropped,/x,integer:0,integer:0
+resized, no window survives                  true
+wait_event timeout                           1,false
+wait_event timeout elapsed                   true
+wait_event zero                              1,false
+wait_event negative                          1,false
+wait_event with event                        1,true
+wait_event leaves event queued               2,textinput,w
+wait_event no timeout                        1,true
+wait_event string number                     1,true
+wait_event bad arg                           ERR
+wait_event table arg                         ERR
+wait_event nil arg                           ERR
+wait_event extra args                        1,true

@@ -21,11 +21,30 @@ mkdir -p "$share/contract_cases"
 cp "$root/tests/contract/contract.lua" "$share/contract.lua"
 cp "$root"/tests/contract/cases/*.lua "$share/contract_cases/"
 
+# Suites that inject synthetic SDL events need the Rust `test_hooks` feature
+# (rust/src/test_hooks.rs). It is enabled for the run and restored afterwards, so a
+# normal build never ships with it.
+needs_hooks=0
+for s in $(echo "$suites" | tr , ' '); do
+  case $s in sysevents) needs_hooks=1 ;; esac
+done
+prev_features=$(meson introspect "$build" --buildoptions 2>/dev/null | tr ',' '\n' | grep -A1 '"name": "core_features"' | grep -o '"value": "[^"]*"' | head -1 | cut -d'"' -f4 || true)
+if [ "$needs_hooks" = 1 ]; then
+  meson configure "$build" -Dcore_features=test_hooks >/dev/null
+  ninja -C "$build" >/dev/null
+  meson install -C "$build" --destdir "$build/stage" >/dev/null 2>&1
+  trap 'meson configure "$build" -Dcore_features="${prev_features:-}" >/dev/null; ninja -C "$build" >/dev/null' EXIT
+fi
+
 status=0
 for s in $(echo "$suites" | tr , ' '); do
   out=$(mktemp)
   # A crash or non-zero exit must fail the run, not silently truncate the diff.
-  if CONTRACT_SUITES=$s SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-offscreen} \
+  # RECORD=1 on an event suite records the C poll_event/wait_event (the same binary
+  # can run either; see rust/src/system.rs).
+  c_events=
+  if [ "${RECORD:-}" = 1 ] && [ "$s" = sysevents ]; then c_events=1; fi
+  if LXL_TEST_C_EVENTS=${c_events:-} CONTRACT_SUITES=$s SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-offscreen} \
       LITE_PREFIX=$stage LITE_XL_RUNTIME=contract \
       timeout 60 "$build/src/lite-xl" >"$out" 2>&1; then
     rc=0

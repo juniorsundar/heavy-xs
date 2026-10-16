@@ -532,12 +532,26 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
     set!("set_primary_selection", set_primary_selection);
     set!("fuzzy_match", fuzzy_match);
     set!("path_compare", path_compare);
+
+    // Raw lua_CFunctions: poll_event returns 0-6 values and drives C callbacks that push directly.
+    // With test hooks, LXL_TEST_C_EVENTS=1 keeps the C versions so one binary can record the
+    // C baseline and verify the Rust port with the same injected events.
+    #[cfg(feature = "test_hooks")]
+    if std::env::var_os("LXL_TEST_C_EVENTS").is_some_and(|v| !v.is_empty()) {
+        return Ok(());
+    }
+    unsafe {
+        system.raw_set("poll_event", lua.create_c_function(crate::sysevents::poll_event)?)?;
+        system.raw_set("wait_event", lua.create_c_function(crate::sysevents::wait_event)?)?;
+    }
     Ok(())
 }
 
 /// Called from `api_load_libs` after the C `luaopen_system` has run and the
 /// table is registered as the global `system`.
 pub fn install(lua: &Lua) -> LuaResult<()> {
+    #[cfg(feature = "test_hooks")]
+    crate::test_hooks::install(lua)?;
     let system: Table = lua.globals().get("system")?;
     overlay(lua, &system)
 }
