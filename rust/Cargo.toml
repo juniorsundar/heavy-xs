@@ -20,6 +20,8 @@ sdl3-sys = { version = "0.7", default-features = false, features = ["no-link"] }
 [features]
 # Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).
 probe = []
+# Test-only synthetic event injection (rust/src/test_hooks.rs). Never enable in a shipping build.
+test_hooks = []
 
 [profile.release]
 panic = "abort"

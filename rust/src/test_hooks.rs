@@ -1,0 +1,163 @@
+//! Test-only: lets the contract suite inject synthetic SDL events.
+//!
+//! Compiled only with `-Dcore_features=test_hooks`; shipping builds have no
+//! injection surface (a plugin could otherwise forge input). The C baseline for
+//! the `sysevents` suite is recorded with the same feature, so both
+//! implementations receive identical events.
+//!
+//! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
+//! `SDL_PushEvent` and returns whether SDL accepted it.
+
+use std::ffi::{c_void, CString};
+
+use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
+use sdl3_sys::everything as sdl;
+
+extern "C" {
+    fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
+}
+
+fn num(t: &Table, key: &str) -> LuaResult<f64> {
+    Ok(match t.raw_get::<Value>(key)? {
+        Value::Integer(i) => i as f64,
+        Value::Number(n) => n,
+        _ => 0.0,
+    })
+}
+
+/// The SDL window id of a `renwindow` userdata (it holds a `RenWindow **`).
+fn window_id(t: &Table) -> LuaResult<sdl::SDL_WindowID> {
+    match t.raw_get::<Value>("window")? {
+        Value::UserData(ud) => {
+            let ud: AnyUserData = ud;
+            let slot = ud.to_pointer() as *const *mut c_void;
+            let window = unsafe { *slot };
+            Ok(unsafe { sdl::SDL_GetWindowID(ren_get_sdl_window(window)) })
+        }
+        _ => Ok(sdl::SDL_WindowID(0)),
+    }
+}
+
+fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
+    use sdl::SDL_EventType as T;
+
+    let kind: String = spec.raw_get("type")?;
+    let mut e: sdl::SDL_Event = unsafe { std::mem::zeroed() };
+    let text = CString::new(spec.raw_get::<Option<String>>("text")?.unwrap_or_default()).unwrap();
+    let wid = window_id(&spec)?;
+    // SDL queues a copy of the event but not the strings it points to. SDL's own
+    // producers SDL_strdup them and SDL frees them in SDL_CleanupEvent, so do the
+    // same instead of pointing at `text`, which is gone when this function returns.
+    let owned_text = unsafe { sdl::SDL_strdup(text.as_ptr()) };
+
+    unsafe {
+        match kind.as_str() {
+            "quit" => e.r#type = T::QUIT.0,
+            "key_down" | "key_up" => {
+                e.key.r#type = if kind == "key_down" { T::KEY_DOWN } else { T::KEY_UP };
+                e.key.scancode = sdl::SDL_Scancode(num(&spec, "scancode")? as i32);
+                e.key.key = sdl::SDL_Keycode(num(&spec, "key")? as u32);
+                e.key.r#mod = sdl::SDL_Keymod(num(&spec, "mod")? as u16);
+                e.key.down = kind == "key_down";
+            }
+            "text_input" => {
+                e.text.r#type = T::TEXT_INPUT;
+                e.text.text = owned_text;
+            }
+            "text_editing" => {
+                e.edit.r#type = T::TEXT_EDITING;
+                e.edit.text = owned_text;
+                e.edit.start = num(&spec, "start")? as i32;
+                e.edit.length = num(&spec, "length")? as i32;
+            }
+            "mouse_down" | "mouse_up" => {
+                e.button.r#type = if kind == "mouse_down" { T::MOUSE_BUTTON_DOWN } else { T::MOUSE_BUTTON_UP };
+                e.button.windowID = wid;
+                e.button.button = num(&spec, "button")? as u8;
+                e.button.clicks = num(&spec, "clicks")? as u8;
+                e.button.down = kind == "mouse_down";
+                e.button.x = num(&spec, "x")? as f32;
+                e.button.y = num(&spec, "y")? as f32;
+            }
+            "mouse_motion" => {
+                e.motion.r#type = T::MOUSE_MOTION;
+                e.motion.windowID = wid;
+                e.motion.x = num(&spec, "x")? as f32;
+                e.motion.y = num(&spec, "y")? as f32;
+                e.motion.xrel = num(&spec, "xrel")? as f32;
+                e.motion.yrel = num(&spec, "yrel")? as f32;
+            }
+            "mouse_wheel" => {
+                e.wheel.r#type = T::MOUSE_WHEEL;
+                e.wheel.windowID = wid;
+                e.wheel.x = num(&spec, "x")? as f32;
+                e.wheel.y = num(&spec, "y")? as f32;
+            }
+            "finger_down" | "finger_up" | "finger_motion" => {
+                e.tfinger.r#type = match kind.as_str() {
+                    "finger_down" => T::FINGER_DOWN,
+                    "finger_up" => T::FINGER_UP,
+                    _ => T::FINGER_MOTION,
+                };
+                e.tfinger.windowID = wid;
+                e.tfinger.fingerID = sdl::SDL_FingerID(num(&spec, "finger")? as u64);
+                e.tfinger.x = num(&spec, "x")? as f32;
+                e.tfinger.y = num(&spec, "y")? as f32;
+                e.tfinger.dx = num(&spec, "dx")? as f32;
+                e.tfinger.dy = num(&spec, "dy")? as f32;
+            }
+            "drop_file" => {
+                e.drop.r#type = T::DROP_FILE;
+                e.drop.windowID = wid;
+                e.drop.data = owned_text;
+            }
+            "window" => {
+                // Any SDL_EVENT_WINDOW_* by its numeric type, with data1/data2.
+                e.window.r#type = T(num(&spec, "etype")? as u32);
+                e.window.windowID = wid;
+                e.window.data1 = num(&spec, "data1")? as i32;
+                e.window.data2 = num(&spec, "data2")? as i32;
+            }
+            "app" => {
+                // Foreground / background lifecycle events, by numeric type.
+                e.common.r#type = num(&spec, "etype")? as u32;
+            }
+            "other" => e.common.r#type = num(&spec, "etype")? as u32,
+            other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
+        }
+        let pushed = sdl::SDL_PushEvent(&mut e);
+        // Only the three text-carrying kinds hand ownership of the copy to SDL.
+        if !pushed || !matches!(kind.as_str(), "text_input" | "text_editing" | "drop_file") {
+            sdl::SDL_free(owned_text as *mut c_void);
+        }
+        Ok(pushed)
+    }
+}
+
+/// Installs the global `lxl_test` table.
+pub fn install(lua: &Lua) -> LuaResult<()> {
+    let hooks = lua.create_table()?;
+    hooks.raw_set("push_event", lua.create_function(push_event)?)?;
+    for (name, ty) in [
+        ("EVENT_WINDOW_SHOWN", sdl::SDL_EventType::WINDOW_SHOWN),
+        ("EVENT_WINDOW_EXPOSED", sdl::SDL_EventType::WINDOW_EXPOSED),
+        ("EVENT_WINDOW_RESIZED", sdl::SDL_EventType::WINDOW_RESIZED),
+        ("EVENT_WINDOW_MINIMIZED", sdl::SDL_EventType::WINDOW_MINIMIZED),
+        ("EVENT_WINDOW_MAXIMIZED", sdl::SDL_EventType::WINDOW_MAXIMIZED),
+        ("EVENT_WINDOW_RESTORED", sdl::SDL_EventType::WINDOW_RESTORED),
+        ("EVENT_WINDOW_MOUSE_LEAVE", sdl::SDL_EventType::WINDOW_MOUSE_LEAVE),
+        ("EVENT_WINDOW_FOCUS_GAINED", sdl::SDL_EventType::WINDOW_FOCUS_GAINED),
+        ("EVENT_WINDOW_FOCUS_LOST", sdl::SDL_EventType::WINDOW_FOCUS_LOST),
+        ("EVENT_WINDOW_PIXEL_SIZE_CHANGED", sdl::SDL_EventType::WINDOW_PIXEL_SIZE_CHANGED),
+        ("EVENT_WINDOW_DISPLAY_SCALE_CHANGED", sdl::SDL_EventType::WINDOW_DISPLAY_SCALE_CHANGED),
+        ("EVENT_WILL_ENTER_BACKGROUND", sdl::SDL_EventType::WILL_ENTER_BACKGROUND),
+        ("EVENT_DID_ENTER_BACKGROUND", sdl::SDL_EventType::DID_ENTER_BACKGROUND),
+        ("EVENT_WILL_ENTER_FOREGROUND", sdl::SDL_EventType::WILL_ENTER_FOREGROUND),
+        ("EVENT_DID_ENTER_FOREGROUND", sdl::SDL_EventType::DID_ENTER_FOREGROUND),
+        ("EVENT_USER", sdl::SDL_EventType::USER),
+        ("EVENT_TERMINATING", sdl::SDL_EventType::TERMINATING),
+    ] {
+        hooks.raw_set(name, ty.0 as i64)?;
+    }
+    lua.globals().set("lxl_test", hooks)
+}

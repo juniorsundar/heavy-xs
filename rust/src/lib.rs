@@ -6,11 +6,14 @@ mod dirmonitor;
 mod pcre;
 mod process;
 mod system;
+mod sysevents;
 mod unidata;
 mod utf8;
 
 #[cfg(feature = "probe")]
 mod probe;
+#[cfg(feature = "test_hooks")]
+mod test_hooks;
 
 mod regex;
 

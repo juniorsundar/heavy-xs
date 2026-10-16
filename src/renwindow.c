@@ -142,3 +142,22 @@ void renwin_free(RenWindow *ren) {
   SDL_DestroyWindow(ren->window);
   ren->window = NULL;
 }
+
+// Accessors for the Rust core (rust/src/sysevents.rs), so it never has to mirror
+// struct RenWindow, whose layout changes with LITE_USE_SDL_RENDERER.
+float ren_get_scale_x(RenWindow *ren) { return ren->scale_x; }
+float ren_get_scale_y(RenWindow *ren) { return ren->scale_y; }
+SDL_Window *ren_get_sdl_window(RenWindow *ren) { return ren->window; }
+
+// poll_event's reaction to SDL_EVENT_{WILL,DID}_ENTER_FOREGROUND.
+void ren_refresh_after_foreground(void) {
+#ifdef LITE_USE_SDL_RENDERER
+  rencache_invalidate();
+#else
+  RenWindow **window_list;
+  size_t window_count = ren_get_window_list(&window_list);
+  while (window_count) {
+    SDL_UpdateWindowSurface(window_list[--window_count]->window);
+  }
+#endif
+}
