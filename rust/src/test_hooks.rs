@@ -8,7 +8,7 @@
 //! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
 //! `SDL_PushEvent` and returns whether SDL accepted it.
 
-use std::ffi::{c_void, CString};
+use std::ffi::{c_int, c_void, CString};
 
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
 use sdl3_sys::everything as sdl;
@@ -33,6 +33,33 @@ unsafe extern "C" fn tracer(l: *mut mlua::lua_State, e: *mut sdl::SDL_Event) -> 
 /// A callback that returns 0 values, which poll_event must treat as "next event".
 unsafe extern "C" fn silent(_l: *mut mlua::lua_State, _e: *mut sdl::SDL_Event) -> std::ffi::c_int {
     0
+}
+
+#[repr(C)]
+struct RenRectRaw {
+    x: c_int,
+    y: c_int,
+    width: c_int,
+    height: c_int,
+}
+
+extern "C" {
+    /// The dirty rects of the frame just ended. Implemented by rencache (Rust after W6; the C
+    /// version that recorded the baseline is gone).
+    fn rencache_debug_rects(rects: *mut *mut RenRectRaw) -> usize;
+}
+
+/// "x,y,w,h" per dirty rect, in the order rencache_end_frame produced them. Deterministic for a
+/// fixed scene, which is what makes the rencache contract testable at all.
+fn dirty_rects(_: &Lua, _: ()) -> LuaResult<String> {
+    let mut rects: *mut RenRectRaw = std::ptr::null_mut();
+    let count = unsafe { rencache_debug_rects(&mut rects) };
+    let mut out = Vec::new();
+    for i in 0..count {
+        let r = unsafe { &*rects.add(i) };
+        out.push(format!("{},{},{},{}", r.x, r.y, r.width, r.height));
+    }
+    Ok(out.join(" "))
 }
 
 fn custom_register(_: &Lua, (name, kind): (String, String)) -> LuaResult<bool> {
@@ -235,6 +262,7 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
 pub fn install(lua: &Lua) -> LuaResult<()> {
     let hooks = lua.create_table()?;
     hooks.raw_set("push_event", lua.create_function(push_event)?)?;
+    hooks.raw_set("dirty_rects", lua.create_function(dirty_rects)?)?;
     hooks.raw_set("custom_register", lua.create_function(custom_register)?)?;
     hooks.raw_set("custom_push", lua.create_function(custom_push)?)?;
     hooks.raw_set("custom_type", lua.create_function(custom_type)?)?;
