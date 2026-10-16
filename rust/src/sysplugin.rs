@@ -20,6 +20,7 @@ use mlua::ffi::{
 };
 use sdl3_sys::everything as sdl;
 
+use crate::custom_events::{push_custom_event, CustomEvent};
 use crate::plugin_syms::SYMBOLS;
 
 // ----------------------------------------------------------- api_require
@@ -132,16 +133,7 @@ impl Drop for DialogData {
     }
 }
 
-#[repr(C)]
-struct CustomEvent {
-    window_id: u32,
-    code: i32,
-    data1: *mut c_void,
-    data2: *mut c_void,
-}
-
 extern "C" {
-    fn push_custom_event(name: *const c_char, event: *mut CustomEvent) -> bool;
     fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
 }
 

@@ -2,7 +2,7 @@
 //!
 //! Both are raw `lua_CFunction`s rather than mlua callbacks: `poll_event` returns
 //! 0 to 6 values depending on the event, and the custom-event callbacks it
-//! dispatches to (`dialogfinished_callback`, still C) push their results straight
+//! dispatches to (`dialogfinished_callback`, in `sysplugin.rs`) push their results straight
 //! onto the Lua stack. Nothing in here holds a Rust destructor across a call that
 //! can raise a Lua error, so the `longjmp`s Lua uses are safe to cross.
 //!
@@ -23,7 +23,7 @@ use mlua::ffi::{
 };
 use sdl3_sys::everything as sdl;
 
-type CustomEventCallback = Option<unsafe extern "C" fn(*mut lua_State, *mut sdl::SDL_Event) -> c_int>;
+use crate::custom_events::get_custom_event_callback_by_type;
 
 extern "C" {
     fn ren_find_window_from_id(id: sdl::SDL_WindowID) -> *mut c_void;
@@ -33,7 +33,6 @@ extern "C" {
     fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
     fn ren_refresh_after_foreground();
     fn rencache_invalidate();
-    fn get_custom_event_callback_by_type(event_type: u32) -> CustomEventCallback;
 }
 
 const NUMPAD: [&str; 11] = [
