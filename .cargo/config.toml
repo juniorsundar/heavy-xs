@@ -1,0 +1,4 @@
+[env]
+# pcre2-sys otherwise links a system libpcre2-8 when it finds one; the standalone build must not
+# depend on the host's PCRE2 version (matches regex/tokenizer behaviour across machines).
+PCRE2_SYS_STATIC = "1"
