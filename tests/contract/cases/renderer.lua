@@ -92,7 +92,7 @@ return function(rec)
   rec("load size huge", try(load, MONO, 1000))
   rec("load no such file", try(load, "/nonexistent/font.ttf", 14))
   rec("load empty path", try(load, "", 14))
-  rec("load a directory", try(load, base, 14))
+  rec("load a directory", (try(load, base, 14):gsub(base:gsub("(%W)", "%%%1"), "<fonts>/")))
   rec("load not a font", try(load, os.getenv("LITE_PREFIX") .. "/share/lite-xl/core/start.lua", 14))
   rec("load no args", try(load))
   rec("load missing size", try(load, MONO))
@@ -325,5 +325,23 @@ return function(rec)
   rec("draw_text return, empty", renderer.draw_text(mono, "", 3.25, 10, WHITE))
   renderer.end_frame()
 
+  -- Deferred draws must keep temporary fonts/groups alive until replay, then release them.
+  local weak = setmetatable({}, {__mode = "v"})
+  renderer.begin_frame(win)
+  renderer.draw_rect(0, 0, W, H, {0, 0, 0})
+  do
+    local temporary = renderer.font.group({load(FIRA, 14), load(ICONS, 14)})
+    weak[1] = temporary
+    renderer.draw_text(temporary, "GC lifetime", 10, 10, WHITE)
+  end
   collectgarbage()
+  assert(weak[1], "font group collected before replay")
+  renderer.end_frame()
+  assert(tonumber(lxl_test.surface_hash(win, 0, 0, W, H):match("/(%d+)$")) > 0)
+  collectgarbage()
+  assert(not weak[1], "frame font references leaked")
+
+  -- Rust rejects malformed font tables rather than dereferencing a null font.
+  assert(not pcall(renderer.font.get_height, {}))
+  assert(not pcall(renderer.font.get_width, {true}, "x"))
 end

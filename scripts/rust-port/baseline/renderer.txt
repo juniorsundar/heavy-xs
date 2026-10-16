@@ -38,7 +38,7 @@ load negative size                           ok userdata
 load size huge                               ok userdata
 load no such file                            ERR failed to load font: Couldn't open /nonexistent/font.ttf: No such file or directory
 load empty path                              ERR failed to load font: Parameter 'file' is invalid
-load a directory                             ERR failed to load font: /home/juniorsundar/Documents/casual/lite-xl/build/stage/usr/local/share/lite-xl/fonts/ is a directory
+load a directory                             ERR failed to load font: <fonts>/ is a directory
 load not a font                              ERR failed to load font: unknown file format
 load no args                                 ERR bad argument #1 to '?' (string expected, got no value)
 load missing size                            ERR bad argument #2 to '?' (number expected, got no value)

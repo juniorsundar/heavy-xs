@@ -1,9 +1,7 @@
 lite_sources = [
     'api/api.c',
-    'api/renderer.c',
     'api/renwindow.c',
     'arena_allocator.c',
-    'renderer.c',
     'main.c',
 ]
 
@@ -49,13 +47,14 @@ pcre2_dep = dependency('libpcre2-8', fallback: ['pcre2', 'libpcre2_8'],
     default_options: default_fallback_options + ['default_library=static', 'grep=false', 'test=false']
 )
 
+sdl_dep = dependency('sdl3', static: true)
+
+# freetype-rs supplies the bindings, but W7 retains Meson's pinned FreeType for pixel parity.
+# Its bundled 2.13.2 changes hinted glyphs; move build ownership separately in W8.
+# Cargo probes Meson's uninstalled .pc first, so a fallback build needs no system FreeType.
 freetype_dep = dependency('freetype2', fallback: ['freetype2', 'freetype_dep'],
     default_options: default_fallback_options + ['default_library=static', 'zlib=disabled', 'bzip2=disabled', 'png=disabled', 'harfbuzz=disabled', 'brotli=disabled']
 )
-
-
-sdl_dep = dependency('sdl3', static: true)
-
 lite_deps = [lua_dep, sdl_dep, freetype_dep, pcre2_dep, libm, libdl]
 
 # Rust core (docs/rust-port/PLAN.md). cargo owns incremental builds, so always run it.
@@ -71,10 +70,10 @@ rust_lib = custom_target('lite_xl_core',
     output: 'liblite_xl_core.a',
     command: [
         find_program('sh'), '-c',
-        'cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" && cp "$2/$5/liblite_xl_core.a" "$6"',
+        'PKG_CONFIG_PATH="$7${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" && cp "$2/$5/liblite_xl_core.a" "$6"',
         'sh', meson.project_source_root() / 'rust', rust_target_dir,
         rust_profile == 'debug' ? 'dev' : 'release', rust_features,
-        rust_profile, '@OUTPUT@',
+        rust_profile, '@OUTPUT@', meson.project_build_root() / 'meson-uninstalled',
     ],
     console: true,
     build_by_default: true,

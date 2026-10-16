@@ -16,6 +16,9 @@ libc = "0.2"
 # Raw bindings only: C main.c still owns SDL init, the window and the event loop until W8,
 # and Meson links SDL3 itself, so the crate must not link a second copy ("no-link").
 sdl3-sys = { version = "0.7", default-features = false, features = ["no-link"] }
+# Bindings only for W7: the final Meson link supplies its pinned FreeType 2.14.1.
+# Do not enable bundled: the crate vendors 2.13.2, which changes hinted pixels.
+freetype-rs = "0.38"
 
 [features]
 # Dev-only smoke module used to prove the C<->Rust link (see docs/rust-port/PLAN.md W0).
