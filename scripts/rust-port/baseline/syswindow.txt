@@ -1,0 +1,98 @@
+## syswindow
+get_window_size arity                        4
+get_window_size types                        N,integer:N,integer:N,integer:N,integer:N
+get_window_size w,h                          400x300
+get_window_mode                              1,normal
+window_has_focus type                        boolean
+window_has_focus arity                       1
+set_window_mode normal                       0 -> normal
+set_window_mode maximized                    0 -> normal
+set_window_mode minimized                    0 -> normal
+set_window_mode fullscreen                   0 -> fullscreen
+set_window_mode normal                       0 -> normal
+set_window_mode fullscreen                   0 -> fullscreen
+set_window_mode maximized                    0 -> normal
+set_window_mode normal                       0 -> normal
+set_window_mode default                      0
+set_window_mode default ->                   normal
+set_window_mode bad option                   ERR
+set_window_mode number                       ERR
+set_window_mode no window                    ERR
+set_window_mode nil                          ERR
+set_window_mode table                        ERR
+set_window_size                              0
+size after set                               250,180,40,50
+pixel size after set                         250.0x180.0
+set_window_size fractions                    0
+size after fractions                         301,222,10,11
+set_window_size string numbers               0
+size after string numbers                    260,190,20,30
+set_window_size 3 args                       ERR
+set_window_size nil arg                      ERR
+set_window_size bad window                   ERR
+set_window_size negative                     0
+size after negative                          260,190,-5,-5
+set_window_title                             0
+set_window_title unicode                     0
+set_window_title empty                       0
+set_window_title number                      0
+set_window_title nil                         ERR
+set_window_title no args                     ERR
+set_window_bordered true                     0
+set_window_bordered false                    0
+set_window_bordered nil                      0
+set_window_bordered 0                        0
+set_window_bordered none                     0
+raise_window                                 0
+raise_window bad                             ERR
+set_window_opacity 0.5                       1,true
+set_window_opacity 1                         1,true
+set_window_opacity 0                         1,true
+set_window_opacity 7 (out of range)          1,true
+set_window_opacity string                    1,true
+set_window_opacity none                      ERR
+set_window_hit_test set                      0
+set_window_hit_test zeros                    0
+set_window_hit_test floats                   0
+set_window_hit_test clear                    0
+set_window_hit_test 2 args                   ERR
+set_window_hit_test 3 args                   ERR
+set_window_hit_test strings                  0
+set_window_hit_test bad                      ERR
+text_input on                                0
+text_input off                               0
+text_input nil                               0
+text_input none                              0
+text_input bad window                        ERR
+set_text_input_rect                          0
+set_text_input_rect floats                   0
+set_text_input_rect 4 args                   ERR
+set_text_input_rect bad                      ERR
+clear_ime                                    0
+clear_ime bad                                ERR
+set_cursor arrow                             0
+set_cursor ibeam                             0
+set_cursor sizeh                             0
+set_cursor sizev                             0
+set_cursor hand                              0
+set_cursor arrow                             0
+set_cursor hand                              0
+set_cursor default                           0
+set_cursor nil                               0
+set_cursor bad                               ERR
+set_cursor number                            ERR
+set_cursor table                             ERR
+set_cursor 400 times                         ok
+show_fatal_error no args                     ERR
+show_fatal_error one arg                     ERR
+show_fatal_error tables                      ERR
+get_window_size string window                ERR
+get_window_size no window                    ERR
+get_window_mode string window                ERR
+get_window_mode no window                    ERR
+window_has_focus string window               ERR
+window_has_focus no window                   ERR
+raise_window string window                   ERR
+raise_window no window                       ERR
+clear_ime string window                      ERR
+clear_ime no window                          ERR
