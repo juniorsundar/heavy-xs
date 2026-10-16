@@ -1,0 +1,49 @@
+## dirmonitor
+mode                                         multiple
+type(dirmonitor)                             table
+type(new)                                    function
+type(monitor)                                userdata
+tostring prefix                              Dirmonitor
+monitor:mode()                               multiple
+check idle (no watches)                      false
+check returns 1 value                        true|1|false
+watch missing path                           -1.0
+watch a                                      1.0
+watch b                                      2.0
+watch a again                                1.0
+math.type(watch)                             float
+unwatch returns                              true|0
+unwatch nil                                  true|0
+unwatch string                               true|0
+watch no path                                false
+watch number path                            true|1|-1.0
+check quiet                                  false
+create in a: check                           true
+create in a: a reported once                 1
+create in a: b not reported                  nil
+quiet again                                  false
+burst in b: check                            true
+burst in b: deduped to one                   1
+burst in b: a not reported                   nil
+delete: check                                true
+delete: a reported                           1
+move: check                                  true
+move: both dirs reported                     1,1
+callback arg type                            number
+callback error: check                        true
+callback error: handler calls                1
+callback error: message                      boom
+callback error swallowed                     true|1|true
+after unwatch: a not reported                nil
+after unwatch: b still reported              1
+check no args                                false
+check nil callback                           false
+check number callback                        false
+check bad error callback                     false
+check nil error callback                     true|1|false
+check on non-monitor                         false
+watch on non-monitor                         false
+second monitor first id                      1.0
+second monitor idle                          false
+gc joined workers                            ok
+300 monitors all watched                     300
