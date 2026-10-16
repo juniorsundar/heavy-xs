@@ -541,6 +541,15 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
         return Ok(());
     }
     unsafe {
+        use crate::sysplugin as p;
+        for (name, f) in [
+            ("load_native_plugin", p::load_native_plugin as mlua::lua_CFunction),
+            ("open_file_dialog", p::open_file_dialog),
+            ("save_file_dialog", p::save_file_dialog),
+            ("open_directory_dialog", p::open_directory_dialog),
+        ] {
+            system.raw_set(name, lua.create_c_function(f)?)?;
+        }
         use crate::syswindow as w;
         for (name, f) in [
             ("set_cursor", w::set_cursor as mlua::lua_CFunction),

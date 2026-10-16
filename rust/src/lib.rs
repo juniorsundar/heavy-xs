@@ -5,10 +5,12 @@
 mod dirmonitor;
 mod pcre;
 mod hit;
+mod plugin_syms;
 mod process;
 mod system;
 mod syswindow;
 mod sysevents;
+mod sysplugin;
 mod unidata;
 mod utf8;
 
