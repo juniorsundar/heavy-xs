@@ -1,0 +1,86 @@
+## process
+const WAIT_INFINITE                          -2.0
+const WAIT_DEADLINE                          -1.0
+const STREAM_STDIN                           0.0
+const STREAM_STDOUT                          1.0
+const STREAM_STDERR                          2.0
+const REDIRECT_DEFAULT                       -1.0
+const REDIRECT_STDOUT                        1.0
+const REDIRECT_STDERR                        2.0
+const REDIRECT_PARENT                        -3.0
+const REDIRECT_DISCARD                       -2.0
+strerror ENOENT                              No such file or directory
+strerror 0                                   Success
+strerror huge                                true|1|Unknown error 999999
+start is function                            function
+metatable __gc                               function
+echo code                                    0
+echo stdout                                  abc
+echo stdout at EOF                           []
+echo stderr at EOF                           []
+type                                         table
+metatable is wrapper                         true
+pid positive                                 true
+running after exit                           false
+returncode after exit                        true|1|0
+wait after exit                              true|1|0
+read after exit                              true|1|
+exit 7                                       7
+signal exit code                             0
+stderr code                                  0
+stderr out                                   err
+stdout empty when stderr used                
+returncode while running                     true|0
+wait 0 while running                         true|0
+running                                      true
+pid matches                                  true
+write returns count                          1
+close_stream                                 true
+close_stream twice                           true
+cat code                                     0
+cat stdout                                   hello!
+cat stderr at EOF                            []
+read sized 1                                 1234
+read sized 2                                 5678
+read sized 3                                 [90]
+read stdout shorthand                        []
+read size 0                                  true|1|
+read size -1                                 true|0
+read stdin stream                            false
+read bad stream                              false
+stream read one byte                         a
+stream read all                              \nb\n
+stream read at EOF                           true|1|nil
+stream close                                 true
+redirect stdout to stderr                    out
+redirect discard                             []
+redirect discard code                        1
+redirect parent code                         3
+bad stdout option                            false
+bad stdout low                               false
+cwd                                          /tmp\n
+env                                          bar
+env does not replace                         bar unset
+env not a function                           true|1|table
+missing exe                                  false
+string command                               false
+no arguments                                 false
+bad command type                             false
+bad options type                             false
+wait deadline                                true|0
+wait infinite polls                          true|0
+terminate                                    true
+terminate then dead                          true
+terminated returncode                        true|1|0
+kill                                         true
+kill then dead                               true
+interrupt                                    true
+interrupt then dead                          true
+running after term                           false
+pid still readable                           true
+detached running                             true
+detached terminate                           true
+detached dead                                true
+gc terminated child                          true
+victim still alive                           no
+module gc                                    true|0
