@@ -1,0 +1,640 @@
+# Lite XL: porting the C core to Rust
+
+**Status:** planning complete, no implementation started.
+**Repo:** `/home/juniorsundar/Documents/casual/lite-xl` @ `234fa099` (v2.1.7, Lua `MOD_VERSION` 4.0.0).
+**How to use this document:** read §0–§7 once. Then, in each session, read §12 (Progress log) and the current wave in §8, run `scripts/rust-port/verify.sh`, and continue. Append to the ledger and the progress log when you finish or learn something. Do not re-derive the contract — it is recorded in §11 with `file:line` citations.
+
+---
+
+## 0. Decisions already made
+
+| # | Decision | Implication |
+|---|---|---|
+| D1 | **Incremental staticlib.** A Rust `staticlib` crate is linked into the existing Meson/CMake-free C build; `api/*.c` modules are replaced one at a time. | The editor runs after every wave. `main.c` is the last thing to move. |
+| D2 | **Keep the native C plugin ABI** (`lite_xl_plugin_api.h`, `system.load_native_plugin`). | The Rust side must supply a `void *(*)(const char *)` symbol resolver answering the exact `lua_*`/`luaL_*`/`luaopen_*` names. This is the riskiest FFI item (wave W9). |
+| D3 | **Crates where equivalent**, not a 1:1 C-lib port. | `pcre2`, `freetype-rs`, `sdl3` accepted. Two exceptions where the crate is *not* equivalent (see §9 D-1, D-2): regex objects must stay Lua *tables*; `dirmonitor` must keep the `mode()`/watch-id contract that `dirwatch.lua` branches on. |
+| D4 | **Linux first.** | `cfg` stubs + `TODO(W-win)`/`TODO(W-mac)` for Windows/macOS. Windows `utfconv`/overlapped pipes and macOS FSEvents/bundle are out of scope for v1. Emscripten is out of scope. |
+
+Non-negotiable requirements carried from the user: **`data/` (all 19k lines of Lua) must not change**, and third-party Lua plugins must keep working.
+
+---
+
+## 1. Goal, non-goals, definition of done
+
+**Goal.** Replace every `.c` file in `src/` with Rust, preserving the Lua-facing contract byte-for-byte, one module at a time, so that at every commit the editor builds and runs.
+
+**Definition of done (v1, Linux).**
+
+1. `src/` contains no `.c`/`.h` (except what is justified in §9).
+2. `cargo build` produces the `lite-xl` binary; Meson is gone for the Linux target.
+3. `scripts/rust-port/verify.sh` passes: the contract harness output for the Rust build is identical to the recorded C-build baseline.
+4. A manual pass of the app: typing, selection, IME-less text input, find/replace with regex, a `process`-backed command, treeview file watching, theme + font scaling, command palette, restart.
+5. At least one third-party *native* plugin loads and runs (proves D2).
+
+**Non-goals for v1.** Windows, macOS, Emscripten; changing `data/`; changing the rendering API shape; perf work beyond not regressing; new features.
+
+---
+
+## 2. Architecture of the hybrid build
+
+```
+                       lite-xl (C main.c, then Rust main.rs)
+                                 |
+        +------------------------+-------------------------+
+        |                                                  |
+   C modules (shrinking)                          Rust staticlib (growing)
+   src/api/*.c                                    rust/  (crate lite_xl_core)
+   src/renderer.c  rencache.c  renwindow.c                |
+   src/custom_events.c  arena_allocator.c                 |
+        |                                                  |
+        +-------------> one lua_State <--------------------+
+                        (created by C in main.c)
+```
+
+Key property: **both sides speak the same raw `lua_State` ABI.** C calls `api_load_libs(L)` which does `luaL_requiref(L, "regex", luaopen_regex, 1)`. A Rust module compiled with mlua's `module` feature defines exactly `luaopen_regex(state: *mut lua_State) -> c_int` (`#[mlua::lua_module(name = "regex")]` → `luaopen_regex`, see `mlua_derive` `lib.rs:52-53`). **Consequence: `src/api/api.c` does not change at all when a module moves to Rust.** The only C-side edit per wave is deleting one line from `src/meson.build`.
+
+mlua module mode does **not** own or close the state (`Lua::entrypoint1` → `Lua::entrypoint` wraps a foreign pointer); the state stays owned by `main.c` until W8.
+
+---
+
+## 3. Repo layout and build wiring
+
+### 3.1 Layout
+
+```
+rust/
+  Cargo.toml            crate-type = ["staticlib"]
+  Cargo.lock            committed
+  src/
+    lib.rs              module list, shared prelude
+    prelude.rs          LuaError helpers, table/userdata helpers, "0 values" utilities
+    regex.rs            W1
+    dirmonitor.rs       W2   (+ src/dirmonitor/ backends as submodules)
+    custom_events.rs    W2   (not Lua-visible; shared with W5 dialogs)
+    process.rs          W3
+    utf8.rs             W4   (+ unidata.rs generated from src/unidata.h)
+    system.rs           W5
+    rencache.rs         W6
+    renwindow.rs        W6
+    renderer.rs         W7   (+ api-renderer font/userdata layer)
+    plugin_api.rs       W9
+    main.rs             W8 (bin target, added later)
+scripts/
+  rust-port/
+    verify.sh           build + run contract harness on both builds + diff
+    gen-unidata.lua     regenerate rust/src/unidata.rs from src/unidata.h
+    baseline/           recorded C-build contract output (checked in)
+tests/
+  contract/
+    contract.lua        the test runtime module (see §7)
+    cases/*.lua
+docs/rust-port/
+    PLAN.md             this file
+    LEDGER.md           optional: open decisions + findings that must not be lost (§9)
+```
+
+### 3.2 `rust/Cargo.toml`
+
+```toml
+[package]
+name = "lite_xl_core"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "lite_xl_core"
+crate-type = ["staticlib"]
+
+[dependencies]
+mlua = { version = "0.12", features = ["lua54", "module"] }
+libc = "0.2"
+# added per wave:
+# pcre2 = "0.2"        (W1)
+# notify / inotify     (W2, see §9 D-2)
+# freetype-rs = "0.38" (W7)
+
+[profile.release]
+panic = "abort"          # see §4.7
+lto = "thin"
+```
+
+Notes.
+- `mlua 0.12.2` and `mlua_derive 0.11.0` are already in the local cargo registry cache; `sdl3` is **not** (it will be downloaded). If the build must work offline, vendor first.
+- Do **not** enable `vendored`: Lua is provided by the C build (`subprojects/lua-5.4.6` or system Lua). `module` + `vendored` is contradictory.
+- `panic = "abort"` is a deliberate choice: a Rust panic unwinding through the C `lua_pcall` (which `longjmp`s) is UB. Aborting is the safe failure. mlua also catches panics inside callbacks it invokes; the two mechanisms are complementary. Revisit in W8 if abort proves too blunt.
+- `#[mlua::lua_module]` for a state created by `luaL_newstate` may want `skip_memory_check`; see `mlua-0.12.2/src/state.rs:626-645`. Try without first, add if mlua reports memory errors on a foreign state.
+
+### 3.3 Meson wiring (the one thing to get right on day 0)
+
+Add to `src/meson.build`:
+
+```meson
+# ---- Rust core ----
+cargo = find_program('cargo')
+rust_profile = get_option('buildtype') == 'release' ? 'release' : 'debug'
+rust_root = meson.project_source_root() / 'rust'
+rust_target_dir = meson.project_build_root() / 'rust-target'
+
+rust_lib = custom_target('lite_xl_core',
+    output: 'liblite_xl_core.a',
+    # copy it to a known path so meson does not have to guess cargo's layout
+    command: [
+        find_program('sh'), '-c',
+        '( cd ' + rust_root + ' && cargo build --target-dir ' + rust_target_dir +
+        ' --profile ' + rust_profile + ' ) && cp ' + rust_target_dir + '/' + rust_profile +
+        '/liblite_xl_core.a @OUTPUT@',
+    ],
+    console: true,
+    build_by_default: true,
+    # cargo decides what to rebuild; do not let meson skip it by mtime
+    build_always_stale: true,
+)
+lite_deps += declare_dependency(sources: rust_lib)
+lite_link_args += [rust_lib.full_path()]
+```
+
+- `declare_dependency(sources: ...)` is what enforces build order before `executable()` links; passing the absolute `.a` path as a link arg is what actually links it.
+- `cargo` is available in the dev shell via `nix develop` / the system toolchain. `flake.nix`'s `devShells` and `packages.lite-xl` **must** gain `cargo`/`rustc` (see §9 D-5) — the `packages` derivation builds offline in the Nix sandbox, so it needs a vendored cargo registry. Handle this in W8; until then, keep using `nix develop`.
+- The existing build tree (`build/`) already has `wrap_mode=forcefallback` and falls back to `subprojects/`. If the linker complains about duplicate Lua symbols, that means mlua-sys linked its own Lua: that only happens if `vendored` is enabled, so don't enable it.
+
+**Fallback if Meson+cargo proves awkward** (bounded to 1 hour of effort): a `scripts/rust-port/build.sh` wrapper that runs cargo then ninja, and drop the Meson integration entirely. Do not spend more than that; the modules themselves are the work.
+
+### 3.4 Build / run commands (current, must keep working)
+
+```sh
+nix develop
+meson setup build --wrap-mode=forcefallback   # already done in this checkout
+ninja -C build
+meson install -C build --destdir "$PWD/build/stage"
+LITE_PREFIX="$PWD/build/stage/usr/local" ./build/src/lite-xl
+```
+
+`build-dev/` is a second, partial tree; ignore it (it has no `stage/`).
+
+---
+
+## 4. Invariants you must not break
+
+These are the traps that will silently break Lua or plugins. Each has a citation.
+
+1. **Return shapes: `nil` vs zero values.** mlua's `()` (`nil`) is *not* the same as "push nothing".
+   - `system.absolute_path` returns **0 values** on failure, not `nil` (`system.c:654-672`).
+   - `system.get_clipboard`/`get_primary_selection` return **0 values** when empty.
+   - `regex.cmatch` returns **0 values** on no match (`regex.c:182-223`).
+   - `process:returncode()` returns **0 values** while running (`process.c:703-709`).
+   - `process:read` returns `""` at EOF/`EAGAIN`, and **0 values** only on a real read error (`process.c:602-650`). `data/core/process.lua` converts `""`→`nil`; that Lua layer stays.
+   - In mlua, a `MultiValue` built empty reproduces "0 values"; `nil` does not.
+2. **Userdata identity vs tables.** The Lua side checks `type()`.
+   - `Font` is userdata; **a font *group* is a plain Lua table with the `Font` metatable** and a no-op `__gc` (`api/renderer.c:154`, `:198`). A Rust newtype for groups changes `type(font)` to `"userdata"` and breaks `data/core/statusview.lua:308,1243`.
+   - `RenWindow` userdata holds a `RenWindow **` (pointer *to* the pointer, `api/renwindow.c:34`); `_restore` hands out a **second** userdata wrapping the same pointer (`:80`). `__gc` must not free a window that is `== persistant_window` (`:56`).
+   - Compiled regexes are **plain tables** `{[1]=lightuserdata}` whose metatable is the **module table itself** (`regex.c:173`, `:372`), with `regex.__index` installed from Lua (`data/core/regex.lua:2`) so `pattern:gsub(...)` works. Observable via `getmetatable(re)`.
+3. **Metatable names.** `"Font"`, `"Process"`, `"Dirmonitor"`, `"RenWindow"`, `"NativePlugin"` (`api/api.h:8-12`). Anything that does `luaL_checkudata(name)` must keep matching.
+4. **Coordinate spaces.** `system.poll_event` mouse/key coordinates are multiplied by `window->scale_x/scale_y` → **pixels**; `renderer.get_size` and `renwindow:get_size` report **points** (`renderer.c:841`, `system.c:192-247`). Do not "unify" these.
+5. **Time units.** `system.get_time` is **monotonic** seconds (`SDL_GetPerformanceCounter/Frequency`). `process:wait`/`start` `timeout` is **milliseconds** in C but `data/core/process.lua` passes seconds in the coroutine path — preserve the raw C unit.
+6. **Paths and events.** `system.exec` background semantics (POSIX `"<cmd> &"`), `PATHSEP`, and `SDL_EVENT_USER`-relative custom event dispatch order.
+7. **Panics must not unwind into Lua.** See §3.2.
+8. **`get_time` is called 43×, `get_file_info` 31×, `absolute_path` 14× in `data/core`** — these are hot; keep them allocation-light.
+
+---
+
+## 5. Seams: C helpers the Rust side needs
+
+`src/api/system.c` reaches into the `RenWindow` *struct* (`window_renderer->scale_x`, `->scale_y`, `->window`) and calls ren-layer functions. Rather than guess a `#[repr(C)]` layout (which changes with `LITE_USE_SDL_RENDERER`), add three tiny accessors to `src/renwindow.c` + declarations in `src/renderer.h` during **W0** or early **W5**:
+
+```c
+/* renwindow.c */
+float ren_get_scale_x(RenWindow *ren) { return ren->scale_x; }
+float ren_get_scale_y(RenWindow *ren) { return ren->scale_y; }
+SDL_Window *ren_get_sdl_window(RenWindow *ren) { return ren->window; }
+```
+
+Already exported and safe to `extern "C"` from Rust (non-static C functions with declarations in `renderer.h`):
+
+- `ren_init`, `ren_free`, `ren_create`, `ren_destroy`, `ren_resize_window`, `ren_update_rects`,
+- `ren_get_window_list`, `ren_find_window`, `ren_find_window_from_id`, `ren_get_target_window`, `ren_set_target_window`, `ren_get_size`,
+- `rencache_invalidate`, `rencache_begin_frame`, `rencache_end_frame`, `rencache_set_clip_rect`, `rencache_draw_rect`, `rencache_draw_text`, `rencache_show_debug`,
+- `register_custom_event`, `push_custom_event`, `get_custom_event_callback_by_type`, `get_custom_event_name`, `init_custom_events`, `free_custom_events` (`custom_events.h`),
+- `lxl_arena_*` (`arena_allocator.h`), used by `system.c` dialogs and `process.c` env serialisation.
+
+Rule: **when Rust needs a C symbol, declare it in `rust/src/cffi.rs` with the exact C signature. Never re-declare a C struct.** Add an accessor instead.
+
+`rust/src/cffi.rs` will accumulate these; keep it the single place with `extern "C"` declarations.
+
+---
+
+## 6. Day 0 bootstrap checklist (one session, ~2–4h)
+
+- [ ] `cargo init --lib rust` and set `crate-type = ["staticlib"]`; commit `Cargo.lock`.
+- [ ] Add the `#[mlua::lua_module(name = "rust_probe")]` probe module returning `{ ping = function() return "pong" end }`.
+- [ ] Add `rust_probe` to `src/api/api.c`'s `libs[]` table **temporarily**; add the Meson wiring from §3.3.
+- [ ] `ninja -C build` → verify `nm -g build/src/liblite_xl_core.a | grep luaopen_rust_probe` shows a global symbol with `T`.
+- [ ] Run the editor, `:lua print(rust_probe.ping())` → `pong`.
+- [ ] **Remove the probe** from `api.c` (keep the module behind `#[cfg(feature = "probe")]` if useful).
+- [ ] Write `scripts/rust-port/verify.sh` and record the C baseline (§7).
+- [ ] Add `cargo`/`rustc` to `flake.nix` devShell (keep `packages` for later, §9 D-5).
+
+Stop conditions: if the `.a` links but `luaopen_*` is missing → check `#[no_mangle]` and that `module` (not `vendored`) is on. If Lua symbols duplicate → `vendored` got enabled. If Meson refuses to order the build → use the §3.3 fallback wrapper.
+
+---
+
+## 7. Verification harness (build once, use in every wave)
+
+There is **no test suite in this repo** and CI only builds/packages. Verification must be built, not found.
+
+### 7.1 The no-C-changes trick
+
+`main.c:152-190` runs this embedded chunk:
+
+```lua
+dofile(DATADIR/core/start.lua)
+core = require(os.getenv('LITE_XL_RUNTIME') or 'core')
+core.init()
+core.run()
+```
+
+So `LITE_XL_RUNTIME` selects an alternative runtime module, and `start.lua` sets `package.path` from `LITE_PREFIX`/`DATADIR`. Therefore:
+
+```
+tests/contract/contract.lua      # copied into <stage>/share/lite-xl/contract.lua
+LITE_PREFIX=<stage> LITE_XL_RUNTIME=contract ./lite-xl
+```
+
+runs our test module with **zero changes to C or to `data/`**. `contract.lua` must expose `init()`, `run()`, `on_error(err)`.
+
+### 7.2 `tests/contract/contract.lua` shape
+
+```lua
+local M = {}
+function M.init()
+  local out = {}
+  local function rec(k, v) out[#out+1] = ("%-40s %s"):format(k, tostring(v)) end
+  -- deterministic, normalised observations only
+  for _, case in ipairs(require("cases")) do case(rec) end
+  io.stdout:write(table.concat(out, "\n") .. "\n")
+  os.exit(0)
+end
+function M.run() end
+function M.on_error(err) io.stdout:write("HARNESS ERROR: "..tostring(err).."\n"); os.exit(1) end
+return M
+```
+
+### 7.3 Rules for cases
+
+- Only deterministic observations: shapes, types, `getmetatable(x)`, `type(x)`, `select('#', f())`, constant strings, integer offsets.
+- Never print timestamps, pids, absolute temp paths, or font metrics that depend on the system. Normalise with `sed` in `verify.sh` where unavoidable.
+- One case file per wave: `tests/contract/cases/{regex,dirmonitor,process,utf8,system,render}.lua`.
+- Include *negative* cases: `select('#', system.absolute_path("/nonexistent/\0"))`, `regex.cmatch("a","b")`, `process.strerror(2)`, `type(regex.compile("("))`.
+- `verify.sh` must run the C baseline **before** a wave deletes the C file and store it in `scripts/rust-port/baseline/<module>.txt` (checked in). After the wave, the Rust output must match.
+
+### 7.4 `scripts/rust-port/verify.sh` (behaviour)
+
+1. `ninja -C build` (current hybrid state).
+2. `meson install -C build --destdir build/stage`; copy `tests/contract/*` into the stage share dir.
+3. Run with `SDL_VIDEODRIVER=offscreen` (fall back to `xvfb-run -a` if offscreen is flaky — SDL3's offscreen driver is enough for W1–W5, not for W6/W7 rendering).
+4. `diff -u scripts/rust-port/baseline/<wave>.txt <(normalised output)`.
+5. Exit non-zero on any diff or on `HARNESS ERROR`.
+
+Rendering waves (W6/W7) additionally want a screenshot comparison: `system.get_time`-free. Take `SDL_SaveBMP`-style output via `SDL_GetWindowSurface` only in `-Drenderer=false` builds, or simply assert the command buffer is deterministic by exposing a debug hook. Pragmatic approach for v1: render a fixed scene in the contract runtime and hash the resulting dirty-rect list, not pixels.
+
+---
+
+## 8. The waves
+
+Each wave: **goal → Lua-visible contract to preserve → pitfalls → tests → done-when.** Order is chosen so the editor is runnable after each wave and the hardest module (FreeType) comes last.
+
+### W0 — Bootstrap and harness
+Covered in §6/§7. **Deliverable:** Rust `.a` linked into the C build, probe module works, `verify.sh` + C baseline recorded.
+
+---
+
+### W1 — `regex` (386 C lines) — *recommended first real module*
+
+**Goal.** `rust/src/regex.rs` defines `luaopen_regex`; delete `api/regex.c` from `src/meson.build`.
+
+**Contract** (`src/api/regex.c`; wrapper `data/core/regex.lua`):
+- `regex.compile(pattern, options?)` → compiled object, or `nil, errmsg`. `options` is a string containing any of `i` (CASELESS), `m` (MULTILINE), `s` (DOTALL). Always `PCRE2_UTF`; JIT enabled.
+- The compiled object must be a **table** `{ [1] = <pattern handle> }` whose metatable is the `regex` module table; the module table is also stored at `LUA_REGISTRYINDEX["regex"]` (`regex.c:372`) and carries `__gc` (`:363`) which frees via `rawgeti(1)`.
+- `regex.cmatch(pattern|string, str, offset?, options?)` → `2*rc` integers, 1-based byte offsets, whole match first then each group, end = one past last. **0 values** if no match. Negative `offset` → relative to end, clipped (`regex_offset_relative`, `:120-130`). Raises `error()` on PCRE error and on `\K`-in-assertion (`ovector[0] > ovector[1]`).
+- `regex.gmatch(pattern, subject, offset?)` → iterator. **No options arg.** If the pattern has captures, iteration starts at ovector index **2** (skips the whole match); empty captures push their 1-based index instead of a string. Holds the subject alive (`lua_settop(L,2)`).
+- `regex.gsub(pattern, subject, replacement, limit?)` → `result, count`. `limit <= 0` means global via `PCRE2_SUBSTITUTE_GLOBAL`; positive `limit` loops non-global. Uses `PCRE2_SUBSTITUTE_EXTENDED | OVERFLOW_LENGTH` (`$1`, `\` escapes).
+- Constants: `ANCHORED`, `ENDANCHORED` (**currently a bug: it equals `ANCHORED`**), `NOTBOL`, `NOTEOL`, `NOTEMPTY`, `NOTEMPTY_ATSTART` (`:373-384`). Decide §9 D-3.
+- Lua side adds `regex.find`/`regex.match` on top; `find_offsets` subtracts 1 from every *end* delimiter.
+
+**Pitfalls.** Table-with-metatable (not userdata). The `should_free`/`regex_compiled` ownership logic decides per-iterator free vs `__gc` free — mirror it exactly or you leak/double-free. Building a `luaL_checkudata`-style registry reference in a table's field `[1]` means that field is visible to Lua; keep it as lightuserdata.
+
+**Crate choice.** `pcre2 = "0.2"` + `pcre2-sys` links the *system* `libpcre2-8` (good; the C build uses `-DPCRE2_STATIC` with the wrap). If `pcre2-sys` insists on building its own, fall back to raw FFI declarations in `cffi.rs` — it is ~15 functions and total control, and it removes a crate-version risk from the critical path. Prefer raw FFI if in doubt.
+
+**Tests (`cases/regex.lua`).** type/metatable of `compile` output; `select('#', cmatch(...))` for no-match; capture offsets; `gmatch` with and without groups; empty capture → index; `gsub` count with `limit` 0/1/2; `$1` substitution; `compile("(")` → `nil, msg` non-nil; each constant value.
+
+**Done when** `verify.sh` passes with `api/regex.c` deleted and the editor's syntax highlighting, find/replace, and `:find` all still work.
+
+---
+
+### W2 — `dirmonitor` + `custom_events` (175 + 76 + backend, ~330 lines)
+
+**Goal.** `rust/src/dirmonitor.rs` (`luaopen_dirmonitor`) + `rust/src/custom_events.rs`. Delete `api/dirmonitor.c` and (Linux) `api/dirmonitor/inotify.c` from `meson.build`. **Keep `custom_events.c` in C for this wave** and call it through `cffi.rs` — it is shared with `system.c` dialogs and moving it early buys nothing. Move it in W5. (If you do port it here, `system.c` must then call the Rust version through `extern "C"`; that is fine too, but it is extra coupling for no gain.)
+
+**Contract** (`src/api/dirmonitor.c`):
+- Metatable `"Dirmonitor"`, `__index` = itself.
+- `dirmonitor.new()` → userdata (SDL mutex + backend init).
+- `:watch(path)` → integer watch id; starts the single check thread lazily on first watch.
+- `:unwatch(id)` → nothing.
+- `:check(callback, error_callback?)` → `nil` if the monitor was deinited (`length < 0`), `false` if no changes, `true` if changes were translated. Callback receives a **path string** in "multiple" mode or a **watch id number** in "single" mode (`:28-54`). Calls are deduped per `check` via a temp table at stack index 4; callback errors are routed to `error_callback` via `lua_pcall(..., 3)`.
+- `mode()` → `"single"` when `get_mode_dirmonitor() == 1`, else `"multiple"`. **inotify is `"multiple"` (mode 2).**
+- `__gc`: set `length = -1` under the mutex, deinit, join the thread, free.
+- `luaopen_dirmonitor` calls `register_custom_event("dirmonitor", NULL)` and must `luaL_error` if that fails (`:167-169`).
+- Thread: loops while `length >= 0`; calls the blocking `get_changes` **outside** the mutex; assigns under the mutex only if still 0; then `SDL_Delay(1)` + `push_custom_event("dirmonitor")` each iteration to wake the SDL main loop. The registered callback is a no-op, so `data/core/init.lua` never reacts to this event; `dirwatch:check` is polled from a Lua coroutine (`data/core/dirwatch.lua:151-166`).
+- Backend interface: `init_/deinit_/add_/remove_/get_changes_/translate_changes_/get_mode_dirmonitor`. inotify: `poll` on the inotify fd plus a self-pipe; `translate` iterates `struct inotify_event` and calls `cb(wd, NULL)` when `mask & ~IN_IGNORED`; mode 2.
+
+**Pitfalls.** The worker thread must **never touch the Lua state** — it only holds OS handles and pushes an SDL event. mlua's `Lua` is `!Send` by default; keep the thread function free of any `Lua` reference, and communicate through `push_custom_event` (C) or a `Mutex<Vec<...>>`. Reproduce the `volatile int length` memory ordering with an `AtomicI64` + `Mutex` for the payload. `data/core/dirwatch.lua:58-80` depends on `mode() == "single"`/`"multiple"` — see §9 D-2.
+
+**Tests (`cases/dirmonitor.lua`).** `mode()` value; `:watch` returns an integer ≥ 0 for a temp dir; `:check` returns a boolean and `select('#', ...)`; `new()` metatable name; unwatch of an unknown id does not raise.
+
+**Done when** treeview + autoreload still refresh on file creation/deletion.
+
+---
+
+### W3 — `process` (852 C lines; POSIX path only)
+
+**Goal.** `rust/src/process.rs`; delete `api/process.c`.
+
+**Contract** (`src/api/process.c`, wrapper `data/core/process.lua`):
+- `process.start(cmd, opts?)` → `Process` userdata, **or raises** (never `nil, msg`). POSIX requires `cmd` to be a **table of strings** (`luaL_checktype`, `:376`). The Lua wrapper converts a string into `{cmd}` on POSIX and into a quoted command line on Windows, so the table requirement must be kept.
+- `opts`: `detach` (bool), `timeout` (number, **seconds in the Lua path, ms in C**), `stdin`/`stdout`/`stderr` (integers in `[-3, 2]`, else `luaL_error "redirect to handles, FILE* and paths are not supported"`), `env` (**function**), `cwd` (string).
+  - POSIX `env`: the function is called with an empty table and must return one string of `"K=V\0K=V\0\0"`; it is parsed in the child (`:509-521`).
+- Child setup: `setpgid(0,0)` unless `detach`; `setsid()` if `detach`; `dup2`/close for redirections; `execvp`. A control pipe reports `exec` failure back to the parent so `start` can return it.
+- Constants on the module table: `WAIT_INFINITE=-2`, `WAIT_DEADLINE=-1`, `STREAM_STDIN=0`, `STREAM_STDOUT=1`, `STREAM_STDERR=2`, `REDIRECT_DEFAULT=-1`, `REDIRECT_STDOUT=1`, `REDIRECT_STDERR=2`, `REDIRECT_PARENT=-3`, `REDIRECT_DISCARD=-2` (`:844-859`).
+- `process.strerror(errnum)` → string.
+- Methods (metatable `"Process"`, `__tostring` → `"Process"`): `pid()`, `returncode()` (0 values while running), `read(stream, size?)` (stream must be STDOUT/STDERR else `luaL_error`; default `READ_BUF_SIZE=2048`; `""` on EOF/EAGAIN; 0 values only on read error after SIGTERM), `read_stdout(size?)`, `read_stderr(size?)`, `write(data)` → bytes written (0 on `EAGAIN`), `close_stream(stream)`, `wait(timeout?)` → returncode or nothing on timeout (`WAIT_NONE=0` polls once; negative = infinite), `terminate()`/`kill()`/`interrupt()` → `true`, `running()` → bool, `__gc`.
+- `__gc`: SIGTERM if running and not detached; then either sync wait+kill or queue to the kill-list worker.
+- Module-level registry key `"__process_kill_list__"` holds a `process_kill_list_t` owning one SDL thread + mutex + cond (`:30, :86-93`). The module table's metatable `__gc` drains it and joins the thread (`:783-791`). Worker tasks retry every `PROCESS_TERM_DELAY=50ms`: SIGTERM while `tries < 3`, SIGKILL at `tries == 3`, then free.
+- Signals map to `kill(-pid, sig)` (whole process group) on POSIX (`:250-294`).
+
+**Pitfalls.** `wait`'s timeout unit mismatch is load-bearing. `close_stream`/`read` accept unchecked stream indices in C (out-of-bounds); bound them in Rust and note the behaviour change. `env` must be called with an empty table argument, not with the parent environment (POSIX); the Windows path differs. The kill-list worker is a Rust thread that must not hold a `Lua` handle. `read` must not block: set `O_NONBLOCK` on the parent-side pipe fds (`fcntl`) and reproduce the `EAGAIN → ""` behaviour exactly.
+
+**Crate choice.** `std::process::Command` + `CommandExt::pre_exec` for `setpgid`/`setsid`/`dup2` (one `unsafe` block), `as_raw_fd` + `libc::fcntl` for non-blocking reads, `libc::waitpid(..., WNOHANG)`, `libc::kill(-pid, sig)`. The `env` function contract is easier to satisfy with the same `fork`/`exec` shape than with `Command::envs`, but `pre_exec` + `Command::env_clear`/manual `execvp` covers it. Raw `libc::fork` is the fallback if `pre_exec` fights you.
+
+**Tests (`cases/process.lua`).** `select('#', p:returncode())` while sleeping; `p:read_stdout()` content and `""`→nil at EOF via `data/core/process.lua`; `p:wait(1)`; `p:kill()`; `process.strerror(2)`; each constant; `start({})`-style bad args raise.
+
+**Done when** the command palette's process-backed commands and `:lua` file execution still work.
+
+---
+
+### W4 — `utf8extra` (1313 C lines + `unidata.h` 3753 lines)
+
+**Goal.** `rust/src/utf8.rs` + generated `rust/src/unidata.rs`; delete `api/utf8.c`.
+
+**Contract** (`src/api/utf8.c`, upstream starwing/luautf8). Exports: `offset, codes, codepoint, len, sub, reverse, lower, upper, title, fold, byte, char, escape, insert, remove, charpos, next, width, widthindex, ncasecmp, find, gmatch, gsub, match`, plus the field `charpattern`. This is a **Lua-pattern engine over codepoints**, not regex: `string.find`/`gmatch`/`gsub` semantics with `%a %c %d %l %p %s %t %u %x %g %w` classes, `len` returns `nil, pos` on invalid sequences unless lax, and pattern classes come from `unidata.h`.
+
+**Generation, not transcription.** Write `scripts/rust-port/gen-unidata.lua` (or a C dumper) that reads the C tables and emits `rust/src/unidata.rs` with the same `range_table {first,last,step}` / `conv_table {first,last,step,offset}` contents for: `alpha, lower, upper, xdigit, space, unprintable, graph, compose, cntrl, digit, alnum_extend, punct, doublewidth, ambiwidth, tolower, toupper, totitle, tofold`. Add a test that the generated tables' lengths and checksums match the C ones. Width rules: double = 2, ambi = 1 or 2, compose/unprintable = 0, else 1.
+
+**Pitfalls.** `charpattern` must be the same string. Invalid-UTF-8 handling differs per function; port function by function and diff against the C build with the C build still linked (`utf8extra` is used editor-wide via `data/core/utf8string.lua:5`).
+
+**Tests (`cases/utf8.lua`).** `len`/`codepoint`/`offset`/`sub` on ASCII + CJK + invalid sequences; `width` for a double-width char; `find`/`gmatch` with `%a`; `charpattern` equality.
+
+**Done when** `verify.sh` passes and cursor movement over CJK text still feels right.
+
+---
+
+### W5 — `system` (1546 C lines) + `custom_events` + native plugin loader
+
+**Goal.** `rust/src/system.rs` + `rust/src/custom_events.rs` + `rust/src/plugin_api.rs`; delete `api/system.c`, `custom_events.c`.
+
+**Contract.** The full surface is in §11.A and §11.B (≈42 functions + the event tuple table). Highlights and traps:
+- `system` is registered as a **global** and in `package.loaded` (`luaL_requiref(..., 1)`). `luaopen_system` also creates the `NativePlugin` metatable **and** registers the `dialogfinished` custom event — both side effects must survive (`:1537-1543`).
+- Two different "empty" conventions: `nil` (e.g. `get_file_info` failure) vs **0 values** (`absolute_path`, `get_clipboard`).
+- `get_file_info` returns `{size, modified, type, symlink}`; `symlink` is only set when the target is a directory and `lstat` reports a link.
+- `get_fs_type` is `#if __linux__`-gated (note: `#if`, not `#ifdef`) and uses `statfs` magic numbers; elsewhere always `"unknown"`.
+- `exec` runs in the background (`"<cmd> &"` + `system()`).
+- `fuzzy_match(str, ptn, files=false)` is a case-insensitive subsequence match with `score += run*10 - (case mismatch)`, `score -= 10` on a miss, and final `score - strLen*10`; **0 means no match**; `files=true` starts from the end. `data/core/common.lua:161-217` treats `> 0` as a hit.
+- `path_compare(p1, t1, p2, t2)` sorts directories first, compares numeric runs as integers, treats `PATHSEP` as a terminator, ASCII-case-folds, and when lengths are equal puts lowercase first. Used by `data/plugins/treeview.lua`.
+- Window functions take a `RenWindow` userdata as arg 1 and use the §5 accessors for scale. **`window_hit_info` is one global** shared by all windows (last `set_window_hit_test` wins, `:68, :508-511`).
+- The cursor cache (`cursor_cache[SDL_SYSTEM_CURSOR_POINTER+1]`) is never freed.
+- `ftruncate` uses `luaL_checkudata(..., LUA_FILEHANDLE)` and needs Lua ≥ 5.3.
+- Dialogs are async: `open_file_dialog(win, id, opts?)` etc. return nothing and deliver `dialogfinished(id, "accept"|"cancel", ...)` later. `opts` = `{default_location, title, accept_label, cancel_label, allow_many, filters=[{name,pattern}]}`. `:1259` pushes the event; the Lua consumer is `data/core/init.lua:896`.
+- `load_native_plugin(name, path)`: `SDL_LoadObject(path)`; registers a `package.native_plugins[name]` table with a `handle` field and the `NativePlugin` metatable (`__gc` = `SDL_UnloadObject`); looks up `luaopen_lite_xl_<basename>` (basename = after the last `.` in `name`) and calls `entrypoint(L, api_require)`; falls back to `luaopen_<basename>(L)`; errors if neither is found or if the entrypoint returns 0. See W9.
+
+**Also in this wave.** Move `custom_events` to Rust (`register_custom_event` stores name→`{type, callback}` plus `#<base36 type>`→name, idempotent, first registration calls `SDL_RegisterEvents(1)`, property-locked) and delete `arena_allocator.c` in favour of mlua-owned strings for dialog results. `custom_events.h`'s callback type is `int (*)(lua_State *, SDL_Event *)` and is called **on the main thread inside the event loop**, so it can borrow the `Lua` handle — but only through a mechanism that does not create aliasing with the outer `Lua` borrow. Use `Lua::from_ptr`-style borrowing inside the callback or store the state pointer in a thread-local; do not hold a `Lua` across the loop.
+
+**Pitfalls.** This wave is breadth, not depth. Expect 1–2 days of "one more function" only if the file-dialog callbacks and `poll_event` conversion are not done carefully. Do `poll_event` first (it is the hot path and defines the coordinate/return conventions), then the FS functions, then the window functions, then dialogs, then the plugin loader.
+
+**Tests (`cases/system.lua`).** every return-shape gotcha in §4.1; `get_file_info` on a file/dir/symlink/missing; `absolute_path` 0-values failure; `fuzzy_match` score for a known pair; `path_compare` on `{"dir","file","a","b"}` permutations; `list_dir` on a temp dir; `get_sandbox()` string member; `errno`-style messages through `strerror`.
+
+**Done when** `data/core` (130 `system.*` call sites) still works end to end and the contract diff is clean.
+
+---
+
+### W6 — `renwindow` + `rencache` (144 + 349 lines)
+
+**Goal.** `rust/src/renwindow.rs`, `rust/src/rencache.rs`; delete `src/renwindow.c`, `src/rencache.c`. **`src/renderer.c` (FreeType) stays in C and is called through `cffi.rs`.**
+
+**Contract.**
+- Command buffer per window: `{type, size, rect}` header, `alignof(max_align_t)` aligned; types `SET_CLIP`, `DRAW_TEXT`, `DRAW_RECT`; payloads in `rencache.c:45`. Growth rate `1.2` from `CMD_BUF_INIT_SIZE = 512 KiB`; on allocation failure set `resize_issue` and drop commands for the frame.
+- Grid diffing: `CELLS_X=80`, `CELLS_Y=50`, `CELL_SIZE=96`, two static cell buffers swapped per frame, FNV-1a 32-bit (`HASH_INITIAL=2166136261`, prime `16777619`), hash **full command bytes** into every overlapping cell, compare per cell, merge changed cells into dirty rects (`push_rect`), replay all commands per dirty rect, then `ren_update_rects`.
+- `rencache_draw_text` returns `x + width` (points) and pushes a rect with an **unrounded** `x_offset` while `rect_to_grid` rounds elsewhere — preserve the asymmetry.
+- `rencache_draw_rect` drops zero-size and non-overlapping commands; `rencache_set_clip_rect` intersects with the screen rect; text clipping is manual inside the glyph loop (`renderer.c`), not SDL clip.
+- Window: surface mode vs `LITE_USE_SDL_RENDERER` mode; `renwin_update_scale` sets `scale_x/y = surface.w/window_w`; the SDL-renderer path asserts an integer, equal-xy scale.
+- `renwindow._persist()` stores a single global `persistant_window`; `__gc` skips destroying it; `_restore()` returns a new userdata wrapping the same pointer.
+
+**Pitfalls.** `#[repr(C)]` structs are mandatory because the bytes are hashed (`rencache.c:22-70`) — padding differences change the cache-hit behaviour (not correctness, but determinism, which the harness checks). The static cell buffers assume **one window**; keep that assumption and comment it (`shortcut:` comment). Because `rencache` calls the C renderer (`ren_draw_text`, `ren_font_group_get_width`), the Rust side needs those `extern "C"` declarations before W7.
+
+**Tests.** Hash/dirty-rect determinism for a fixed scene (see §7.4): expose a debug flag that prints the dirty rect list per frame, and diff it. Also: `_persist`/`_restore` identity, `__gc` non-destruction, `get_size` in points.
+
+**Done when** the editor renders correctly and the dirty-rect dump is stable across runs and matches the C baseline.
+
+---
+
+### W7 — `renderer` (896 C lines, FreeType) + `api/renderer.c` (434)
+
+**Goal.** `rust/src/renderer.rs` (rasteriser + font userdata); delete `renderer.c` and `api/renderer.c`. This is the hardest and most visual wave — do it with everything else already portable.
+
+**Contract.** §11.C has the full Lua surface; internals:
+- Glyph cache: `CharMap` codepoint→glyphID (`CHARMAP_ROW=128`, sentinel `-1`), `GlyphMap` metrics `[3][128]`, atlases `[2]` with width = glyph width + `FONT_WIDTH_OVERFLOW_PX=9`, surfaces `width × 96*h` bump allocators, glyph formats Grayscale (`INDEX8`) / Subpixel (`RGB24`), surface reuse with a last-100 MIN-waste fit.
+- Load/render options: mono vs `FT_LOAD_TARGET_LIGHT`/`NORMAL`; `FT_LOAD_NO_HINTING` when hinting is none; LCD filter weights `{0x10,0x40,0x70,0x40,0x10}` unless hinting is none; style transforms via `FT_Outline_Embolden`/`FT_Outline_XY`; italic shear; `x_translation = bitmap_idx * (64/3)` for subpixel positioning.
+- Blending: `(color.c*src.c*color.a + dst.c*(65025 - src.c*color.a) + 32767) / 65025`; destination alpha preserved; `alpha == 255` → `SDL_FillSurfaceRect`, else a 1×1 surface blit. Subpixel index = `fmod(pen_x, 1.0) * 3`, computed across the whole string.
+- Font groups: first font with the glyph wins, **whitespace always uses `fonts[0]`**, missing glyph retries box char `0x25A1` (unless the codepoint is that or whitespace). Max 10.
+- Metrics: height, baseline, `underline_thickness = height/14` when absent, `space_advance` from `' '`. `set_size` resets `tab_size` to 2.
+- `_persist`/scale: `ren_font_group_get_width` divides by `fonts[0]->scale` in SDL-renderer mode; `update_font_scale` re-rasterises when the surface scale changes.
+
+**Lua-side traps.** A font **group is a table**, not userdata; `Font:copy` defaults its size to the group **height**, not the size; `-1` sentinels mean "keep original"; the colour table accepts `{r,g,b}` or `{r,g,b,a}` and errors with `table[i]: number expected, got <type>`; `Font.load` errors as `"failed to load font: %s"` with `SDL_GetError()`. `style.lua:38-42` is the main `font.load` caller.
+
+**Crate choice.** `freetype-rs = "0.38"` keeps pixel parity (it is a thin binding over the same FreeType the C build links). Pure-Rust (`swash`, `fontdue`) is rejected for v1: it would change hinting, LCD filtering and glyph metrics, which the whole UI layout depends on.
+
+**Tests.** Rasterisation parity: for a fixed set of (font, size, text, style) render a scene and compare the dirty-rect dump and — if practical — a surface hash. Tab stop math for `tab_offset`. Group fallback: pick a font without CJK and confirm the fallback chain and the `0x25A1` box.
+
+**Done when** the app looks the same; check a screenshot by eye against the C build at the same scale.
+
+---
+
+### W8 — `main` + `api/api.c` + `arena_allocator` + `utfconv` → full Rust binary
+
+**Goal.** `rust/src/main.rs` (a `bin` target) replaces `src/main.c`, `src/api/api.c`, `src/arena_allocator.c`, `src/utfconv.h`; Meson is dropped for Linux; `cargo build` produces `lite-xl`.
+
+**Contract** (`src/main.c:99-230`, `data/core/start.lua:1-43`):
+- Order: `SDL_SetAppMetadata("Lite XL", LITE_PROJECT_VERSION_STR, "com.lite_xl.LiteXL")` → `SDL_Init(SDL_INIT_EVENTS)` → `SDL_SetEventEnabled(DROP_FILE)` → `atexit(SDL_Quit)` → `ren_init()` → `init_custom_events()` → `luaL_newstate` → `luaL_openlibs` → `api_load_libs(L)`.
+- Globals set from C before `start.lua`: `ARGS` (1-based argv table), `PLATFORM` (`SDL_GetPlatform()`), `ARCH` (`LITE_ARCH_TUPLE`), `RESTARTED` (bool), `EXEFILE` (exe path, fallback `argv[0]`), optional `MACOS_RESOURCES`.
+- Embedded chunk semantics: `os.exit` wrapped to default `close=true`; `HOME = os.getenv(LITE_OS_HOME)`; `DATADIR = MACOS_RESOURCES or (prefix .. '/share/lite-xl') or exedir .. '/data'`; `dofile(DATADIR/core/start.lua)`; `require(os.getenv('LITE_XL_RUNTIME') or 'core')`; `core.init()`; `core.run()`.
+- Error path: write `error.txt` (or `USERDIR/error.txt` + `core.on_error`), print `debug.traceback(nil, 2)`, `system.show_fatal_error`, `os.exit(1)`.
+- Restart: if `core.restart_request` is truthy → `lua_close`, `rencache_invalidate()`, `has_restarted = 1`, jump back to state creation. **The Lua state is recreated per restart and the SDL window survives** (`renwindow._persist`). `RESTARTED` must be set correctly across iterations. `autorestart.lua` depends on this.
+- `get_exe_filename` platform logic: Linux `/proc/self/exe` readlink; `SIGPIPE` ignored on POSIX.
+- Defines to carry over: `LITE_PROJECT_VERSION_STR="<ver>"` (version = 2.1.7 + ` (git-<8>)` when not a release build), `LITE_ARCH_TUPLE="<cpu_family>-<system>"`, `LITE_USE_SDL_RENDERER` when the `renderer` option or darwin.
+- `data/core/start.lua` also reads `VERSION` (substituted `@PROJECT_VERSION@`) and `SCALE` (env `LITE_SCALE`/`GDK_SCALE`/`QT_SCALE_FACTOR`).
+
+**Pitfalls.** `atexit(SDL_Quit)` and the restart path interact; the persisted window is never destroyed, by design. `lua_close` must run before `SDL_Quit`. Keep `error.txt` semantics (a stuck `error.txt` is the primary user-facing diagnostic).
+
+**Also in this wave:** the `bin` target means the crate needs a second `crate-type`; do not split into two crates unless it helps. `requirements` for the Nix package: add `cargo`/`rustc`, vendor the registry (§9 D-5).
+
+**Done when** `cargo build --release` produces a working `lite-xl` with no C in the link, and restart still works.
+
+---
+
+### W9 — Native plugin ABI (`resources/include/lite_xl_plugin_api.h`)
+
+**Goal.** `rust/src/plugin_api.rs` implementing `api_require` so `system.load_native_plugin` keeps working (D2).
+
+**Contract** (`src/api/system.c:974-1098`):
+- `XL` is `void *(*)(const char *symbol)`. `api_require` answers a **fixed table** of `lua_*`, `luaL_*`, `luaopen_*` and `"api_load_libs"` names, version-gated by `LUA_VERSION_NUM`, returning `NULL` for anything unknown. The table is built from `P(...)/U(...)/S(...)` macros (43 entries in the 5.4 subset).
+- Entrypoint resolution: `luaopen_lite_xl_<basename>` first, `luaopen_<basename>` fallback; must return non-zero or the loader errors.
+- The plugin header resolves symbols with `IMPORT_SYMBOL` from the `XL` function; other TUs see declarations only.
+
+**Pitfalls.** This is the one place where `unsafe` FFI is unavoidable: the resolver must return real function pointers to the Lua C API. Resist reimplementing Lua's API — resolve against `mlua::ffi`/`mlua_sys` functions, which are the same symbols the linked Lua provides. The symbol table must include everything an existing plugin might use; a missing entry is `NULL` and the plugin will crash. Verify with at least one real plugin (e.g. a small `lite-xl-lsp`-style or a purpose-built test plugin) both the legacy and the XL entrypoint paths.
+
+**Done when** a test `.so` with `luaopen_lite_xl_test(L, XL)` loads via `require` and can call `luaL_newlib`-equivalent functions through `XL`.
+
+---
+
+## 9. Open decisions ledger (append as they settle)
+
+| id | decision | status | recommendation |
+|---|---|---|---|
+| D-1 | Compiled `regex` object as a Lua **table** with the module table as metatable (vs a Rust userdata) | open → unless a Lua file indexes `re[1]`, a userdata is cleaner and lets `regex.__index` be set in Rust | Check `grep -rn 'regex\.compile' data` call sites + `detectindent.lua:104` (which is a *syntax* pattern table, unrelated) before deciding. Default: keep the table, match the C exactly. |
+| D-2 | `dirmonitor` via the `notify` crate vs a direct `inotify` backend | open | **Use inotify directly** (`inotify` crate or `libc`). `notify` is recursive/filter-oriented and cannot express the `mode()` `"single"`/`"multiple"` + watch-id contract that `dirwatch.lua:58-166` branches on. This is the one place where D3's "crate where equivalent" does not apply. |
+| D-3 | `regex.ENDANCHORED` currently equals `ANCHORED` (bug at `regex.c:373-384`) | open | Keep bug-compatible in the port, add a `shortcut:` comment, and note it. Changing it is a behaviour change outside the port's charter. |
+| D-4 | `pcre2` crate vs raw FFI in `cffi.rs` | open | Prefer raw FFI if the crate tries to vendor/build its own PCRE2; the C build already links `libpcre2-8`. |
+| D-5 | `flake.nix`: add `cargo`/`rustc`, vendor the cargo registry for the sandboxed `packages.lite-xl` build | open | Required for W8. `mlua 0.12.2` is cached locally; `sdl3` is not. Either vendor or accept that the Nix package needs network. |
+| D-6 | `panic = "abort"` vs catch-and-`lua_error` at every entrypoint | open | Abort for v1. Revisit if a panic becomes a supportable error path. |
+| D-7 | Keep `custom_events.c` in C for W2 and move it in W5, or move it in W2 | open | Keep in C until W5; it is shared with dialogs and moving it early adds coupling. |
+| D-8 | Does anything need `arena_allocator`? | open | Only `system.c` dialogs and `process.c` env. Replace with mlua-owned `String`s; delete the file in W5. |
+
+## 10. Risk register
+
+| risk | severity | mitigation |
+|---|---|---|
+| Meson + cargo build ordering is fiddly | low | §3.3 recipe + the bounded fallback wrapper; day-0 checkpoint |
+| Rust panic unwinds through C `lua_pcall` (UB) | high | `panic = "abort"`, `catch_unwind` at hand-written entrypoints, mlua's own panic handling |
+| Native plugin ABI (D2) cannot be satisfied | medium | W9 is isolated; if it fails, ship a runtime deprecation for `load_native_plugin` rather than blocking the port |
+| Font rendering paranoia (subpixel/hinting/filter weights) | high | W7 last, `freetype-rs` over pure Rust, visual comparison |
+| No test suite exists | high | Build the harness *first* (§7), baseline the C build before deleting C files |
+| `unidata.h` transcription drift | medium | Generate, don't transcribe; checksum the tables |
+| Multi-window assumptions baked into statics (`cells`, `persistant_window`, `window_hit_info`) | low | Preserve as-is; note with `shortcut:` comments |
+| Rust module needs C statics/structs that change layout | medium | §5 accessor rule; never re-declare a C struct in Rust |
+| Threaded code (dirmonitor, process kill list) sharing a `!Send` `Lua` | medium | Workers never touch Lua; communicate via SDL custom events / mutexes |
+| Long gaps between sessions lose context | medium | This document + the progress log + `verify.sh` as the single entry point |
+
+---
+
+## 11. Reference: the full Lua-visible contract
+
+### 11.A `system` — function list and return shapes
+
+Full details in `src/api/system.c`. `(err)` means the second return value is a message string.
+
+| function | args | returns |
+|---|---|---|
+| `poll_event` | – | event tuple (see §11.B), or 0 values |
+| `wait_event` | `[timeout_seconds]` | boolean |
+| `set_cursor` | `[opt="arrow"]` (`arrow,ibeam,sizeh,sizev,hand`) | – |
+| `set_window_title` | `win, title` | – |
+| `set_window_mode` | `win, [opt="normal"]` (`normal,minimized,maximized,fullscreen`) | – |
+| `get_window_mode` | `win` | string |
+| `set_window_bordered` | `win, bool` | – |
+| `set_window_hit_test` | `win` or `win,title_h,controls_w,resize_border` | – |
+| `get_window_size` | `win` | `w,h,x,y` |
+| `set_window_size` | `win,w,h,x,y` | – |
+| `window_has_focus` | `win` | boolean |
+| `set_text_input_rect` | `win,x,y,w,h` | – |
+| `clear_ime` | `win` | – |
+| `raise_window` | `win` | – |
+| `set_window_opacity` | `win, n` | boolean |
+| `text_input` | `win, bool` | – |
+| `show_fatal_error` | `title, msg` | – |
+| `rmdir` | `path` | `true`, or `false, msg` |
+| `mkdir` | `path` | `true`, or `false, msg` |
+| `chdir` | `path` | – (**raises** on failure) |
+| `list_dir` | `path` | table, or `nil, msg` |
+| `absolute_path` | `path` | string, or **0 values** |
+| `get_file_info` | `path` | `{size, modified, type, symlink?}`, or `nil, msg` |
+| `get_fs_type` | `path` | string (`"unknown"` off Linux) |
+| `ftruncate` | `file*, [len=0]` | `true`, or `false, msg` |
+| `get_clipboard` | – | string, or **0 values** |
+| `set_clipboard` | `text` | – |
+| `get_primary_selection` | – | string, or **0 values** |
+| `set_primary_selection` | `text` | – |
+| `get_process_id` | – | integer |
+| `get_time` | – | monotonic seconds (float) |
+| `sleep` | `seconds` | – |
+| `exec` | `cmd` | – (background) |
+| `fuzzy_match` | `str, ptn, [files=false]` | integer score (0 = no match) |
+| `path_compare` | `p1, t1, p2, t2` | boolean |
+| `setenv` | `key, val` | boolean |
+| `load_native_plugin` | `name, path` | entrypoint result count (**raises** on failure) |
+| `open_file_dialog` / `open_directory_dialog` / `save_file_dialog` | `win, id, [opts]` | – (async → `dialogfinished`) |
+| `get_sandbox` | – | `"none"|"unknown"|"flatpak"|"snap"|"macos"` |
+
+### 11.B `poll_event` tuples (name, then args in this order)
+
+`quit`; `resized(w,h)` (also calls `ren_resize_window`); `exposed` (invalidates rencache); `minimized`; `maximized`; `restored`; `mouseleft`; `focuslost`; `enteringforeground`; `enteredforeground`; `enteringbackground`; `enteredbackground`; `filedropped(path,x,y)`; `keypressed(name)`; `keyreleased(name)`; `textinput(text)`; `textediting(text,start,len)`; `mousepressed(button,x,y,clicks)`; `mousereleased(button,x,y)`; `mousemoved(x,y,dx,dy)`; `mousewheel(y,-x)`; `touchpressed(x,y,id)`; `touchreleased(x,y,id)`; `touchmoved(x,y,dx,dy,id)`; `dialogfinished(id,status[,list])`.
+
+Mouse/key coordinates are scaled to **pixels**. `SDL_EVENT_WINDOW_FOCUS_GAINED` flushes queued `KEY_DOWN` and emits nothing. Events with `type >= SDL_EVENT_USER` dispatch to the registered custom-event callback; a callback returning `0` continues to the next event. Consumers: `data/core/init.lua:930` (`core.step`), `:896` (`dialogfinished`).
+
+### 11.C `renderer` / `renwindow` / fonts
+
+`renderer.show_debug(bool)`, `renderer.get_size()` → `w,h` (**points**), `renderer.begin_frame(win)` (asserts no target window), `renderer.end_frame()`, `renderer.set_clip_rect(x,y,w,h)`, `renderer.draw_rect(x,y,w,h,color?)`, `renderer.draw_text(font|group, text, x, y, color, tab?)` → new pen x.
+
+`renderer.font`: `load(path,size,opts?) → Font` (errors `"failed to load font: %s"`), `Font:copy(size?,opts?)`, `Font.group(table) → FontGroup` (a **table**), `Font:set_tab_size(n)`, `Font:get_tab_size()`, `Font:get_width(text,tab?)`, `Font:get_height()`, `Font:get_size()`, `Font:set_size(size)`, `Font:get_path()` (group → table of strings), `__gc`. Options: `antialiasing` (`none|grayscale|subpixel`), `hinting` (`none|slight|full`), and booleans `italic,bold,underline,smoothing,strikethrough`. Maximum group size 10.
+
+`renwindow.create(title[,w,h])`, `:get_size()` (points), `:_persist()`, `:_restore()`, `__gc`.
+
+Tab tables: `{tab_offset = n}` or a plain number for simple tabs.
+
+### 11.D `process` / `regex` / `dirmonitor`
+
+See W1–W3 in §8; they are complete there.
+
+### 11.E Globals, defines, environment
+
+Set by C: `ARGS`, `PLATFORM`, `ARCH`, `RESTARTED`, `EXEFILE`, `MACOS_RESOURCES` (macOS).
+Set by `data/core/start.lua`: `VERSION` (substituted), `MOD_VERSION_*`, `SCALE`, `PATHSEP`, `EXEDIR`, `DATADIR`, `USERDIR`, `package.path`/`cpath`, `package.native_plugins`, `package.searchers[3]`.
+Defines: `LITE_PROJECT_VERSION_STR`, `LITE_ARCH_TUPLE`, `LITE_USE_SDL_RENDERER`, `PCRE2_STATIC`, `MACOS_USE_BUNDLE`.
+Env vars: `LITE_PREFIX`, `LITE_USERDIR`, `LITE_XL_RUNTIME`, `LITE_SCALE`, `LITE_OS_HOME`, `XDG_CONFIG_HOME`, `GDK_SCALE`, `QT_SCALE_FACTOR`.
+
+### 11.F Build environment (this checkout)
+
+- Meson 1.10.2, Ninja 1.13.2, gcc 15.3.0, pkg-config 0.29.2, all from the Nix dev shell (`nix develop` / direnv). `IN_NIX_SHELL=impure`.
+- System libs available: SDL3 3.4.14, freetype 2.6.20 `.pc` version 26.6.20, libpcre2-8 10.47. Lua has **no** `.pc` file — that is why `src/meson.build:22-38` has the `use_system_lua` special case.
+- The existing `build/` tree uses the `subprojects/` wraps (`lua-5.4.6`, `freetype-2.14.1`, `pcre2-10.44`). `build-dev/` is stale; ignore it.
+- `rustc`/`cargo` 1.97.1 are on PATH outside the dev shell too.
+- There is **no test suite**; `.github/workflows/build.yml` only builds and packages.
+
+---
+
+## 12. Progress log (append-only)
+
+| date | wave | state | notes / next action |
+|---|---|---|---|
+| — | planning | done | This document. Decisions D1–D4 from the user; D-1..D-8 open in §9. |
+| 2026-10-16 | W0 | **done** | Added `rust/` (staticlib, `mlua 0.12` `lua54`+`module`, feature `probe`), Meson wiring in `src/meson.build`, option `core_features`, `tests/contract/` + `scripts/rust-port/verify.sh`, smoke baseline, `cargo`/`rustc` in the flake devShell. Probe verified end to end (`rust_probe.ping()` → `pong`) then removed from `api.c`; `api.c` is unchanged. **Next: W1 (`regex`).** Findings below. |
+
+**W0 findings (these supersede the snippets in §3.3 / §7.4 where they differ):**
+- Meson reserves the `rust_` option prefix → option is `core_features` (`meson configure build -Dcore_features=probe`).
+- Meson links a `custom_target` `.a` by itself when it is passed as `declare_dependency(sources:)`; do **not** also add its path to `link_args` (duplicate, wrong relative path). Only `-lpthread -ldl -lm` are added.
+- Use `cargo build --manifest-path`, not `cd rust && …`, otherwise the relative `@OUTPUT@` in `cp` is wrong.
+- `build_always_stale: true` means cargo runs every `ninja`; it is a no-op when nothing changed (~0.02s).
+- `-Wl,--whole-archive` was **not** needed: each `luaopen_*` is referenced from `api.c`, so the linker pulls its object in. A module with no reference in `api.c` (like the probe) needs a one-line `api.c` registration to be reachable.
+- mlua resolved to `0.12.2` / `mlua-sys 0.13`; it built offline from the local registry cache.
+- Headless runs: `SDL_VIDEODRIVER=offscreen` works for the contract runtime. For the real editor use `LITE_USERDIR=<empty dir>` — the maintainer's `~/.config/lite-xl` has plugins (`lintplus`, `lsp`) that crash headless and are unrelated to the port.
+- Harness is installed beside the data dir (`contract.lua`, `contract_cases/`), selected by `LITE_XL_RUNTIME=contract` and `CONTRACT_SUITES=<name>`. `verify.sh` fails (exit 1) on baseline mismatch — checked with a deliberately wrong baseline.
+- **Known breakage:** `nix build .#lite-xl` (the sandboxed `packages` derivation) will now fail because `cargo` is not in its `nativeBuildInputs` and the sandbox has no network. Tracked as D-5; only `nix develop` + `ninja` works until then.
+
+When a wave lands, record: files added/deleted, `verify.sh` result, anything that surprised you, and the next wave to pick up.

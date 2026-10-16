@@ -1,0 +1,11 @@
+## smoke
+type(system)                                 table
+type(renderer)                               table
+type(renwindow)                              table
+type(regex)                                  table
+type(process)                                table
+type(dirmonitor)                             table
+type(utf8extra)                              table
+PLATFORM                                     Linux
+type(ARGS)                                   table
+rust_probe.ping()                            absent

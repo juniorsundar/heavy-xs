@@ -65,6 +65,24 @@ sdl_dep = dependency('sdl3', static: true)
 
 lite_deps = [lua_dep, sdl_dep, freetype_dep, pcre2_dep, libm, libdl]
 
+# Rust core (docs/rust-port/PLAN.md). cargo owns incremental builds, so always run it.
+rust_profile = get_option('buildtype') == 'release' ? 'release' : 'debug'
+rust_target_dir = meson.project_build_root() / 'rust-target'
+rust_lib = custom_target('lite_xl_core',
+    output: 'liblite_xl_core.a',
+    command: [
+        find_program('sh'), '-c',
+        'cargo build --manifest-path "$1/Cargo.toml" --target-dir "$2" --profile "$3" --features "$4" && cp "$2/$5/liblite_xl_core.a" "$6"',
+        'sh', meson.project_source_root() / 'rust', rust_target_dir,
+        rust_profile == 'debug' ? 'dev' : 'release', get_option('core_features'),
+        rust_profile, '@OUTPUT@',
+    ],
+    console: true,
+    build_by_default: true,
+    build_always_stale: true,
+)
+lite_deps += declare_dependency(sources: rust_lib, link_args: ['-lpthread', '-ldl', '-lm'])
+
 lite_sources += 'api/dirmonitor.c'
 # dirmonitor backend
 if get_option('dirmonitor_backend') == ''
