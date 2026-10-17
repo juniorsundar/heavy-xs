@@ -594,6 +594,18 @@ Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`widt
 
 **Lesson for any port to mlua.** A `&mut self` userdata method that can be called while the same object is already borrowed (a `&self` method that calls back into Lua) turns a harmless C re-entrancy into a runtime error. Audited: no other userdata method runs a Lua callback (`process` never calls Lua; `utf8` callbacks and the `env` function are not methods on userdata). A nested `check` inside `check` is deliberately not pinned: the C re-reads the same unconsumed buffer, the Rust takes it first; nothing calls it that way.
 
+### Upstream bug fixed on this branch — `common.fuzzy_match` with table items
+
+**Symptom** (real use, typing with the `lsp` plugin): `core/common.lua:156: attempt to compare two table values`, from `autocomplete.lua:364`.
+
+**Not a port bug.** It reproduces on pristine upstream `234fa099`. `fuzzy_match_items` sorted `{ text = item, score = ... }` records with `a.text < b.text` as the tie-break; autocomplete's items are tables (`{ text, info }` with `__tostring`, no `__lt`), so the first two suggestions with equal scores raised. Plain strings were unaffected.
+
+**This is a deliberate behaviour change in `data/`**, the first one on this branch (until now `data/` was byte-identical to upstream). The records now carry `key = tostring(item)` and tie-break on that. String items sort exactly as before.
+
+**Tests.** New `fuzzy` suite (`tests/contract/cases/fuzzy.lua`, 17 observations). Its string rows were recorded from the unmodified upstream build and are unchanged by the fix; the object rows crash on upstream (`ERR`) and are recorded from the fixed code, where they equal the string behaviour. With the fix reverted the suite fails (exit 2); with it, passes. End to end: typing into a real `DocView` with the real `autocomplete` plugin raises on the old `common.lua` and not on the new.
+
+**Consequence for the baselines:** the Rust build now intentionally differs from upstream on this one function. Any future comparison against an upstream binary should expect the `objects, ...` rows to differ.
+
 ### W3 — `process` (done)
 
 `rust/src/process.rs` (raw `libc` fork/exec, not `std::process`) replaces `src/api/process.c`; `api.c` unchanged. Adds the `libc` dependency.
