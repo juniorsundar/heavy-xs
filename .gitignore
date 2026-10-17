@@ -26,3 +26,4 @@ LiteXL*
 /.pi/subagents
 rust/target/
 result
+.serena/*
