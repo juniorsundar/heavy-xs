@@ -1,0 +1,18 @@
+## fuzzy
+strings, equal scores                        abc,abd,abe
+strings, distinct scores                     abc,a_b_c,axbxc
+strings, no match                            
+strings, empty needle                        a,b,c
+strings, files mode                          main.c,src/main.c,docs/main.md
+strings, empty list                          
+strings, duplicates                          ab,ab,ab
+objects, equal scores                        abc,abd,abe
+objects, distinct scores                     abc,a_b_c,axbxc
+objects, no match                            
+objects, empty needle                        a,b,c
+objects, duplicate text                      ab,ab,ab
+objects, many equal                          v1,v2,v3,v5,v7,v9
+objects keep identity                        true
+objects keep fields                          normal
+mixed                                        abc,abd,abe
+200 tied objects                             200 true sym_000 sym_199

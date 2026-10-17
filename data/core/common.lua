@@ -151,9 +151,12 @@ function common.splice(t, at, remove, insert)
 end
 
 
+-- Ties are broken on `key`, the string form of the item. The items themselves may be tables
+-- (autocomplete passes `{ text = ..., info = ... }` objects with a `__tostring`), and two tables
+-- cannot be compared with `<`.
 local function compare_score(a, b)
   if a.score == b.score then
-    return a.text < b.text
+    return a.key < b.key
   end
   return a.score > b.score
 end
@@ -162,9 +165,10 @@ local function fuzzy_match_items(items, needle, files)
   local res = {}
   needle = (PLATFORM == "Windows" and files) and needle:gsub('/', PATHSEP) or needle
   for _, item in ipairs(items) do
-    local score = system.fuzzy_match(tostring(item), needle, files)
+    local key = tostring(item)
+    local score = system.fuzzy_match(key, needle, files)
     if score then
-      table.insert(res, { text = item, score = score })
+      table.insert(res, { text = item, key = key, score = score })
     end
   end
   table.sort(res, compare_score)
