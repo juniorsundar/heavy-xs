@@ -2,3 +2,12 @@
 # pcre2-sys otherwise links a system libpcre2-8 when it finds one; the standalone build must not
 # depend on the host's PCRE2 version (matches regex/tokenizer behaviour across machines).
 PCRE2_SYS_STATIC = "1"
+
+# The vendored Lua is built with LUA_COMPAT_5_3 (math.pow, __le via __lt, ...) and, in debug
+# builds, LUA_USE_APICHECK. The Meson build (and so every released Lite XL) has neither, so
+# plugins must not be able to depend on them. cc-rs appends CFLAGS after the crate's own -D flags,
+# so the -U wins. `force` because an ambient CFLAGS would otherwise silently replace this (and
+# drop the fix); the `pluginapi` contract suite fails if it ever does not apply.
+# NOTE: cargo reads this file from the *current directory* upwards, not from --manifest-path,
+# so build from inside the repo (scripts/rust-port/verify.sh does).
+CFLAGS = { value = "-ULUA_COMPAT_5_3 -ULUA_USE_APICHECK", force = true }

@@ -5,3 +5,4 @@
 winlib/*  linguist-vendored
 src/lib/* linguist-vendored
 resources/icons/icon.inl linguist-vendored
+scripts/rust-port/baseline/*.txt -whitespace
