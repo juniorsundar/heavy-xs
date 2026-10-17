@@ -21,6 +21,8 @@ done
 features=
 [ "$needs_hooks" = 1 ] && features="--features test_hooks"
 
+# Cargo reads .cargo/config.toml (CFLAGS for the vendored Lua) from the current directory.
+cd "$root"
 # shellcheck disable=SC2086
 cargo build --manifest-path "$root/rust/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} $features >&2
 
