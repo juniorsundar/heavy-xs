@@ -156,6 +156,33 @@ return function(rec)
   rec("callback error swallowed", swallowed)
   settle(m)
 
+  -- Re-entrancy: dirwatch (data/core/dirwatch.lua) calls unwatch() and watch() on the monitor
+  -- from inside the check callback, to re-arm a watch on a file that changed. This must work.
+  touch(ROOT .. "/a/rearm.txt")
+  local rearm = {}
+  local t1 = system.get_time()
+  repeat
+    m:check(function(id)
+      if known[id] and not rearm.done then
+        rearm.done = true
+        rearm.unwatch = status(m.unwatch, m, id)
+        rearm.watch = status(m.watch, m, ROOT .. "/b")
+        rearm.mode = status(m.mode, m)
+      end
+    end)
+  until rearm.done or system.get_time() - t1 > 3
+  rec("reentrant: callback ran", tostring(rearm.done))
+  rec("reentrant: unwatch", (tostring(rearm.unwatch):gsub("%d+%.%d+", "<id>")))
+  rec("reentrant: watch", (tostring(rearm.watch):gsub("%d+%.%d+", "<id>")))
+  rec("reentrant: mode", tostring(rearm.mode))
+  -- A `check` from inside the callback is deliberately not recorded: the C re-reads the same
+  -- unconsumed buffer (recursively), the Rust takes it first. Nothing calls check re-entrantly.
+  settle(m)
+  -- unwatch removed wa's watch in the callback; restore it for the steps below.
+  wa = m:watch(ROOT .. "/a")
+  known[wa] = true
+  settle(m)
+
   -- After unwatch the directory stays silent.
   m:unwatch(wa)
   settle(m)

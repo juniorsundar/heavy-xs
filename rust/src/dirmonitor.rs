@@ -164,7 +164,11 @@ struct Shared {
 
 struct DirMonitor {
     shared: Arc<Shared>,
-    thread: Option<JoinHandle<()>>,
+    /// The worker, started by the first `watch`. A `Mutex` rather than `&mut self`: `watch` must
+    /// stay a shared-borrow method, because `dirwatch.lua` calls `unwatch`/`watch` on the monitor
+    /// from inside the `check` callback, and an exclusive borrow would fail while `check` holds
+    /// its shared one ("error mutably borrowing userdata").
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 /// `dirmonitor_check_thread`.
@@ -201,7 +205,7 @@ impl DirMonitor {
                 state: Mutex::new(State { length: 0, buffer: Vec::new() }),
                 backend: Backend::new(),
             }),
-            thread: None,
+            thread: Mutex::new(None),
         }
     }
 }
@@ -212,7 +216,7 @@ impl Drop for DirMonitor {
     fn drop(&mut self) {
         self.shared.state.lock().unwrap().length = -1;
         self.shared.backend.wake();
-        if let Some(thread) = self.thread.take() {
+        if let Some(thread) = self.thread.get_mut().unwrap().take() {
             let _ = thread.join();
         }
         // The worker held the only other reference and has exited.
@@ -246,7 +250,7 @@ impl UserData for DirMonitor {
     }
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
-        methods.add_method_mut("watch", |lua, this, args: Variadic<Value>| {
+        methods.add_method("watch", |lua, this, args: Variadic<Value>| {
             let path = match args.first() {
                 Some(v) => lua
                     .coerce_string(v.clone())?
@@ -261,9 +265,10 @@ impl UserData for DirMonitor {
             let id = this.shared.backend.add(&path);
 
             // The worker starts on the first watch, whether or not it succeeded.
-            if this.thread.is_none() {
+            let mut thread = this.thread.lock().unwrap();
+            if thread.is_none() {
                 let shared = Arc::clone(&this.shared);
-                this.thread = thread::Builder::new()
+                *thread = thread::Builder::new()
                     .name("dirmonitor_check_thread".into())
                     .spawn(move || check_thread(shared))
                     .ok();
