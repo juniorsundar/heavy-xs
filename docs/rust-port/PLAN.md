@@ -584,6 +584,16 @@ Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`widt
 
 **Deviations (accepted):** error values are mlua userdata, not C strings (message text matches for most paths; the suites record status only). `to_utf8`/`lua_tolstring` on a non-string in `lower`/`width` was not exercised for exotic types beyond number/string.
 
+### W2 follow-up — `dirmonitor` re-entrancy bug (found by a user, fixed)
+
+**Symptom** (real use, `autoreload`): `core/dirwatch.lua:146: bad argument 'self' to 'DirMonitor.watch': error mutably borrowing userdata`.
+
+**Cause.** `dirwatch:check` calls `self:unwatch(path)` and `self:watch(path)` **from inside the `check` callback** (to re-arm a watch on a changed file). In mlua, `check` is a `&self` method and holds a shared borrow of the userdata while it calls Lua; `watch` was a `&mut self` method (it stored the worker's `JoinHandle`), so the nested call could not take the exclusive borrow. The C has no borrow checker and does not care. The contract suite never made that call from inside a callback, so it passed.
+
+**Fix.** The worker handle is now `Mutex<Option<JoinHandle>>` and `watch` is a `&self` method. `tests/contract/cases/dirmonitor.lua` gained a re-entrancy case (`unwatch`, `watch`, `mode` from inside the callback), the baseline re-recorded from pristine upstream (3 identical runs); reverting the fix makes the suite fail (`watch` → `false`). End to end, `dirwatch` re-arming a changed file: 6/6 changes and 0 errors, vs 1 change and 1 error on the previous binary.
+
+**Lesson for any port to mlua.** A `&mut self` userdata method that can be called while the same object is already borrowed (a `&self` method that calls back into Lua) turns a harmless C re-entrancy into a runtime error. Audited: no other userdata method runs a Lua callback (`process` never calls Lua; `utf8` callbacks and the `env` function are not methods on userdata). A nested `check` inside `check` is deliberately not pinned: the C re-reads the same unconsumed buffer, the Rust takes it first; nothing calls it that way.
+
 ### W3 — `process` (done)
 
 `rust/src/process.rs` (raw `libc` fork/exec, not `std::process`) replaces `src/api/process.c`; `api.c` unchanged. Adds the `libc` dependency.
