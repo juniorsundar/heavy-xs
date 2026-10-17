@@ -34,6 +34,10 @@ callback error: check                        true
 callback error: handler calls                1
 callback error: message                      boom
 callback error swallowed                     true|1|true
+reentrant: callback ran                      true
+reentrant: unwatch                           true|0
+reentrant: watch                             true|1|<id>
+reentrant: mode                              true|1|multiple
 after unwatch: a not reported                nil
 after unwatch: b still reported              1
 check no args                                false
