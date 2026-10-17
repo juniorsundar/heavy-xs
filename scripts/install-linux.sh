@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
-# Installs a Cargo-built lite-xl on Linux; replaces `meson install` for the standalone build.
+# Installs a Cargo-built lite-xl on Linux.
 #   scripts/install-linux.sh BINARY [DESTDIR] [PREFIX]      (PREFIX default /usr/local)
-# Layout matches meson.build: bin/, share/lite-xl/{core,plugins,colors,fonts,...}, desktop file,
+# Layout matches upstream's meson install: bin/, share/lite-xl/{core,plugins,colors,fonts,...}, desktop file,
 # metainfo, icon and licenses.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
@@ -30,7 +30,7 @@ install -Dm644 "$root/licenses/licenses.md" "$root_out/share/doc/lite-xl/license
 install -Dm644 "$root/resources/icons/lite-xl.svg" "$root_out/share/icons/hicolor/scalable/apps/lite-xl.svg"
 install -Dm644 "$root/resources/linux/com.lite_xl.LiteXL.desktop" "$root_out/share/applications/com.lite_xl.LiteXL.desktop"
 
-# <releases> from the version tags, as meson.build builds it (v1.0x tags and pre-releases skipped).
+# <releases> from the version tags, as upstream's meson.build did (v1.0x tags and pre-releases skipped).
 releases=$(git -C "$root" tag -l --sort=-version:refname --format='%(refname:strip=2) %(creatordate:short)' 2>/dev/null |
   awk '$1 ~ /^v/ && $1 !~ /-/ && $1 !~ /^v1\.0/ && NF == 2 { printf "<release version=\"%s\" date=\"%s\" />\n", $1, $2 }' || true)
 if [ -n "$releases" ]; then releases="<releases>

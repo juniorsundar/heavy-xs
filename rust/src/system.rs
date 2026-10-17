@@ -1,7 +1,7 @@
 //! `system`: ported piecemeal from `src/api/system.c`.
 //!
 //! `luaopen_system` builds the module table, creates the `NativePlugin` metatable and registers
-//! the `dialogfinished` custom event. `src/api/api.c` registers it like any other library
+//! the `dialogfinished` custom event. `app::api_load_libs` registers it like any other library
 //! (`luaL_requiref(..., global = 1)`), so `system` is both a global and in `package.loaded`.
 //!
 //! The port landed as an overlay of Rust functions on the C table, one group at a time, so the

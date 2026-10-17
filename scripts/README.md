@@ -1,28 +1,20 @@
 # Scripts
 
-Various scripts and configurations used to configure, build, and package Lite XL.
+Various scripts and configurations used to build, install and test Lite XL (Linux only).
 
-### Build
+### Build and install
 
-- **build.sh**:             Runs meson in a standard way across platforms.
+- **install-linux.sh**:          Installs a Cargo-built `lite-xl` with its data files.
 
-### Package
+### Testing (`rust-port/`)
 
-- **package-appdmg.sh**:    Create a macOS DMG image using [dmgbuild][1].
-- **package-appimage.sh**:  [AppImage][2] builder.
-- **package-innosetup.sh**: Creates a 32/64 bit [InnoSetup][3] installer package.
+- **verify.sh**:                 Builds the editor and diffs each contract suite against its baseline.
+- **startup-check.sh**:          Checks startup globals, the restart loop, exit codes and `error.txt`.
+- **hit-test-check.sh**:         Compares the Rust window hit-test with the original C one.
+- **gen-plugin-syms.lua**:       Regenerates `rust/src/plugin_syms.rs` from the native plugin API header.
 
 ### Utility
 
-- **common.sh**:                 Common functions used by other scripts.
-- **install-dependencies.sh**:   Installs required applications to build, package
-                                 and run Lite XL, mainly useful for CI and documentation purpose.
-                                 Preferably not to be used in user systems.
 - **fontello-config.json**:      Used by the icons generator.
 - **generate_header.sh**:        Generates a header file for native plugin API
 - **keymap-generator**:          Generates a JSON file containing the keymap
-- **generate-release-notes.sh**: Generates a release note for Lite XL releases.
-
-[1]: https://github.com/dmgbuild/dmgbuild
-[2]: https://docs.appimage.org/
-[3]: https://jrsoftware.org/isinfo.php

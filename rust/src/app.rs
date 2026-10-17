@@ -1,9 +1,4 @@
 //! `src/main.c` and `src/api/api.c`: process startup, the Lua state, and the restart loop.
-//!
-//! Linux only for now; other platforms keep the Meson build (see docs/rust-port/PLAN.md W8).
-
-#[cfg(not(target_os = "linux"))]
-compile_error!("the standalone build is Linux-only; use the Meson build on this platform");
 
 use std::ffi::{c_int, CStr};
 use std::os::unix::ffi::{OsStrExt, OsStringExt};

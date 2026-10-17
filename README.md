@@ -45,103 +45,34 @@ These color themes are bundled with all releases of Lite XL by default.
 
 ## Quick Build Guide
 
-To compile Lite XL yourself, you must have the following dependencies installed
-via your desired package manager, or manually.
+This branch builds on **Linux only**, with Cargo. The C core has been ported to Rust
+(`rust/`, see [docs/rust-port/PLAN.md](docs/rust-port/PLAN.md)); macOS and Windows support
+was removed with the Meson build.
 
 ### Prerequisites
 
-- Meson (>=0.63)
-- Ninja
-- SDL2
-- PCRE2
-- FreeType2
-- Lua 5.4
-- A working C compiler (GCC / Clang / MSVC)
+- Rust (stable) and Cargo
+- A C compiler (Cargo builds the vendored Lua 5.4, PCRE2 and FreeType)
+- SDL3, found through `pkg-config`
+- `pkg-config`
 
-SDL2, PCRE2, FreeType2 and Lua will be downloaded by Meson
-if `--wrap-mode=forcefallback` or `--wrap-mode=default` is specified.
-
-> [!NOTE]
-> MSVC is used in the CI, but MSVC-compiled binaries are not distributed officially
-> or tested extensively for bugs.
-
-On Linux, you may install the following dependencies for the SDL2 X11 and/or Wayland backend to work properly:
-
-- `libX11-devel`
-- `libXi-devel`
-- `libXcursor-devel`
-- `libxkbcommon-devel`
-- `libXrandr-devel`
-- `wayland-devel`
-- `wayland-protocols-devel`
-- `dbus-devel`
-- `ibus-devel`
-
-The following command can be used to install the dependencies in Ubuntu:
-
-```sh
-apt-get install python3.8 python3-pip build-essential git cmake wayland-protocols libsdl2-dev
-pip3 install meson ninja
-```
-
-Please refer to [lite-xl-build-box] for a working Linux build environment used to package official Lite XL releases.
-
-On macOS, you must install bash via Brew, as the default bash version on macOS is antiquated
-and may not run the build script correctly.
+With Nix, `nix develop` provides all of these, and `nix build .#lite-xl` builds the package.
 
 ### Building
 
-You can use `scripts/build.sh` to set up Lite XL and build it.
+Run from the repository root, since Cargo reads `.cargo/config.toml` from the current directory:
 
 ```sh
-$ bash build.sh --help
-# Usage: scripts/build.sh <OPTIONS>
-# 
-# Available options:
-# 
-# -b --builddir DIRNAME         Sets the name of the build directory (not path).
-#                               Default: 'build-x86_64-linux'.
-#    --debug                    Debug this script.
-# -f --forcefallback            Force to build dependencies statically.
-# -h --help                     Show this help and exit.
-# -d --debug-build              Builds a debug build.
-# -p --prefix PREFIX            Install directory prefix. Default: '/'.
-# -B --bundle                   Create an App bundle (macOS only)
-# -A --addons                   Add in addons
-# -P --portable                 Create a portable binary package.
-# -r --reconfigure              Tries to reuse the meson build directory, if possible.
-#                               Default: Deletes the build directory and recreates it.
-# -O --pgo                      Use profile guided optimizations (pgo).
-#                               macOS: disabled when used with --bundle,
-#                               Windows: Implicit being the only option.
-#    --cross-platform PLATFORM  Cross compile for this platform.
-#                               The script will find the appropriate
-#                               cross file in 'resources/cross'.
-#    --cross-arch ARCH          Cross compile for this architecture.
-#                               The script will find the appropriate
-#                               cross file in 'resources/cross'.
-#    --cross-file CROSS_FILE    Cross compile with the given cross file.
+cargo build --release --manifest-path rust/Cargo.toml
+LITE_RELEASE=1 scripts/install-linux.sh rust/target/release/lite-xl "$(pwd)/stage"
+LITE_PREFIX="$(pwd)/stage/usr/local" ./stage/usr/local/bin/lite-xl
 ```
 
-Alternatively, you can use the following commands to customize the build:
+`scripts/install-linux.sh BINARY [DESTDIR] [PREFIX]` installs the binary, the `data/`
+directory, the desktop file, metainfo, icon and licenses (PREFIX defaults to `/usr/local`).
+Without `LITE_RELEASE=1` the version string carries the git commit.
 
-```sh
-meson setup --buildtype=release --prefix <prefix> build
-meson compile -C build
-DESTDIR="$(pwd)/lite-xl" meson install --skip-subprojects -C build
-```
-
-where `<prefix>` might be one of `/`, `/usr` or `/opt`, the default is `/`.
-To build a bundle application on macOS:
-
-```sh
-meson setup --buildtype=release --Dbundle=true --prefix / build
-meson compile -C build
-DESTDIR="$(pwd)/Lite XL.app" meson install --skip-subprojects -C build
-```
-
-Please note that the package is relocatable to any prefix and the option prefix
-affects only the place where the application is actually installed.
+`scripts/rust-port/verify.sh` builds the editor and runs the contract suites.
 
 ## Installing Prebuilt
 
