@@ -42,11 +42,11 @@ If you want to work with two distinct installations of Lite XL (the stable versi
 ```
 # Assuming you have all the dependencies installed (or are inside `nix develop`).
 cd lite-xl
-cargo build --release --manifest-path rust/Cargo.toml
+cargo build --release
 
 INSTALL_DIR=$HOME/.local
 # Installs the development version under ${INSTALL_DIR}/lite-xl-dev
-scripts/install-linux.sh rust/target/release/lite-xl "${INSTALL_DIR}" /lite-xl-dev
+scripts/install-linux.sh target/release/lite-xl "${INSTALL_DIR}" /lite-xl-dev
 
 # A convenient alias to run the dev version with a dedicated config directory, 
 # to not conflict with the default one ($HOME/.config/lite-xl)

@@ -46,15 +46,13 @@
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in rec {
           # Cargo builds Lua and FreeType itself (all from crates.io, pinned by
-          # rust/Cargo.lock, so the sandboxed build needs no network) and links the system SDL3.
+          # Cargo.lock, so the sandboxed build needs no network) and links the system SDL3.
           lite-xl = pkgs.rustPlatform.buildRustPackage rec {
             pname = "lite-xl";
             version = "2.1.7";
             src = self;
 
-            cargoRoot = "rust";
-            buildAndTestSubdir = "rust";
-            cargoLock.lockFile = ./rust/Cargo.lock;
+            cargoLock.lockFile = ./Cargo.lock;
             # The contract suites need a display driver and the staged data dir;
             # scripts/rust-port/verify.sh runs them outside the sandbox.
             doCheck = false;
@@ -84,9 +82,9 @@
 
       # Interactive shell for hacking on the source.
       #   nix develop
-      #   cargo build --manifest-path rust/Cargo.toml
-      #   scripts/install-linux.sh rust/target/debug/lite-xl $(pwd)/rust/target/stage
-      #   LITE_PREFIX=$(pwd)/rust/target/stage/usr/local rust/target/debug/lite-xl
+      #   cargo build
+      #   scripts/install-linux.sh target/debug/lite-xl $(pwd)/target/stage
+      #   LITE_PREFIX=$(pwd)/target/stage/usr/local target/debug/lite-xl
       devShells = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in {
           default = pkgs.mkShell {
@@ -111,9 +109,9 @@
 
             shellHook = ''
               echo "lite-xl dev shell"
-              echo "  cargo build --manifest-path rust/Cargo.toml"
-              echo "  scripts/install-linux.sh rust/target/debug/lite-xl \$(pwd)/rust/target/stage"
-              echo "  LITE_PREFIX=\$(pwd)/rust/target/stage/usr/local rust/target/debug/lite-xl"
+              echo "  cargo build"
+              echo "  scripts/install-linux.sh target/debug/lite-xl \$(pwd)/target/stage"
+              echo "  LITE_PREFIX=\$(pwd)/target/stage/usr/local target/debug/lite-xl"
               echo "  scripts/rust-port/verify.sh                   # build + contract suites"
             '';
           };

@@ -24,7 +24,7 @@ freetype-rs = { version = "0.38", features = ["bundled"] }
 fancy-regex = "=0.19.2"
 
 [features]
-# Test-only synthetic event injection (rust/src/test_hooks.rs). Never enable in a shipping build.
+# Test-only synthetic event injection (src/test_hooks.rs). Never enable in a shipping build.
 test_hooks = []
 # LITE_USE_SDL_RENDERER: the window draws into a texture through an SDL_Renderer instead of the
 # window surface.

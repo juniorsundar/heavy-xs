@@ -11,7 +11,7 @@ Various scripts and configurations used to build, install and test Lite XL (Linu
 - **verify.sh**:                 Builds the editor and diffs each contract suite against its baseline.
 - **startup-check.sh**:          Checks startup globals, the restart loop, exit codes and `error.txt`.
 - **hit-test-check.sh**:         Compares the Rust window hit-test with the original C one.
-- **gen-plugin-syms.lua**:       Regenerates `rust/src/plugin_syms.rs` from the native plugin API header.
+- **gen-plugin-syms.lua**:       Regenerates `src/plugin_syms.rs` from the native plugin API header.
 
 ### Utility
 

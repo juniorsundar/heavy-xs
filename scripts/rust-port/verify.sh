@@ -3,17 +3,17 @@
 #   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: every suite with a baseline)
 #   RECORD=1 scripts/rust-port/verify.sh suite      (re)record the baseline for each suite
 # Environment: CARGO_ARGS (extra cargo flags, e.g. "--release" or "--features sdl_renderer"),
-# TARGET_DIR (cargo target dir; default rust/target, use another one per configuration).
+# TARGET_DIR (cargo target dir; default target, use another one per configuration).
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-target=${TARGET_DIR:-$root/rust/target}
+target=${TARGET_DIR:-$root/target}
 case " ${CARGO_ARGS:-} " in *" --release "*) profile=release ;; *) profile=debug ;; esac
 bin=$target/$profile/lite-xl
 stage=${STAGE_DIR:-$target/stage}/usr/local
 suites=${1:-$(ls "$root/scripts/rust-port/baseline" 2>/dev/null | sed "s/\.txt$//" | tr "\n" "," | sed "s/,$//")}
 
 # Suites that inject synthetic SDL events need the Rust `test_hooks` feature
-# (rust/src/test_hooks.rs). It is enabled only for those runs, so a normal build never ships it.
+# (src/test_hooks.rs). It is enabled only for those runs, so a normal build never ships it.
 needs_hooks=0
 for s in $(echo "$suites" | tr , ' '); do
   case $s in sysevents|syswindow|sysplugin|customevents|rencache|renderer|restart) needs_hooks=1 ;; esac
@@ -24,9 +24,9 @@ features=
 # Cargo reads .cargo/config.toml (CFLAGS for the vendored Lua) from the current directory.
 cd "$root"
 # shellcheck disable=SC2086
-cargo build --manifest-path "$root/rust/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} $features >&2
+cargo build --manifest-path "$root/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} $features >&2
 
-# A release binary carries no "(git-xxxx)" suffix (rust/build.rs), so its start.lua must not either.
+# A release binary carries no "(git-xxxx)" suffix (build.rs), so its start.lua must not either.
 release=; [ "$profile" = release ] && release=1
 LITE_RELEASE=$release "$root/scripts/install-linux.sh" "$bin" "$target/stage" /usr/local >/dev/null
 # Install the harness next to the data dir so `require` finds it without
@@ -41,7 +41,7 @@ for s in $(echo "$suites" | tr , ' '); do
   out=$(mktemp)
   # A crash or non-zero exit must fail the run, not silently truncate the diff.
   # RECORD=1 on an event suite records the C poll_event/wait_event (the same binary
-  # can run either; see rust/src/system.rs).
+  # can run either; see src/system.rs).
   c_events=
   if [ "${RECORD:-}" = 1 ]; then case $s in sysevents|syswindow|sysplugin|customevents) c_events=1 ;; esac; fi
   # Never let a suite open a real dialog on the developer's desktop: no session bus (the

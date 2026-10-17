@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Diffs the Rust window hit-test (rust/src/hit.rs) against the original C hit_test() over a
+# Diffs the Rust window hit-test (src/hit.rs) against the original C hit_test() over a
 # coordinate grid. It needs no window or display: the C function (kept verbatim in
 # fixtures/hit_test_reference.h, copied from the deleted src/api/system.c) is compiled with a
 # stub SDL_GetWindowSize that returns the grid's size.
@@ -34,7 +34,7 @@ C
 cc -O1 -w -I"$tmp" $(pkg-config --cflags sdl3) "$tmp/c_main.c" -o "$tmp/c_grid"
 "$tmp/c_grid" > "$tmp/c.txt"
 
-rustc --edition 2021 --test "$root/rust/src/hit.rs" -o "$tmp/r_test" 2>/dev/null
+rustc --edition 2021 --test "$root/src/hit.rs" -o "$tmp/r_test" 2>/dev/null
 "$tmp/r_test" --nocapture --test-threads 1 2>/dev/null | sed 's/^test grid::print_grid ... //' | grep -E '^[0-9-]+ [0-9-]+ [0-9-]+ [0-9-]+ [0-9-]+ [0-9-]+ [0-9-]+ [0-9-]+$' > "$tmp/r.txt"
 
 lines=$(wc -l < "$tmp/c.txt")

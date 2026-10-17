@@ -46,7 +46,7 @@ These color themes are bundled with all releases of Lite XL by default.
 ## Quick Build Guide
 
 This branch builds on **Linux only**, with Cargo. The C core has been ported to Rust
-(`rust/`, see [docs/rust-port/PLAN.md](docs/rust-port/PLAN.md)); macOS and Windows support
+(crate at the repository root, see [docs/rust-port/PLAN.md](docs/rust-port/PLAN.md)); macOS and Windows support
 was removed with the Meson build.
 
 Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, replacements and migration notes](docs/regex.md) before reusing saved PCRE2 expressions.
@@ -65,8 +65,8 @@ With Nix, `nix develop` provides all of these, and `nix build .#lite-xl` builds 
 Run from the repository root, since Cargo reads `.cargo/config.toml` from the current directory:
 
 ```sh
-cargo build --release --manifest-path rust/Cargo.toml
-LITE_RELEASE=1 scripts/install-linux.sh rust/target/release/lite-xl "$(pwd)/stage"
+cargo build --release
+LITE_RELEASE=1 scripts/install-linux.sh target/release/lite-xl "$(pwd)/stage"
 LITE_PREFIX="$(pwd)/stage/usr/local" ./stage/usr/local/bin/lite-xl
 ```
 
