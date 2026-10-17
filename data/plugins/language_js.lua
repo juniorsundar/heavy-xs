@@ -9,7 +9,7 @@ local syntax = require "core.syntax"
 -- (?>...) this is using an atomic group to minimize backtracking, as that'd
 --         cause "Catastrophic Backtracking" in some cases.
 --
--- [^\\[\/]++ will match anything that's isn't an escape, a start of character
+-- [^\\\[\/]++ will match anything that's isn't an escape, a start of character
 --           class or an end of pattern, without backtracking (the second +).
 --
 -- \\. will match anything that's escaped.
@@ -23,7 +23,7 @@ local syntax = require "core.syntax"
 -- Demo with some unit tests (click on the Unit Tests entry): https://regex101.com/r/Vx5L5V/1
 -- Note that it has a couple of changes to make it work on that platform.
 local regex_pattern = {
-  [=[\/(?=(?!\/)(?:(?>[^\\[\/]++|\\.|\[(?:[^\\\]]++|\\.)*+\])*+)++\/[gmiyuvsd]*\s*(?:[\n,;\)\]\}\.]|\/[\/*]))()]=],
+  [=[\/(?=(?!\/)(?:(?>[^\\\[\/]++|\\.|\[(?:[^\\\]]++|\\.)*+\])*+)++\/[gmiyuvsd]*\s*(?:[\n,;\)\]\}\.]|\/[\/*]))()]=],
   "/()[gmiyuvsd]*", "\\"
 }
 

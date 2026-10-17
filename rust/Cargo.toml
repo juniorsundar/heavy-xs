@@ -13,15 +13,15 @@ name = "lite_xl_core"
 name = "lite-xl"
 path = "src/main.rs"
 
-# Linux only. Cargo builds Lua 5.4 (mlua vendored), PCRE2 (pcre2-sys, forced static by
-# .cargo/config.toml) and FreeType 2.13.2 (bundled), and links the system SDL3 via pkg-config.
+# Linux only. Cargo builds Lua 5.4 (mlua vendored) and FreeType 2.13.2 (bundled),
+# and links the system SDL3 via pkg-config.
 [dependencies]
 mlua = { version = "0.12", default-features = false, features = ["lua54", "vendored"] }
 # Raw POSIX calls for the process module (fork/exec, pipes, waitpid, signals).
 libc = "0.2"
 sdl3-sys = { version = "0.7", default-features = false, features = ["use-pkg-config"] }
 freetype-rs = { version = "0.38", features = ["bundled"] }
-pcre2-sys = "0.2"
+fancy-regex = "=0.19.2"
 
 [features]
 # Test-only synthetic event injection (rust/src/test_hooks.rs). Never enable in a shipping build.

@@ -1,8 +1,4 @@
 [env]
-# pcre2-sys otherwise links a system libpcre2-8 when it finds one; the build must not
-# depend on the host's PCRE2 version (matches regex/tokenizer behaviour across machines).
-PCRE2_SYS_STATIC = "1"
-
 # The vendored Lua is built with LUA_COMPAT_5_3 (math.pow, __le via __lt, ...) and, in debug
 # builds, LUA_USE_APICHECK. Upstream's Meson build (and so every released Lite XL) has neither, so
 # plugins must not be able to depend on them. cc-rs appends CFLAGS after the crate's own -D flags,

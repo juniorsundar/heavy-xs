@@ -222,9 +222,10 @@ function tokenizer.tokenize(incoming_syntax, text, state, resume)
       end
     end
 
-    if p.regex and type(p.regex) ~= "table" then
-      p._regex = p._regex or regex.compile(p.regex)
-      code = p._regex
+    if p.regex then
+      p._regex = p._regex or {}
+      p._regex[p_idx] = p._regex[p_idx] or regex.compile(code)
+      code = p._regex[p_idx]
     end
 
     repeat

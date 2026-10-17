@@ -1,6 +1,6 @@
 //! Rust port of the Lite XL C core. Each module exports `luaopen_<name>`; `app::api_load_libs`
 //! registers them, and `app::run` is the editor's `main` (`src/main.rs`).
-//! Linux only: Cargo builds Lua, PCRE2 and FreeType and links the system SDL3.
+//! Linux only: Cargo builds Lua and FreeType and links the system SDL3.
 
 #[cfg(not(target_os = "linux"))]
 compile_error!("Lite XL is Linux-only");
@@ -14,7 +14,6 @@ mod rencache;
 mod renwindow;
 mod renwindow_api;
 mod dirmonitor;
-mod pcre;
 mod hit;
 mod plugin_syms;
 mod process;
@@ -29,10 +28,6 @@ mod utf8;
 mod test_hooks;
 
 mod regex;
-
-// Nothing references pcre2-sys' items (rust/src/pcre.rs declares its own externs), so link it
-// explicitly.
-extern crate pcre2_sys;
 
 use mlua::prelude::*;
 

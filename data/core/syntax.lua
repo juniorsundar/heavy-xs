@@ -44,7 +44,10 @@ function syntax.add(t)
       if type(p) == "table" then
         for j = 1, 2 do
           ok, err = check_pattern(pattern.pattern and "pattern" or "regex", p[j])
-          if not ok then name = string.format("#%d:%d <%s>", i, j, p[j]) end
+          if not ok then
+            name = string.format("#%d:%d <%s>", i, j, p[j])
+            break
+          end
         end
       elseif type(p) == "string" then
         ok, err = check_pattern(pattern.pattern and "pattern" or "regex", p)
