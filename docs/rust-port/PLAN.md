@@ -608,6 +608,18 @@ Correctness first; nothing here is per-frame hot except `sub`/`len`/`find`/`widt
 
 **Not verifiable here:** that nothing outside this repo (packagers, CI forks) relies on the deleted scripts.
 
+### Upstream bug fixed on this branch — quitting updates and draws with no project
+
+**Symptom** (real use, Ctrl-C in the terminal): `plugins/lintplus/init.lua:479: attempt to index a nil value` in `DocView:get_gutter_width`, written to `error.txt`. Earlier reports of the same family: `lintplus/init.lua:107` and `lsp/init.lua:2308`, which were patched in the plugins one call site at a time.
+
+**Not a port bug.** SIGINT becomes SDL's `quit` event; `core.quit` → `core.exit(force)` removes every project, sets `quit_request`, and `core.step` then goes on to update and draw the UI in the same step before `core.run` sees the request. Any plugin that calls `core.root_project()` during update/draw raises. `data/` was identical to upstream `234fa099` here, so upstream has the same bug (reproduced there in the earlier quit investigation).
+
+**Fix (second deliberate change in `data/`):** `core.step` returns right after handling events when `quit_request` or `restart_request` is set. That frame would never be shown anyway, because `core.run` stops after this step. This fixes every plugin at once instead of guarding the 37 unguarded `core.root_project():` calls in the user's plugins.
+
+**Test:** `startup-check.sh` gained a quit case: a real SIGINT to a running editor with a doc open, `RootView.update/draw` instrumented to report being called without a project. With the old `core.step` it reports 2 such calls; with the fix 0, and the editor exits 0. With the user's own config, 3/3 Ctrl-C runs left `error.txt` on the old code and none on the new.
+
+**Harness pitfall found on the way:** a non-interactive shell starts background jobs with SIGINT *ignored* (`SigIgn` bit 2), and the editor inherits that, so a scripted `kill -INT` was silently ignored and the run only ended at the timeout. That looked like an exit hang but is not one: with `env --default-signal=INT` (what a terminal gives you) the editor exits in ~65 ms. The check starts the editor that way.
+
 ### Upstream bug fixed on this branch — `common.fuzzy_match` with table items
 
 **Symptom** (real use, typing with the `lsp` plugin): `core/common.lua:156: attempt to compare two table values`, from `autocomplete.lua:364`.

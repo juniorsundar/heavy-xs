@@ -944,6 +944,10 @@ function core.step()
     core.redraw = true
   end
 
+  -- Quitting has already removed every project (core.exit), and core.run stops after this step.
+  -- Updating or drawing now would run plugins that assume core.root_project() exists.
+  if core.quit_request or core.restart_request then return false end
+
   local width, height = core.window:get_size()
 
   -- update
