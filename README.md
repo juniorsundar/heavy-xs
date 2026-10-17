@@ -49,10 +49,12 @@ This branch builds on **Linux only**, with Cargo. The C core has been ported to 
 (`rust/`, see [docs/rust-port/PLAN.md](docs/rust-port/PLAN.md)); macOS and Windows support
 was removed with the Meson build.
 
+Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, replacements and migration notes](docs/regex.md) before reusing saved PCRE2 expressions.
+
 ### Prerequisites
 
 - Rust (stable) and Cargo
-- A C compiler (Cargo builds the vendored Lua 5.4, PCRE2 and FreeType)
+- A C compiler (Cargo builds the vendored Lua 5.4 and FreeType)
 - SDL3, found through `pkg-config`
 - `pkg-config`
 

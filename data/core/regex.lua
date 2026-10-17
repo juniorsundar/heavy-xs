@@ -11,21 +11,22 @@ regex.__index = function(table, key) return regex[key]; end
 ---@param pattern string|table The regex pattern to use, either as a simple string or precompiled.
 ---@param str string The string to search for valid matches.
 ---@param offset? integer The position on the subject to start searching.
----@param options? integer A bit field of matching options, eg: regex.NOTBOL | regex.NOTEMPTY
+---@param options? integer 0 or regex.ANCHORED (ENDANCHORED is an alias).
 ---
 ---@return integer? start Offset where the first match was found; `nil` if no match.
 ---@return integer? end Offset where the first match ends; `nil` if no match.
 ---@return integer? ... #Captured matches offsets.
 regex.find_offsets = function(pattern, str, offset, options)
   if type(pattern) ~= "table" then
-    pattern = regex.compile(pattern)
+    local err
+    pattern, err = regex.compile(pattern)
+    if not pattern then error(err, 2) end
   end
-  local res = { regex.cmatch(pattern, str, offset or 1, options or 0) }
-  -- Reduce every end delimiter by 1
-  for i = 2,#res,2 do
-    res[i] = res[i] - 1
+  local res = table.pack(regex.cmatch(pattern, str, offset or 1, options or 0))
+  for i = 2,res.n,2 do
+    if res[i] then res[i] = res[i] - 1 end
   end
-  return table.unpack(res)
+  return table.unpack(res, 1, res.n)
 end
 
 ---Behaves like `string.match`.
@@ -37,14 +38,13 @@ end
 ---@param pattern string|table The regex pattern to use, either as a simple string or precompiled.
 ---@param str string The string to search for valid matches.
 ---@param offset? integer The position on the subject to start searching.
----@param options? integer A bit field of matching options, eg: regex.NOTBOL | regex.NOTEMPTY
+---@param options? integer 0 or regex.ANCHORED (ENDANCHORED is an alias).
 ---
 ---@return (string|integer)? ... #List of captured matches; the entire match if no matches were specified; if the match is empty, its offset is returned instead.
 regex.match = function(pattern, str, offset, options)
-  local res = { regex.find(pattern, str, offset, options) }
-  if #res == 0 then return end
-  -- If available, only return captures
-  if #res > 2 then return table.unpack(res, 3) end
+  local res = table.pack(regex.find(pattern, str, offset, options))
+  if res.n == 0 then return end
+  if res.n > 2 then return table.unpack(res, 3, res.n) end
   return string.sub(str, res[1], res[2])
 end
 
@@ -59,24 +59,20 @@ end
 ---@param pattern string|table The regex pattern to use, either as a simple string or precompiled.
 ---@param str string The string to search for valid matches.
 ---@param offset? integer The position on the subject to start searching.
----@param options? integer A bit field of matching options, eg: regex.NOTBOL | regex.NOTEMPTY
+---@param options? integer 0 or regex.ANCHORED (ENDANCHORED is an alias).
 ---
 ---@return integer? start Offset where the first match was found; `nil` if no match.
 ---@return integer? end Offset where the first match ends; `nil` if no match.
 ---@return (string|integer)? ... #List of captured matches; if the match is empty, its offset is returned instead.
 regex.find = function(pattern, str, offset, options)
-  local res = { regex.find_offsets(pattern, str, offset, options) }
-  local out = { }
-  if #res == 0 then return end
-  out[1] = res[1]
-  out[2] = res[2]
-  for i = 3,#res,2 do
-    if res[i] > res[i+1] then
-      -- Like in string.find, if the group has size 0, return the index
-      table.insert(out, res[i])
-    else
-      table.insert(out, string.sub(str, res[i], res[i+1]))
+  local res = table.pack(regex.find_offsets(pattern, str, offset, options))
+  if res.n == 0 then return end
+  local out = { n = 2, res[1], res[2] }
+  for i = 3,res.n,2 do
+    out.n = out.n + 1
+    if res[i] ~= nil then
+      out[out.n] = res[i] > res[i+1] and res[i] or string.sub(str, res[i], res[i+1])
     end
   end
-  return table.unpack(out)
+  return table.unpack(out, 1, out.n)
 end
