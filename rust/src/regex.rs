@@ -154,17 +154,21 @@ fn engine_error(e: RegexError) -> LuaError {
     }
 }
 
-/// Find captures and return them with only a borrow of `text`. The returned
-/// `Captures` owns its spans and named-group table, borrows neither the regex
-/// nor the `RefCell`, so an `Expander` can consume it after the borrow drops.
-fn find_captures<'t>(
+/// A match span, plus its captures when the caller asked for them.
+struct Found<'t> {
+    start: usize,
+    end: usize,
+    captures: Option<Captures<'t, str>>,
+}
+
+/// Run `search` on the plain or `find_not_empty` form, rebuilding both if the
+/// backtrack limit changed. `None` means the non-empty form can never match.
+fn with_regex<T>(
     p: &Pattern,
-    text: &'t str,
-    pos: usize,
-    anchored: bool,
     nonempty: bool,
     backtrack: usize,
-) -> LuaResult<Option<Captures<'t, str>>> {
+    search: impl FnOnce(&Regex) -> Result<Option<T>, RegexError>,
+) -> LuaResult<Option<T>> {
     let mut pair = p.pair.borrow_mut();
     if pair.backtrack != backtrack {
         pair.re = build(&p.source, &p.flags, backtrack, false).map_err(engine_error)?;
@@ -190,8 +194,55 @@ fn find_captures<'t>(
     } else {
         &pair.re
     };
-    let input = RegexInput::new(text).from_pos(pos).anchored(anchored);
-    re.captures_input(input).map_err(engine_error)
+    search(re).map_err(engine_error)
+}
+
+/// Find captures and return them with only a borrow of `text`. The returned
+/// `Captures` owns its spans and named-group table, borrows neither the regex
+/// nor the `RefCell`, so an `Expander` can consume it after the borrow drops.
+fn find_captures<'t>(
+    p: &Pattern,
+    text: &'t str,
+    pos: usize,
+    anchored: bool,
+    nonempty: bool,
+    backtrack: usize,
+) -> LuaResult<Option<Captures<'t, str>>> {
+    with_regex(p, nonempty, backtrack, |re| {
+        re.captures_input(RegexInput::new(text).from_pos(pos).anchored(anchored))
+    })
+}
+
+/// gsub's search: captures only when the template references them, otherwise
+/// just the span, which skips the per-match capture allocation.
+fn find_match<'t>(
+    p: &Pattern,
+    text: &'t str,
+    pos: usize,
+    anchored: bool,
+    nonempty: bool,
+    backtrack: usize,
+    captures: bool,
+) -> LuaResult<Option<Found<'t>>> {
+    if captures {
+        let c = find_captures(p, text, pos, anchored, nonempty, backtrack)?;
+        return Ok(c.map(|c| {
+            let m = c.get(0).expect("match 0 is always present");
+            Found {
+                start: m.start(),
+                end: m.end(),
+                captures: Some(c),
+            }
+        }));
+    }
+    with_regex(p, nonempty, backtrack, |re| {
+        let input = RegexInput::new(text).from_pos(pos).anchored(anchored);
+        Ok(re.find_input(input)?.map(|m| Found {
+            start: m.start(),
+            end: m.end(),
+            captures: None,
+        }))
+    })
 }
 
 /// Advance one UTF-8 character; `None` means the end was reached.
@@ -207,9 +258,10 @@ fn next_match<'t>(
     pos: &mut usize,
     retry: &mut bool,
     backtrack: usize,
-) -> LuaResult<Option<Captures<'t, str>>> {
+    captures: bool,
+) -> LuaResult<Option<Found<'t>>> {
     if *retry {
-        if let Some(c) = find_captures(p, text, *pos, true, true, backtrack)? {
+        if let Some(c) = find_match(p, text, *pos, true, true, backtrack, captures)? {
             *retry = false;
             return Ok(Some(c));
         }
@@ -219,7 +271,7 @@ fn next_match<'t>(
         }
         *retry = false;
     }
-    find_captures(p, text, *pos, false, false, backtrack)
+    find_match(p, text, *pos, false, false, backtrack, captures)
 }
 
 /// gmatch yields groups only when the pattern has captures; a hole before a
@@ -291,10 +343,15 @@ impl Write for CappedSink {
     }
 }
 
-fn expand(sink: &mut CappedSink, replacement: &str, captures: &Captures<str>) -> LuaResult<()> {
-    Expander::default()
-        .write_expansion(&mut *sink, replacement, captures)
-        .map_err(|_| output_limit())
+/// Only `$` starts an `Expander` reference, so callers request captures only
+/// for templates containing one; anything else is written verbatim.
+fn expand(sink: &mut CappedSink, replacement: &str, found: &Found) -> LuaResult<()> {
+    match &found.captures {
+        Some(c) => Expander::default()
+            .write_expansion(&mut *sink, replacement, c)
+            .map_err(|_| output_limit()),
+        None => sink.write_str(replacement),
+    }
 }
 
 /// Substitute `replacement` for every match, returning the result bytes and the
@@ -308,24 +365,25 @@ fn substitute(
     limit: usize,
     limits: Limits,
 ) -> LuaResult<(Vec<u8>, usize)> {
+    let captures = replacement.contains('$');
     if limit > 0 {
         let mut current = Cow::Borrowed(subject);
         let mut pos = 0;
         let mut count = 0;
         while count < limit && pos <= current.len() {
             let (start, part_len, next) = {
-                let Some(c) = find_captures(p, &current, pos, false, false, limits.backtrack)?
+                let Some(m) =
+                    find_match(p, &current, pos, false, false, limits.backtrack, captures)?
                 else {
                     break;
                 };
-                let m = c.get(0).expect("match 0 is always present");
                 let mut sink = CappedSink::new(limits.output);
-                sink.write_str(&current[..m.start()])?;
+                sink.write_str(&current[..m.start])?;
                 let before = sink.len();
-                expand(&mut sink, replacement, &c)?;
+                expand(&mut sink, replacement, &m)?;
                 let part_len = sink.len() - before;
-                sink.write_str(&current[m.end()..])?;
-                (m.start(), part_len, sink.finish())
+                sink.write_str(&current[m.end..])?;
+                (m.start, part_len, sink.finish())
             };
             pos = start + part_len;
             current = Cow::Owned(String::from_utf8(next).expect("substitution output is UTF-8"));
@@ -342,11 +400,10 @@ fn substitute(
     let mut last = 0;
     let mut retry = false;
     let mut count = 0;
-    while let Some(c) = next_match(p, subject, &mut pos, &mut retry, limits.backtrack)? {
-        let m = c.get(0).expect("match 0 is always present");
-        let (start, end) = (m.start(), m.end());
+    while let Some(m) = next_match(p, subject, &mut pos, &mut retry, limits.backtrack, captures)? {
+        let (start, end) = (m.start, m.end);
         sink.write_str(&subject[last..start])?;
-        expand(&mut sink, replacement, &c)?;
+        expand(&mut sink, replacement, &m)?;
         count += 1;
         last = end;
         pos = end;
@@ -500,13 +557,12 @@ pub fn luaopen_regex(lua: &Lua) -> LuaResult<Table> {
                     return Ok(MultiValue::new());
                 }
                 let (pos, retry, done) = &mut *st;
-                let Some(c) = next_match(&p, &subject, pos, retry, limits.backtrack)? else {
+                let Some(m) = next_match(&p, &subject, pos, retry, limits.backtrack, true)? else {
                     *done = true;
                     return Ok(MultiValue::new());
                 };
-                let m = c.get(0).expect("match 0 is always present");
-                (*pos, *retry) = (m.end(), m.start() == m.end());
-                capture_strings(lua, &c)
+                (*pos, *retry) = (m.end, m.start == m.end);
+                capture_strings(lua, m.captures.as_ref().expect("captures were requested"))
             })
         })?,
     )?;
@@ -572,6 +628,37 @@ mod tests {
         assert_eq!((out.as_str(), n), ("<a>", 1));
         let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("(a)", "a", "$$$1")"#);
         assert_eq!((out.as_str(), n), ("$a", 1));
+        // `$`-free templates bypass the Expander and must stay byte-identical.
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("a", "banana", "ü\\")"#);
+        assert_eq!((out.as_str(), n), ("bü\\nü\\nü\\", 3));
+    }
+
+    #[test]
+    fn span_only_gsub_matches_captures_path() {
+        // `<$9>` forces the captures/Expander path but expands to `<>` (unknown
+        // group -> empty), so both paths must produce identical bytes and counts.
+        let lua = lua();
+        let mismatches: i64 = eval(
+            &lua,
+            r#"
+            local pats = { {"a"}, {"x*"}, {""}, {"^", "m"}, {"$", "m"}, {"\\b"}, {"(?=a)"},
+              {"(a)|b"}, {"a(?=n)"}, {"(?<=n)a"}, {"\\w+"}, {"NAME", "i"}, {"é*"}, {".", "s"} }
+            local subjects = { "", "banana", "a\nb\n", "été café", "xxaxx", "name Name" }
+            local bad = 0
+            for _, pf in ipairs(pats) do
+              local re = regex.compile(pf[1], pf[2] or "")
+              for _, s in ipairs(subjects) do
+                for _, limit in ipairs({ 0, 1, 2, 5 }) do
+                  local a, n1 = regex.gsub(re, s, "<>", limit)
+                  local b, n2 = regex.gsub(re, s, "<$9>", limit)
+                  if a ~= b or n1 ~= n2 then bad = bad + 1 end
+                end
+              end
+            end
+            return bad
+            "#,
+        );
+        assert_eq!(mismatches, 0);
     }
 
     #[test]
