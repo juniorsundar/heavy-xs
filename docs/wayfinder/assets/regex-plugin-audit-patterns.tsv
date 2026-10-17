@@ -1,0 +1,60 @@
+lite-xl-plugins:language_diff.lua:16	^diff .+
+lite-xl-plugins:language_diff.lua:18	^new .+
+lite-xl-plugins:language_diff.lua:20	^index .+
+lite-xl-plugins:language_diff.lua:27	^@@ [\d,\-\+ ]+ @@
+
+lite-xl-plugins:language_diff.lua:32	^-{3} [\d]+,[\d]+ \-{4}
+
+lite-xl-plugins:language_diff.lua:36	^\*{3} [\d]+,[\d]+ \*{4}
+
+lite-xl-plugins:language_diff.lua:40	^-{3} .+
+lite-xl-plugins:language_diff.lua:41	^\+{3} .+
+lite-xl-plugins:language_diff.lua:43	^\*{3} .+
+lite-xl-plugins:language_diff.lua:45	^-{3}
+
+lite-xl-plugins:language_diff.lua:47	^-.*
+lite-xl-plugins:language_diff.lua:48	^\+.*
+lite-xl-plugins:language_diff.lua:49	^<.*
+lite-xl-plugins:language_diff.lua:50	^>.*
+lite-xl-plugins:language_diff.lua:52	^!.*
+lite-xl-plugins:language_diff.lua:58	^[a-zA-Z\-]+: 
+lite-xl-plugins:language_diff.lua:60	^ [\d]+ files? changed
+lite-xl-plugins:language_diff.lua:61	[\d]+ insertions?\(\+\)
+lite-xl-plugins:language_diff.lua:62	[\d]+ deletions?\(\-\)
+lite-xl-plugins:language_wren.lua:23	\bFn.new\b
+lite-xl-plugins:editorconfig/parser.lua:293	.+
+lite-xl-plugins:editorconfig/parser.lua:294	.+
+lite-xl-plugins:language_kotlin.lua:20	\-\>(?=\s)
+lite-xl-plugins:language_kotlin.lua:21	\.{2}\<?\s?(?=[\\-]?[a-z0-9])
+lite-xl-plugins:language_kotlin.lua:23	\?(?=\.)
+lite-xl-plugins:language_kotlin.lua:25	`[\w_\s]+`(?=\s*\()
+lite-xl-plugins:language_kotlin.lua:26	let(?=\s\{)
+lite-xl-plugins:language_kotlin.lua:27	\?\:(?=\s?)
+lite-xl-plugins:language_kotlin.lua:28	this(?=\.?\@?)
+lite-xl-plugins:language_kotlin.lua:29	\@\w+
+lite-xl-plugins:language_kotlin.lua:30	[a-zA-Z]+\@(?=\s?[a-zA-Z])
+lite-xl-plugins:language_kotlin.lua:31	[A-Z][A-Z_]+
+lite-xl-plugins:language_rust.lua:22	[[:alpha:]_][\w]*(?=\s*<[\w\s,']+>\s*\()
+lite-xl-plugins:language_st.lua:21	[-+]?\d+\.{2,4}[-+]?\d+
+lite-xl-plugins:language_openscad.lua:22	\$[a-zA-Z]+
+lite-xl-plugins:language_java.lua:21	(?>\w+\.?)+(?=\s+\w++\s*\=\s*)
+lite-xl-plugins:language_java.lua:22	[A-Z][A-Z_]+
+lite-xl-plugins:indent_convert.lua:51	(^(?: {2})*)(?: {2})
+lite-xl-plugins:language_fstab.lua:12	^#.*
+lite-xl-plugins:language_groovy.lua:26	[A-Z]+_?[A-Z]+
+lite-xl-plugins:language_ignore.lua:15	^ *#.*$
+lite-xl-plugins:language_ignore.lua:16	(?=^ *!.)
+lite-xl-plugins:language_ignore.lua:16	$
+lite-xl-plugins:language_ignore.lua:17	(?=.)
+lite-xl-plugins:language_ignore.lua:17	$
+lite-xl-plugins:language_json.lua:23	"(?:[^"\\]|\\.)*"()\s*:
+lite-xl-plugins:language_json.lua:24	"(?:[^"\\]|\\.)*"
+lite-xl-plugins:sticky_scroll.lua:78	(\s*)\S
+lite-xl-plugins:language_php.lua:133	"(?=[\s(]*(?i:
+lite-xl-plugins:language_php.lua:138	'(?=[\s(]*(?i:
+lite-xl-plugins:language_php.lua:342	<\?php\s+
+lite-xl-plugins:language_php.lua:343	(?:\?>|(?=`{3}))
+lite-xl-plugins:language_php.lua:386	(?=`{3})
+lite-xl-plugins:language_htaccess.lua:190	([a-f0-9:]+:+)+[a-f0-9]+
+github:Guldoman_lite-xl-renamer/renamer.lua:477	^(\d+)(?:,(\d+))?(?:,(\d+))?$
+github:lite-xl_lite-xl-plugin-manager_git/plugins/plugin_manager/init.lua:291	--.*mod-version:(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:$|\s)

@@ -1,0 +1,56 @@
+SWEEP	search_first	1000	1048576	exit	0
+BASELINE_COMPLETE	search_first	17	0
+SWEEP	search_miss	1000	1048576	exit	0
+BASELINE_COMPLETE	search_miss	11	0
+SWEEP	project_regex	1000	1048576	exit	0
+BASELINE_COMPLETE	project_regex	29	0
+SWEEP	replace_doc	1000	1048576	exit	1
+BASELINE_ERROR	replace_doc	runtime error: REGEX_WORK_LIMIT: match-call quota exhausted
+SWEEP	syn_small	1000	1048576	exit	0
+BASELINE_COMPLETE	syn_small	41	0
+SWEEP	syn_mid	1000	1048576	exit	1
+BASELINE_ERROR	syn_mid	runtime error: REGEX_WORK_LIMIT: match-call quota exhausted
+SWEEP	syn_large	1000	1048576	exit	1
+BASELINE_ERROR	syn_large	runtime error: REGEX_WORK_LIMIT: match-call quota exhausted
+SWEEP	search_first	10000	1048576	exit	0
+BASELINE_COMPLETE	search_first	17	0
+SWEEP	search_miss	10000	1048576	exit	0
+BASELINE_COMPLETE	search_miss	11	0
+SWEEP	project_regex	10000	1048576	exit	0
+BASELINE_COMPLETE	project_regex	29	0
+SWEEP	replace_doc	10000	1048576	exit	0
+BASELINE_COMPLETE	replace_doc	29	0
+SWEEP	syn_small	10000	1048576	exit	0
+BASELINE_COMPLETE	syn_small	41	0
+SWEEP	syn_mid	10000	1048576	exit	0
+BASELINE_COMPLETE	syn_mid	41	0
+SWEEP	syn_large	10000	1048576	exit	1
+BASELINE_ERROR	syn_large	runtime error: REGEX_WORK_LIMIT: match-call quota exhausted
+SWEEP	search_first	100000	1048576	exit	0
+BASELINE_COMPLETE	search_first	17	0
+SWEEP	search_miss	100000	1048576	exit	0
+BASELINE_COMPLETE	search_miss	11	0
+SWEEP	project_regex	100000	1048576	exit	0
+BASELINE_COMPLETE	project_regex	29	0
+SWEEP	replace_doc	100000	1048576	exit	0
+BASELINE_COMPLETE	replace_doc	29	0
+SWEEP	syn_small	100000	1048576	exit	0
+BASELINE_COMPLETE	syn_small	41	0
+SWEEP	syn_mid	100000	1048576	exit	0
+BASELINE_COMPLETE	syn_mid	41	0
+SWEEP	syn_large	100000	1048576	exit	0
+BASELINE_COMPLETE	syn_large	41	0
+SWEEP	search_first	1000000	1048576	exit	0
+BASELINE_COMPLETE	search_first	17	0
+SWEEP	search_miss	1000000	1048576	exit	0
+BASELINE_COMPLETE	search_miss	11	0
+SWEEP	project_regex	1000000	1048576	exit	0
+BASELINE_COMPLETE	project_regex	29	0
+SWEEP	replace_doc	1000000	1048576	exit	0
+BASELINE_COMPLETE	replace_doc	29	0
+SWEEP	syn_small	1000000	1048576	exit	0
+BASELINE_COMPLETE	syn_small	41	0
+SWEEP	syn_mid	1000000	1048576	exit	0
+BASELINE_COMPLETE	syn_mid	41	0
+SWEEP	syn_large	1000000	1048576	exit	0
+BASELINE_COMPLETE	syn_large	41	0

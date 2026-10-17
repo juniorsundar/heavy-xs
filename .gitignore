@@ -27,3 +27,4 @@ LiteXL*
 rust/target/
 result
 .serena/*
+/stage-rs/usr/local/share

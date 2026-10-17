@@ -1,8 +1,16 @@
-# Lite XL: porting the C core to Rust
+# Lite XL: porting the C core to Rust (archived)
 
-**Status:** planning complete, no implementation started.
-**Repo:** `/home/juniorsundar/Documents/casual/lite-xl` @ `234fa099` (v2.1.7, Lua `MOD_VERSION` 4.0.0).
-**How to use this document:** read §0–§7 once. Then, in each session, read §12 (Progress log) and the current wave in §8, run `scripts/rust-port/verify.sh`, and continue. Append to the ledger and the progress log when you finish or learn something. Do not re-derive the contract — it is recorded in §11 with `file:line` citations.
+**Status: retired.** W0–W10 are implemented, and the user has confirmed that manual acceptance checks are complete. This plan is closed; it is no longer an execution checklist.
+
+**Delivered:** a Linux-only Cargo-built Rust native core, retaining the Lua editor layer and native plugin interface. At completion of this port, Lua, PCRE2, FreeType and SDL3 remained C library dependencies. The two approved Lua changes fixed autocomplete sorting and the final quit/restart frame. A subsequent, separately authorized [lean regex migration](../regex.md) removes PCRE2; the historical notes below still describe the original port.
+
+**Historical record:** the original plan, decisions and wave notes below are preserved as written. Unchecked bootstrap tasks, old “open” decisions and Meson instructions are superseded by the implementation and W10; they are not outstanding work. The original scope and pixel-parity requirements were amended during the port. Current build instructions are in `README.md`.
+
+**Known limits carried forward, not retirement blockers:** third-party native plugins beyond the purpose-built fixtures have not been verified; UTF-8 performance work was deferred; CI was removed by explicit choice. Do not infer that manual acceptance proves compatibility with every plugin or platform. Windows and macOS are out of scope.
+
+**Next work:** replacing a remaining C library with a Rust-native implementation is a separate effort, with its own compatibility decisions and acceptance criteria. It does not reopen this port plan. The existing contract tests remain regression checks.
+
+**Original baseline:** `/home/juniorsundar/Documents/casual/lite-xl` @ `234fa099` (v2.1.7, Lua `MOD_VERSION` 4.0.0).
 
 ---
 

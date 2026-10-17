@@ -3,7 +3,7 @@ type(compiled)                               table
 getmetatable(compiled) == regex              true
 metatable __name                             regex
 compile failure returns                      2
-compile failure msg                          regex compilation failed at offset 1: missing closing parenthesis
+compile failure msg                          regex compilation failed: Parsing error at position 1: Opening parenthesis without closing parenthesis
 compile options i                            2|2
 compile options m                            3|3
 cmatch no match count                        0
@@ -14,7 +14,7 @@ find (plain)                                 2|2
 match (plain)                                n
 cmatch offset 3                              4|5
 cmatch negative offset                       6|7
-cmatch NOTBOL                                
+cmatch ANCHORED                              2|3
 find empty capture                           2|2|3
 gmatch no groups                             X|X
 gmatch with groups                           a|a
@@ -26,7 +26,7 @@ gsub limit 2                                 bonona|2
 gsub limit 9                                 bonono|3
 gsub no match                                banana|0
 gsub captures                                bnanaa|2
-gsub escape                                  b\n\n\|3
+gsub escape                                  b\\n\\n\\|3
 gsub on newlines                             -a
 -b|2
 gsub empty match                             -a-b-c-|4
@@ -39,11 +39,7 @@ method gmatch                                b|b
 method gsub                                  a-d|1
 method cmatch                                2|4|2|3|3|4
 method find_offsets                          2|3|2|2|3|3
-bad subject err                              bad argument #2 to 'regex.cmatch' (string expected, got nil)
-bad pattern err                              regex pattern error at offset 1: missing closing parenthesis
+bad subject err                              string expected
+bad pattern err                              regex pattern error: Parsing error at position 1: Opening parenthesis without closing parenthesis
 ANCHORED                                     2147483648
 ENDANCHORED                                  2147483648
-NOTBOL                                       1
-NOTEOL                                       2
-NOTEMPTY                                     4
-NOTEMPTY_ATSTART                             8

@@ -1,0 +1,14 @@
+PASS word_non_ascii:
+PASS digit_non_ascii:
+PASS space_non_ascii:
+PASS horizontal_space: 1 | 2
+PASS Q_pattern_quote: 1 | 4
+PASS absolute_start_notbol: 1 | 2
+PASS absolute_end_noteol: 1 | 2
+PASS global_empty_mixed: "---" | 3
+JS_PATTERN 3:1 "\\/(?=(?!\\/)(?:(?>[^\\\\[\\/]++|\\\\.|\\[(?:[^\\\\\\]]++|\\\\.)*+\\])*+)++\\/[gmiyuvsd]*\\s*(?:[\\n,;\\)\\]\\}\\.]|\\/[\\/*]))()" => OK
+JS_PATTERN 3:2 "/()[gmiyuvsd]*" => OK
+JS_PATTERN 7:1 "-?0[xXbBoO][\\da-fA-F_]+n?()\\s*()(?:\\/(?!\\/|\\*))?" => OK
+JS_PATTERN 8:1 "-?\\d+[0-9.eE_n]*()\\s*()(?:\\/(?!\\/|\\*))?" => OK
+JS_PATTERN 9:1 "-?\\.?\\d+()\\s*()(?:\\/(?!\\/|\\*))?" => OK
+SUMMARY mode=dialect checks=8 failures=0

@@ -1,7 +1,4 @@
--- W1: regex. Baseline recorded from the C implementation.
--- NOTE: `regex.cmatch` with a *string* pattern segfaults in the C core
--- (f_pcre_match calls lua_rawgeti on a string), so patterns are compiled first,
--- exactly as data/core/regex.lua does.
+-- Native fancy-regex contract. Historical PCRE2 evidence is in docs/wayfinder/assets/.
 require("core.regex")
 
 local function join(...) return table.concat({ ... }, "|") end
@@ -33,7 +30,7 @@ return function(rec)
   rec("match (plain)", tostring(regex.match(regex.compile("a(n)"), "banana")))
   rec("cmatch offset 3", join(regex.cmatch(regex.compile("a"), "banana", 3)))
   rec("cmatch negative offset", join(regex.cmatch(regex.compile("a"), "banana", -2)))
-  rec("cmatch NOTBOL", join(regex.cmatch(regex.compile("^a"), "ba", 2, regex.NOTBOL)))
+  rec("cmatch ANCHORED", join(regex.cmatch(regex.compile("^a"), "ba", 2, regex.ANCHORED)))
   rec("find empty capture", join(regex.find(regex.compile("a()"), "ban")))
 
   rec("gmatch no groups", iter(regex.gmatch(regex.compile("X"), "aXbXc")))
@@ -70,8 +67,74 @@ return function(rec)
 
   rec("ANCHORED", regex.ANCHORED)
   rec("ENDANCHORED", regex.ENDANCHORED)
-  rec("NOTBOL", regex.NOTBOL)
-  rec("NOTEOL", regex.NOTEOL)
-  rec("NOTEMPTY", regex.NOTEMPTY)
-  rec("NOTEMPTY_ATSTART", regex.NOTEMPTY_ATSTART)
+  assert(regex.NOTBOL == nil and regex.NOTEOL == nil)
+  assert(regex.NOTEMPTY == nil and regex.NOTEMPTY_ATSTART == nil)
+  local ok, msg = pcall(regex.cmatch, "a", "a", 1, 1)
+  assert(not ok and tostring(msg):find("REGEX_OPTIONS_ERROR", 1, true))
+
+  -- Lua helpers must retain nil capture holes and the original compile error.
+  local captures = table.pack(regex.match("(a)?(b)", "b"))
+  assert(captures.n == 2 and captures[1] == nil and captures[2] == "b")
+  local offsets = table.pack(regex.find_offsets("(a)?(b)", "b"))
+  assert(offsets.n == 6 and offsets[3] == nil and offsets[4] == nil)
+  ok, msg = pcall(regex.find_offsets, "(", "a")
+  assert(not ok and tostring(msg):find("regex compilation failed", 1, true))
+
+  local syntax, tokenizer = require "core.syntax", require "core.tokenizer"
+  require "plugins.language_js"
+  local js = syntax.get("contract.js", "")
+  local function tokens(text)
+    local out = {}
+    for _, kind, part in tokenizer.each_token(tokenizer.tokenize(js, text, "")) do
+      out[#out + 1] = kind .. ":" .. part
+    end
+    return table.concat(out, " ")
+  end
+  assert(tokens("let r = /ab+c/gi;") ==
+    "keyword:let symbol: r operator: = string: /ab+c/gi normal:;")
+  assert(tokens([=[let r = /[a-z]+\//g;]=]) ==
+    [=[keyword:let symbol: r operator: = string: /[a-z]+\//g normal:;]=])
+  assert(tokens("let n = 1.5/x;") ==
+    "keyword:let symbol: n operator: = number: 1.5 operator:/ symbol:x normal:;")
+
+  -- Warming every exercised rule should leave no compilation in the hot path.
+  local compile, recompiles = regex.compile, 0
+  regex.compile = function(...)
+    recompiles = recompiles + 1
+    return compile(...)
+  end
+  ok, msg = pcall(function()
+    tokens("let r = /ab+c/gi;")
+    tokens([=[let r = /[a-z]+\//g;]=])
+    tokens("let n = 1.5/x;")
+  end)
+  regex.compile = compile
+  assert(ok, tostring(msg))
+  assert(recompiles == 0, "warmed syntax rules recompiled " .. recompiles .. " times")
+
+  -- A valid closing expression must not hide a failed opening expression.
+  local core = require "core"
+  local warn, warnings = core.warn, 0
+  core.warn = function() warnings = warnings + 1 end
+  local rule = { regex = { "(", "x" }, type = "string" }
+  ok, msg = pcall(function()
+    syntax.add { name = "Invalid regex contract", patterns = { rule } }
+  end)
+  core.warn = warn
+  assert(ok, tostring(msg))
+  assert(rule.disabled and warnings == 1)
+  assert(tokenizer.tokenize({ patterns = { rule } }, "x", ""))
+
+  -- Replace-all computes its result before modifying the actual document.
+  core.threads = core.threads or {}
+  local doc = require("core.doc")()
+  doc:insert(1, 1, "unchanged")
+  local before = table.concat(doc.lines)
+  regex.set_limits(1000000, 4)
+  ok, msg = pcall(doc.replace, doc, function(text)
+    return regex.gsub("absent", text, "")
+  end)
+  regex.set_limits(1000000, 8 * 1024 * 1024)
+  assert(not ok and tostring(msg):find("REGEX_OUTPUT_LIMIT", 1, true))
+  assert(table.concat(doc.lines) == before)
 end

@@ -1,54 +1,78 @@
-//! `regex`: PCRE2-backed pattern matching, ported from `src/api/regex.c`.
+//! `regex`: pattern matching backed by the `fancy-regex` crate.
 //!
-//! Lua-visible contract (see docs/rust-port/PLAN.md §8 W1): a compiled pattern
-//! is a *table* whose metatable is this module's table, so `pattern:gsub(...)`
-//! works through the `__index` that `data/core/regex.lua` installs.
+//! The Lua-visible contract matches the previous PCRE2-backed module: `compile`
+//! returns a pattern *table* whose metatable is this module's table (so
+//! `pattern:gsub(...)` works through `data/core/regex.lua`), `cmatch`/`gmatch`/
+//! `gsub` accept either that table or a pattern string, and only the `ANCHORED`
+//! match option is available.
+//!
+//! The replacement dialect is fancy-regex' native `$name`/`${name}` expansion,
+//! not PCRE2's extended one. Unknown or malformed references expand to the
+//! empty string or their literal text (follow `Expander`'s runtime behavior;
+//! there is no separate template validation).
+//!
+//! Backtracking is limited per match attempt and substitution bytes are capped
+//! through `set_limits`; neither setting is a deadline or total-operation budget.
 
+use std::borrow::Cow;
 use std::cell::RefCell;
-use std::os::raw::c_int;
+use std::io::Write;
 use std::rc::Rc;
 
+use fancy_regex::{
+    Captures, CompileError, Error as RegexError, Expander, Regex, RegexBuilder, RegexInput,
+    RuntimeError,
+};
 use mlua::{
-    BorrowedBytes, Error as LuaError, LightUserData, Lua, LuaString, MultiValue, Result as LuaResult,
-    Table, Value, Variadic,
+    Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, UserData, Value,
+    Variadic,
 };
 
-use crate::pcre;
+/// `PCRE2_ANCHORED`'s value, the only accepted match option.
+const ANCHORED: u32 = 0x8000_0000;
 
-/// A compiled pattern. `owned` is false when borrowed from a precompiled
-/// options table, whose `__gc` frees it.
+/// Approximate program/cache size settings per delegated expression, not a process cap.
+const DELEGATE_SIZE_LIMIT: usize = 2 * 1024 * 1024;
+
+/// A compiled pattern plus its two compiled forms: the plain form, and a
+/// `find_not_empty` form used to retry at the same position after an empty
+/// match. Both are rebuilt if the backtrack limit changes.
 struct Pattern {
-    code: *mut pcre::Pcre2Code,
-    owned: bool,
+    source: String,
+    flags: String,
+    pair: RefCell<Pair>,
 }
 
-impl Pattern {
-    fn free_if_owned(&self) {
-        if self.owned && !self.code.is_null() {
-            unsafe { pcre::pcre2_code_free_8(self.code) };
-        }
-    }
+struct Pair {
+    backtrack: usize,
+    re: Regex,
+    nonempty: Option<Option<Regex>>,
 }
 
-fn free_match_data(md: *mut pcre::Pcre2MatchData) {
-    if !md.is_null() {
-        unsafe { pcre::pcre2_match_data_free_8(md) };
-    }
+/// Private userdata owning the compiled pattern; the Lua GC is the only way to
+/// free it, so no `__gc` method is needed.
+struct Handle(Rc<Pattern>);
+
+impl UserData for Handle {}
+
+/// Immutable per-call resource limits. Iterators snapshot these on creation.
+#[derive(Clone, Copy)]
+struct Limits {
+    backtrack: usize,
+    output: usize,
 }
 
-/// `luaL_checklstring`: accepts strings and numbers. The message matches
-/// Lua's own `luaL_argerror` text so find/replace shows the same error as the C
-/// core (mlua still wraps it, adding "runtime error: " and a traceback).
-fn coerce_string(lua: &Lua, v: &Value, arg: usize, fname: &str) -> LuaResult<LuaString> {
-    lua.coerce_string(v.clone())?
-        .ok_or_else(|| argerror(fname, arg, "string", v.type_name()))
+/// `luaL_checklstring`-style coercion: strings and numbers, never `nil`.
+fn lua_string(lua: &Lua, v: Option<&Value>) -> LuaResult<LuaString> {
+    lua.coerce_string(v.cloned().unwrap_or(Value::Nil))?
+        .ok_or_else(|| LuaError::runtime("string expected"))
 }
 
-fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
-    LuaError::runtime(format!(
-        "bad argument #{} to '{}' ({} expected, got {})",
-        arg, fname, expected, got
-    ))
+/// Non-lossy view of a subject/pattern/replacement; invalid UTF-8 is a safe
+/// error rather than a partial or byte-wise match.
+fn utf8(s: &LuaString) -> LuaResult<mlua::BorrowedStr> {
+    s.to_str()
+        .map_err(|_| LuaError::runtime("REGEX_UTF8_ERROR: invalid UTF-8"))
 }
 
 fn opt_number(v: Option<&Value>) -> f64 {
@@ -59,467 +83,718 @@ fn opt_number(v: Option<&Value>) -> f64 {
     }
 }
 
-fn compile_pattern(bytes: &[u8], options: u32) -> Result<*mut pcre::Pcre2Code, (usize, String)> {
-    let mut errcode: c_int = 0;
-    let mut erroffset: pcre::Size = 0;
-    let re = unsafe {
-        pcre::pcre2_compile_8(
-            bytes.as_ptr(),
-            bytes.len(),
-            options,
-            &mut errcode,
-            &mut erroffset,
-            std::ptr::null_mut(),
-        )
-    };
-    if re.is_null() {
-        return Err((erroffset, pcre::error_message(errcode)));
+/// `regex_offset_relative`: 1-based Lua offsets to a 0-based byte position.
+/// Zero and overly negative offsets map to 1; other negatives count back from
+/// the byte length. The result must be a real UTF-8 boundary.
+fn offset_relative(v: Option<&Value>, text: &str) -> LuaResult<usize> {
+    let n = opt_number(v);
+    if !n.is_finite() {
+        return Err(LuaError::runtime("REGEX_OFFSET_ERROR: non-finite offset"));
     }
-    unsafe { pcre::pcre2_jit_compile_8(re, pcre::PCRE2_JIT_COMPLETE) };
-    Ok(re)
+    let one = if n > 0.0 {
+        n as usize
+    } else if n == 0.0 || n < -(text.len() as f64) {
+        1
+    } else {
+        (text.len() as f64 + n + 1.0) as usize
+    };
+    let pos = one.saturating_sub(1);
+    if pos > text.len() || !text.is_char_boundary(pos) {
+        return Err(LuaError::runtime(
+            "REGEX_OFFSET_ERROR: offset beyond end or inside UTF-8",
+        ));
+    }
+    Ok(pos)
 }
 
-/// First argument: either a precompiled table or a pattern string.
-fn pattern_arg(lua: &Lua, v: &Value, fname: &str) -> LuaResult<Pattern> {
-    if let Value::Table(t) = v {
+/// Only `ANCHORED` (and its `ENDANCHORED` alias) is supported. Any other bit is
+/// an explicit error instead of silently changing assertion behavior.
+fn matching_anchored(v: Option<&Value>) -> LuaResult<bool> {
+    let options = opt_number(v) as u32;
+    if options & !ANCHORED != 0 {
+        return Err(LuaError::runtime(
+            "REGEX_OPTIONS_ERROR: unsupported match options (only ANCHORED/ENDANCHORED)",
+        ));
+    }
+    Ok(options & ANCHORED != 0)
+}
+
+/// Assertion overrides stay disabled, so `\A` and `\z` remain hard anchors.
+fn build(source: &str, flags: &str, backtrack: usize, nonempty: bool) -> Result<Regex, RegexError> {
+    RegexBuilder::new(source)
+        .case_insensitive(flags.contains('i'))
+        .multi_line(flags.contains('m'))
+        .dot_matches_new_line(flags.contains('s'))
+        .backtrack_limit(backtrack)
+        .delegate_size_limit(DELEGATE_SIZE_LIMIT)
+        .delegate_dfa_size_limit(DELEGATE_SIZE_LIMIT)
+        .find_not_empty(nonempty)
+        .build()
+}
+
+fn compile(source: &str, flags: &str, backtrack: usize) -> Result<Rc<Pattern>, RegexError> {
+    let re = build(source, flags, backtrack, false)?;
+    Ok(Rc::new(Pattern {
+        source: source.to_owned(),
+        flags: flags.to_owned(),
+        pair: RefCell::new(Pair {
+            backtrack,
+            re,
+            nonempty: None,
+        }),
+    }))
+}
+
+fn engine_error(e: RegexError) -> LuaError {
+    match e {
+        RegexError::RuntimeError(RuntimeError::BacktrackLimitExceeded) => {
+            LuaError::runtime("REGEX_WORK_LIMIT: backtrack limit exceeded")
+        }
+        _ => LuaError::runtime(format!("REGEX_ENGINE_ERROR: {e}")),
+    }
+}
+
+/// Find captures and return them with only a borrow of `text`. The returned
+/// `Captures` owns its spans and named-group table, borrows neither the regex
+/// nor the `RefCell`, so an `Expander` can consume it after the borrow drops.
+fn find_captures<'t>(
+    p: &Pattern,
+    text: &'t str,
+    pos: usize,
+    anchored: bool,
+    nonempty: bool,
+    backtrack: usize,
+) -> LuaResult<Option<Captures<'t, str>>> {
+    let mut pair = p.pair.borrow_mut();
+    if pair.backtrack != backtrack {
+        pair.re = build(&p.source, &p.flags, backtrack, false).map_err(engine_error)?;
+        pair.backtrack = backtrack;
+        pair.nonempty = None;
+    }
+    if nonempty && pair.nonempty.is_none() {
+        pair.nonempty = Some(match build(&p.source, &p.flags, backtrack, true) {
+            Ok(re) => Some(re),
+            Err(RegexError::CompileError(e))
+                if matches!(e.as_ref(), CompileError::PatternCanNeverMatch) =>
+            {
+                None
+            }
+            Err(e) => return Err(engine_error(e)),
+        });
+    }
+    let re = if nonempty {
+        match pair.nonempty.as_ref().expect("nonempty form built above") {
+            Some(re) => re,
+            None => return Ok(None),
+        }
+    } else {
+        &pair.re
+    };
+    let input = RegexInput::new(text).from_pos(pos).anchored(anchored);
+    re.captures_input(input).map_err(engine_error)
+}
+
+/// Advance one UTF-8 character; `None` means the end was reached.
+fn advance(text: &str, pos: usize) -> Option<usize> {
+    text.get(pos..)?.chars().next().map(|c| pos + c.len_utf8())
+}
+
+/// gmatch/gsub step that makes empty matches progress: after an empty match at
+/// `pos`, retry there with a non-empty form, otherwise skip one character.
+fn next_match<'t>(
+    p: &Pattern,
+    text: &'t str,
+    pos: &mut usize,
+    retry: &mut bool,
+    backtrack: usize,
+) -> LuaResult<Option<Captures<'t, str>>> {
+    if *retry {
+        if let Some(c) = find_captures(p, text, *pos, true, true, backtrack)? {
+            *retry = false;
+            return Ok(Some(c));
+        }
+        match advance(text, *pos) {
+            Some(next) => *pos = next,
+            None => return Ok(None),
+        }
+        *retry = false;
+    }
+    find_captures(p, text, *pos, false, false, backtrack)
+}
+
+/// gmatch yields groups only when the pattern has captures; a hole before a
+/// later group becomes `nil` and trailing unmatched groups are omitted.
+fn capture_strings(lua: &Lua, c: &Captures<str>) -> LuaResult<MultiValue> {
+    let len = c.len();
+    let end = (0..len)
+        .rposition(|i| c.get(i).is_some())
+        .map_or(0, |n| n + 1);
+    let start = if len > 1 { 1 } else { 0 };
+    let mut out = Vec::with_capacity(end.saturating_sub(start));
+    for i in start..end {
+        match c.get(i) {
+            None => out.push(Value::Nil),
+            Some(m) if m.start() == m.end() => out.push(Value::Integer((m.start() + 1) as i64)),
+            Some(m) => out.push(Value::String(lua.create_string(m.as_str())?)),
+        }
+    }
+    Ok(MultiValue::from_vec(out))
+}
+
+fn output_limit() -> LuaError {
+    LuaError::runtime("REGEX_OUTPUT_LIMIT: output byte quota exhausted")
+}
+
+/// Byte-capped `io::Write` sink. Substitution writes straight through it, so
+/// no unbounded intermediate expansion is ever materialized; exceeding the cap
+/// raises `REGEX_OUTPUT_LIMIT` with nothing partially returned.
+struct CappedSink {
+    buf: Vec<u8>,
+    max: usize,
+}
+
+impl CappedSink {
+    fn new(max: usize) -> Self {
+        Self {
+            buf: Vec::new(),
+            max,
+        }
+    }
+
+    fn write_str(&mut self, s: &str) -> LuaResult<()> {
+        self.write_all(s.as_bytes()).map_err(|_| output_limit())
+    }
+
+    fn len(&self) -> usize {
+        self.buf.len()
+    }
+
+    fn finish(self) -> Vec<u8> {
+        self.buf
+    }
+}
+
+impl Write for CappedSink {
+    fn write(&mut self, data: &[u8]) -> std::io::Result<usize> {
+        if data.len() > self.max.saturating_sub(self.buf.len()) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "output limit",
+            ));
+        }
+        self.buf.extend_from_slice(data);
+        Ok(data.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn expand(sink: &mut CappedSink, replacement: &str, captures: &Captures<str>) -> LuaResult<()> {
+    Expander::default()
+        .write_expansion(&mut *sink, replacement, captures)
+        .map_err(|_| output_limit())
+}
+
+/// Substitute `replacement` for every match, returning the result bytes and the
+/// substitution count. A positive `limit` rebuilds the subject at each step
+/// (which reproduces the historical `x*` limit-2 quirk `--abc`); the global
+/// path matches the original subject and makes empty matches progress.
+fn substitute(
+    p: &Pattern,
+    subject: &str,
+    replacement: &str,
+    limit: usize,
+    limits: Limits,
+) -> LuaResult<(Vec<u8>, usize)> {
+    if limit > 0 {
+        let mut current = Cow::Borrowed(subject);
+        let mut pos = 0;
+        let mut count = 0;
+        while count < limit && pos <= current.len() {
+            let (start, part_len, next) = {
+                let Some(c) = find_captures(p, &current, pos, false, false, limits.backtrack)?
+                else {
+                    break;
+                };
+                let m = c.get(0).expect("match 0 is always present");
+                let mut sink = CappedSink::new(limits.output);
+                sink.write_str(&current[..m.start()])?;
+                let before = sink.len();
+                expand(&mut sink, replacement, &c)?;
+                let part_len = sink.len() - before;
+                sink.write_str(&current[m.end()..])?;
+                (m.start(), part_len, sink.finish())
+            };
+            pos = start + part_len;
+            current = Cow::Owned(String::from_utf8(next).expect("substitution output is UTF-8"));
+            count += 1;
+        }
+        if current.len() > limits.output {
+            return Err(output_limit());
+        }
+        return Ok((current.into_owned().into_bytes(), count));
+    }
+
+    let mut sink = CappedSink::new(limits.output);
+    let mut pos = 0;
+    let mut last = 0;
+    let mut retry = false;
+    let mut count = 0;
+    while let Some(c) = next_match(p, subject, &mut pos, &mut retry, limits.backtrack)? {
+        let m = c.get(0).expect("match 0 is always present");
+        let (start, end) = (m.start(), m.end());
+        sink.write_str(&subject[last..start])?;
+        expand(&mut sink, replacement, &c)?;
+        count += 1;
+        last = end;
+        pos = end;
+        retry = start == end;
+    }
+    sink.write_str(&subject[last..])?;
+    Ok((sink.finish(), count))
+}
+
+/// First argument: either a compiled pattern table or a pattern string.
+fn pattern_arg(lua: &Lua, v: Option<&Value>, backtrack: usize) -> LuaResult<Rc<Pattern>> {
+    if let Some(Value::Table(t)) = v {
         return match t.raw_get::<Value>(1)? {
-            Value::LightUserData(LightUserData(p)) if !p.is_null() => Ok(Pattern {
-                code: p as *mut pcre::Pcre2Code,
-                owned: false,
-            }),
+            Value::UserData(ud) => ud
+                .borrow::<Handle>()
+                .map(|h| h.0.clone())
+                .map_err(|_| LuaError::runtime("regex: invalid compiled pattern")),
             _ => Err(LuaError::runtime("regex: invalid compiled pattern")),
         };
     }
-    let s = coerce_string(lua, v, 1, fname)?;
-    match compile_pattern(&s.as_bytes(), pcre::PCRE2_UTF) {
-        Ok(code) => Ok(Pattern {
-            code,
-            owned: true,
-        }),
-        Err((offset, msg)) => Err(LuaError::runtime(format!(
-            "regex pattern error at offset {}: {}",
-            offset, msg
-        ))),
-    }
-}
-
-/// `luaL_setmetatable(L, "regex")`: compiled patterns are plain tables.
-fn pattern_table(lua: &Lua, module: &Table, code: *mut pcre::Pcre2Code) -> LuaResult<Table> {
-    let t = lua.create_table()?;
-    t.raw_set(1, LightUserData(code as *mut _))?;
-    t.set_metatable(Some(module.clone()))?;
-    Ok(t)
-}
-
-/// `regex_offset_relative`: Lua-style 1-based offsets, negatives from the end.
-fn offset_relative(pos: f64, len: usize) -> usize {
-    if pos > 0.0 {
-        pos as usize
-    } else if pos == 0.0 {
-        1
-    } else if pos < -(len as f64) {
-        1
-    } else {
-        (len as f64 + pos + 1.0) as usize
-    }
-}
-
-fn match_data_for(code: *mut pcre::Pcre2Code) -> LuaResult<*mut pcre::Pcre2MatchData> {
-    let md = unsafe { pcre::pcre2_match_data_create_from_pattern_8(code, std::ptr::null_mut()) };
-    if md.is_null() {
-        Err(LuaError::runtime("regex: out of memory"))
-    } else {
-        Ok(md)
-    }
-}
-
-fn matching_error(rc: c_int) -> LuaError {
-    LuaError::runtime(format!(
-        "regex matching error {}: {}",
-        rc,
-        pcre::error_message(rc)
-    ))
-}
-
-fn k_assertion_error() -> LuaError {
-    LuaError::runtime(
-        "regex matching error: \\K was used in an assertion to  set the match start after its end",
-    )
-}
-
-/// State of a `gmatch` iterator. The C version keeps the subject alive in the
-/// closure's upvalues; here `BorrowedBytes` anchors it.
-struct Gmatch {
-    code: *mut pcre::Pcre2Code,
-    owned: bool,
-    md: *mut pcre::Pcre2MatchData,
-    subject: BorrowedBytes,
-    offset: usize,
-    found: bool,
-}
-
-impl Drop for Gmatch {
-    fn drop(&mut self) {
-        free_match_data(self.md);
-        if self.owned {
-            unsafe { pcre::pcre2_code_free_8(self.code) };
-        }
-    }
+    let raw = lua_string(lua, v)?;
+    let source = utf8(&raw)?;
+    compile(&source, "", backtrack)
+        .map_err(|e| LuaError::runtime(format!("regex pattern error: {e}")))
 }
 
 pub fn luaopen_regex(lua: &Lua) -> LuaResult<Table> {
     let module = lua.create_table()?;
 
-    // compile(pattern, options?) -> pattern | nil, errmsg
+    // shortcut: accounting is per match attempt (backtrack limit) and per
+    // substitution result (output cap); there is no aggregate call counter or
+    // wall-clock deadline. Add one if a caller needs a total-work budget.
+    let limits = Rc::new(RefCell::new(Limits {
+        backtrack: 1_000_000,
+        output: 8 * 1024 * 1024,
+    }));
+
+    let l = limits.clone();
+    module.set(
+        "set_limits",
+        lua.create_function(move |_, (backtrack, output): (usize, usize)| {
+            if backtrack == 0 || output == 0 {
+                return Err(LuaError::runtime(
+                    "REGEX_LIMIT_ERROR: positive limits required",
+                ));
+            }
+            *l.borrow_mut() = Limits { backtrack, output };
+            Ok(())
+        })?,
+    )?;
+
+    // compile(pattern, flags?) -> pattern | nil, errmsg
     let m = module.clone();
+    let l = limits.clone();
     module.set(
         "compile",
         lua.create_function(move |lua, args: Variadic<Value>| {
-            let pattern = args.first().ok_or_else(|| {
-                LuaError::runtime("bad argument #1 to 'compile' (string expected, got no value)")
-            })?;
-            let s = coerce_string(lua, pattern, 1, "regex.compile")?;
-            let mut flags = pcre::PCRE2_UTF;
-            if let Some(options) = args.get(1) {
-                let os = coerce_string(lua, options, 2, "regex.compile")?;
-                let bytes = os.as_bytes();
-                if bytes.contains(&b'i') {
-                    flags |= pcre::PCRE2_CASELESS;
+            let raw = lua_string(lua, args.first())?;
+            let source = match utf8(&raw) {
+                Ok(s) => s,
+                Err(_) => {
+                    return Ok(MultiValue::from_vec(vec![
+                        Value::Nil,
+                        Value::String(
+                            lua.create_string("regex compilation failed: invalid UTF-8")?,
+                        ),
+                    ]))
                 }
-                if bytes.contains(&b'm') {
-                    flags |= pcre::PCRE2_MULTILINE;
+            };
+            let flags = match args.get(1) {
+                Some(v) => {
+                    let f = lua_string(lua, Some(v))?;
+                    ['i', 'm', 's']
+                        .into_iter()
+                        .filter(|c| f.as_bytes().contains(&(*c as u8)))
+                        .collect()
                 }
-                if bytes.contains(&b's') {
-                    flags |= pcre::PCRE2_DOTALL;
+                None => String::new(),
+            };
+            match compile(&source, &flags, l.borrow().backtrack) {
+                Ok(p) => {
+                    let t = lua.create_table()?;
+                    t.raw_set(1, lua.create_userdata(Handle(p))?)?;
+                    t.set_metatable(Some(m.clone()))?;
+                    Ok(MultiValue::from_vec(vec![Value::Table(t)]))
                 }
-            }
-            match compile_pattern(&s.as_bytes(), flags) {
-                Ok(code) => Ok(MultiValue::from_vec(vec![Value::Table(pattern_table(
-                    lua, &m, code,
-                )?)])),
-                Err((offset, msg)) => Ok(MultiValue::from_vec(vec![
+                Err(e) => Ok(MultiValue::from_vec(vec![
                     Value::Nil,
-                    Value::String(lua.create_string(format!(
-                        "regex compilation failed at offset {}: {}",
-                        offset, msg
-                    ))?),
+                    Value::String(lua.create_string(format!("regex compilation failed: {e}"))?),
                 ])),
             }
         })?,
     )?;
 
     // cmatch(pattern, subject, offset?, options?) -> start,end,... (1-based)
+    let l = limits.clone();
     module.set(
         "cmatch",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let pattern = args
-                .first()
-                .ok_or_else(|| LuaError::runtime("bad argument #1 (pattern expected)"))?;
-            let subject = args
-                .get(1)
-                .ok_or_else(|| LuaError::runtime("bad argument #2 (string expected)"))?;
-            let p = pattern_arg(lua, pattern, "regex.cmatch")?;
-            let subject = coerce_string(lua, subject, 2, "regex.cmatch")?;
-            let bytes = subject.as_bytes();
-            let subject_len = bytes.len();
-
-            let mut start = match args.get(2) {
-                Some(v) => offset_relative(opt_number(Some(v)), subject_len),
-                None => 1,
-            };
-            start -= 1;
-            let len = subject_len.saturating_sub(start);
-            let options = opt_number(args.get(3)) as u32;
-
-            let md = match match_data_for(p.code) {
-                Ok(md) => md,
-                Err(e) => {
-                    p.free_if_owned();
-                    return Err(e);
-                }
-            };
-            let rc = unsafe {
-                pcre::pcre2_match_8(
-                    p.code,
-                    bytes.as_ptr().add(start),
-                    len,
-                    0,
-                    options,
-                    md,
-                    std::ptr::null_mut(),
-                )
-            };
-            if rc < 0 {
-                p.free_if_owned();
-                free_match_data(md);
-                if rc != pcre::PCRE2_ERROR_NOMATCH {
-                    return Err(matching_error(rc));
-                }
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            let limits = *l.borrow();
+            let p = pattern_arg(lua, args.first(), limits.backtrack)?;
+            let raw = lua_string(lua, args.get(1))?;
+            let subject = utf8(&raw)?;
+            let subject: &str = &subject;
+            let start = offset_relative(args.get(2), subject)?;
+            let anchored = matching_anchored(args.get(3))?;
+            // cmatch is suffix-relative: the offset becomes the new subject
+            // start, so anchors and lookbehind cannot see the prefix.
+            let Some(c) =
+                find_captures(&p, &subject[start..], 0, anchored, false, limits.backtrack)?
+            else {
                 return Ok(MultiValue::new());
+            };
+            let len = c.len();
+            let end = (0..len)
+                .rposition(|i| c.get(i).is_some())
+                .map_or(0, |n| n + 1);
+            let mut values = Vec::with_capacity(end * 2);
+            for i in 0..end {
+                match c.get(i) {
+                    Some(m) => {
+                        values.push(Value::Integer((start + m.start() + 1) as i64));
+                        values.push(Value::Integer((start + m.end() + 1) as i64));
+                    }
+                    None => {
+                        values.push(Value::Nil);
+                        values.push(Value::Nil);
+                    }
+                }
             }
-            let ov = unsafe { pcre::pcre2_get_ovector_pointer_8(md) };
-            if unsafe { *ov } > unsafe { *ov.add(1) } {
-                p.free_if_owned();
-                free_match_data(md);
-                return Err(k_assertion_error());
-            }
-            let mut values = Vec::with_capacity((rc * 2) as usize);
-            for i in 0..(rc * 2) as usize {
-                let off = unsafe { *ov.add(i) };
-                values.push(Value::Integer((off + start + 1) as i64));
-            }
-            p.free_if_owned();
-            free_match_data(md);
             Ok(MultiValue::from_vec(values))
         })?,
     )?;
 
     // gmatch(pattern, subject, offset?) -> iterator
+    let l = limits.clone();
     module.set(
         "gmatch",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let pattern = args
-                .first()
-                .ok_or_else(|| LuaError::runtime("bad argument #1 (pattern expected)"))?;
-            let subject = args
-                .get(1)
-                .ok_or_else(|| LuaError::runtime("bad argument #2 (string expected)"))?;
-            let p = pattern_arg(lua, pattern, "regex.gmatch")?;
-            let subject = coerce_string(lua, subject, 2, "regex.gmatch")?;
-            let subject = subject.as_bytes();
-            let offset = match args.get(2) {
-                Some(v) => offset_relative(opt_number(Some(v)), subject.len()),
-                None => 1,
-            } - 1;
-            let md = match match_data_for(p.code) {
-                Ok(md) => md,
-                Err(e) => {
-                    p.free_if_owned();
-                    return Err(e);
-                }
-            };
-            let state = Rc::new(RefCell::new(Gmatch {
-                code: p.code,
-                owned: p.owned,
-                md,
-                subject,
-                offset,
-                found: true,
-            }));
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            let limits = *l.borrow();
+            let p = pattern_arg(lua, args.first(), limits.backtrack)?;
+            let raw = lua_string(lua, args.get(1))?;
+            let subject = utf8(&raw)?.to_string();
+            let start = offset_relative(args.get(2), &subject)?;
+            // gmatch searches the whole subject from `start` (unlike cmatch),
+            // so a leading anchor can still see the prefix.
+            let state = Rc::new(RefCell::new((start, false, false)));
             lua.create_function(move |lua, ()| {
                 let mut st = state.borrow_mut();
-                if !st.found {
+                if st.2 {
                     return Ok(MultiValue::new());
                 }
-                let rc = unsafe {
-                    pcre::pcre2_match_8(
-                        st.code,
-                        st.subject.as_ptr(),
-                        st.subject.len(),
-                        st.offset,
-                        0,
-                        st.md,
-                        std::ptr::null_mut(),
-                    )
+                let (pos, retry, done) = &mut *st;
+                let Some(c) = next_match(&p, &subject, pos, retry, limits.backtrack)? else {
+                    *done = true;
+                    return Ok(MultiValue::new());
                 };
-                if rc < 0 {
-                    if rc != pcre::PCRE2_ERROR_NOMATCH {
-                        return Err(matching_error(rc));
-                    }
-                    st.found = false;
-                    return Ok(MultiValue::new());
-                }
-                let ovector_count = unsafe { pcre::pcre2_get_ovector_count_8(st.md) };
-                if ovector_count == 0 {
-                    st.found = false;
-                    return Ok(MultiValue::new());
-                }
-                let ov = unsafe { pcre::pcre2_get_ovector_pointer_8(st.md) };
-                let (o0, o1) = unsafe { (*ov, *ov.add(1)) };
-                if o0 > o1 {
-                    return Err(k_assertion_error());
-                }
-                // With captures, skip the whole match and yield groups only.
-                let index = if ovector_count > 1 { 2 } else { 0 };
-                let total_results = ovector_count as usize * 2;
-                let mut last_offset = 0usize;
-                let mut values = Vec::new();
-                for i in (index..total_results).step_by(2) {
-                    let (a, b) = unsafe { (*ov.add(i), *ov.add(i + 1)) };
-                    if a == b {
-                        values.push(Value::Integer((a + 1) as i64));
-                    } else {
-                        values.push(Value::String(lua.create_string(&st.subject[a..b])?));
-                    }
-                    last_offset = b;
-                }
-                if last_offset.wrapping_sub(1) < st.subject.len() {
-                    st.offset = last_offset;
-                } else {
-                    st.found = false;
-                }
-                Ok(MultiValue::from_vec(values))
+                let m = c.get(0).expect("match 0 is always present");
+                (*pos, *retry) = (m.end(), m.start() == m.end());
+                capture_strings(lua, &c)
             })
         })?,
     )?;
 
     // gsub(pattern, subject, replacement, limit?) -> string, count
+    let l = limits.clone();
     module.set(
         "gsub",
-        lua.create_function(|lua, args: Variadic<Value>| {
-            let pattern = args
-                .first()
-                .ok_or_else(|| LuaError::runtime("bad argument #1 (pattern expected)"))?;
-            let subject = args
-                .get(1)
-                .ok_or_else(|| LuaError::runtime("bad argument #2 (string expected)"))?;
-            let replacement = args
-                .get(2)
-                .ok_or_else(|| LuaError::runtime("bad argument #3 (string expected)"))?;
-            let p = pattern_arg(lua, pattern, "regex.gsub")?;
-            let subject = coerce_string(lua, subject, 2, "regex.gsub")?;
-            let replacement = coerce_string(lua, replacement, 3, "regex.gsub")?;
-            let repl = replacement.as_bytes();
+        lua.create_function(move |lua, args: Variadic<Value>| {
+            let limits = *l.borrow();
+            let p = pattern_arg(lua, args.first(), limits.backtrack)?;
+            let raw = lua_string(lua, args.get(1))?;
+            let subject = utf8(&raw)?;
+            let raw_repl = lua_string(lua, args.get(2))?;
+            let replacement = utf8(&raw_repl)?;
             let limit = (opt_number(args.get(3)) as i64).max(0) as usize;
-
-            let md = match match_data_for(p.code) {
-                Ok(md) => md,
-                Err(e) => {
-                    p.free_if_owned();
-                    return Err(e);
-                }
-            };
-
-            // The C code hands PCRE2 a raw buffer and juggles ownership by
-            // hand. Owning the subject up front keeps the same control flow
-            // without the manual frees.
-            let mut subject: Vec<u8> = subject.as_bytes().to_vec();
-            let mut buffer_size: usize = 1024;
-            let mut output: Vec<u8> = vec![0; buffer_size];
-            let mut options =
-                pcre::PCRE2_SUBSTITUTE_OVERFLOW_LENGTH | pcre::PCRE2_SUBSTITUTE_EXTENDED;
-            if limit == 0 {
-                options |= pcre::PCRE2_SUBSTITUTE_GLOBAL;
-            }
-
-            let mut results_count: i64;
-            let final_len: usize;
-            let mut offset: usize = 0;
-            let mut limit_count: i64 = 0;
-            let mut done = false;
-
-            loop {
-                let mut outlen: usize = buffer_size;
-                let rc = unsafe {
-                    pcre::pcre2_substitute_8(
-                        p.code,
-                        subject.as_ptr(),
-                        subject.len(),
-                        offset,
-                        options,
-                        md,
-                        std::ptr::null_mut(),
-                        repl.as_ptr(),
-                        repl.len(),
-                        output.as_mut_ptr(),
-                        &mut outlen,
-                    )
-                };
-                results_count = rc as i64;
-
-                if rc != pcre::PCRE2_ERROR_NOMEMORY || buffer_size >= outlen {
-                    if limit == 0 || rc < 0 {
-                        // Global path, or a real error reported below.
-                        done = true;
-                    } else {
-                        let ovector_count = unsafe { pcre::pcre2_get_ovector_count_8(md) };
-                        if rc > 0 && ovector_count > 0 {
-                            limit_count += 1;
-                            let ov = unsafe { pcre::pcre2_get_ovector_pointer_8(md) };
-                            let end = unsafe { *ov.add(1) };
-                            offset = if outlen > subject.len() {
-                                end.wrapping_add(outlen - subject.len())
-                            } else {
-                                end.wrapping_sub(subject.len() - outlen)
-                            };
-                            if limit_count as usize == limit || offset.wrapping_sub(1) == outlen {
-                                done = true;
-                                results_count = limit_count;
-                            } else {
-                                // The C code keeps the substituted subject and
-                                // its length in separate variables; truncating
-                                // to the written length is the same thing.
-                                subject = std::mem::take(&mut output);
-                                subject.truncate(outlen);
-                                output = vec![0; buffer_size];
-                            }
-                        } else {
-                            done = true;
-                            results_count = limit_count;
-                        }
-                    }
-                } else {
-                    buffer_size = outlen;
-                    output.resize(buffer_size, 0);
-                }
-                if done {
-                    final_len = outlen;
-                    break;
-                }
-            }
-
-            let result = if results_count > 0 {
-                (
-                    Value::String(lua.create_string(&output[..final_len])?),
-                    Value::Integer(results_count),
-                )
-            } else if results_count == 0 {
-                (
-                    Value::String(lua.create_string(&subject[..])?),
-                    Value::Integer(0),
-                )
-            } else {
-                free_match_data(md);
-                p.free_if_owned();
-                return Err(LuaError::runtime(format!(
-                    "regex substitute error: {}",
-                    pcre::error_message(results_count as c_int)
-                )));
-            };
-
-            free_match_data(md);
-            p.free_if_owned();
-            Ok(MultiValue::from_vec(vec![result.0, result.1]))
+            let (out, count) = substitute(&p, &subject, &replacement, limit, limits)?;
+            Ok(MultiValue::from_vec(vec![
+                Value::String(lua.create_string(out)?),
+                Value::Integer(count as i64),
+            ]))
         })?,
     )?;
 
-    // Frees the compiled pattern held in field 1 of a precompiled table.
-    module.set(
-        "__gc",
-        lua.create_function(|_, t: Table| {
-            if let Value::LightUserData(LightUserData(p)) = t.raw_get::<Value>(1)? {
-                if !p.is_null() {
-                    unsafe { pcre::pcre2_code_free_8(p as *mut pcre::Pcre2Code) };
-                }
-            }
-            Ok(())
-        })?,
-    )?;
-
-    // PCRE2_ANCHORED is intentionally used for ENDANCHORED too: the C core has
-    // this long-standing quirk and Lua code may rely on the value.
-    // shortcut: ENDANCHORED aliases ANCHORED, fix only if PCRE2_ENDANCHORED is wanted.
+    // ENDANCHORED remains an alias of ANCHORED, a long-standing quirk bundled
+    // callers may depend on.
+    // shortcut: ENDANCHORED aliases ANCHORED; split them only if end anchoring is wanted.
     for (name, value) in [
-        ("ANCHORED", pcre::PCRE2_ANCHORED),
-        ("ENDANCHORED", pcre::PCRE2_ANCHORED),
-        ("NOTBOL", pcre::PCRE2_NOTBOL),
-        ("NOTEOL", pcre::PCRE2_NOTEOL),
-        ("NOTEMPTY", pcre::PCRE2_NOTEMPTY),
-        ("NOTEMPTY_ATSTART", pcre::PCRE2_NOTEMPTY_ATSTART),
+        ("ANCHORED", ANCHORED as i64),
+        ("ENDANCHORED", ANCHORED as i64),
     ] {
-        module.set(name, value as i64)?;
+        module.set(name, value)?;
     }
 
     module.set("__name", "regex")?;
     Ok(module)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mlua::FromLuaMulti;
+
+    fn lua() -> Lua {
+        let lua = Lua::new();
+        let module = luaopen_regex(&lua).unwrap();
+        lua.globals().set("regex", module).unwrap();
+        lua
+    }
+
+    fn eval<T: FromLuaMulti>(lua: &Lua, src: &str) -> T {
+        lua.load(src).eval().unwrap()
+    }
+
+    #[test]
+    fn native_dollar_expansion() {
+        let lua = lua();
+        let (out, n): (String, i64) =
+            eval(&lua, r#"return regex.gsub("a(b)c", "=abc=", "+$1$0$1+")"#);
+        assert_eq!((out.as_str(), n), ("=+babcb+=", 1));
+        let (out, n): (String, i64) =
+            eval(&lua, r#"return regex.gsub("(?<word>a)", "a", "<${word}>")"#);
+        assert_eq!((out.as_str(), n), ("<a>", 1));
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("(a)", "a", "$$$1")"#);
+        assert_eq!((out.as_str(), n), ("$a", 1));
+    }
+
+    #[test]
+    fn unknown_refs_follow_native_behavior() {
+        let lua = lua();
+        // Unknown numbered group -> empty.
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("(a)", "a", "$9")"#);
+        assert_eq!((out.as_str(), n), ("", 1));
+        // Trailing `$` with nothing to reference -> literal.
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("a", "a", "x$")"#);
+        assert_eq!((out.as_str(), n), ("x$", 1));
+    }
+
+    #[test]
+    fn no_pcre_backslash_case_conversion() {
+        let lua = lua();
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("(a)", "a", [[\U$1\E]])"#);
+        assert_eq!((out.as_str(), n), (r"\Ua\E", 1));
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("(a)", "a", [[\n]])"#);
+        assert_eq!((out.as_str(), n), (r"\n", 1));
+    }
+
+    #[test]
+    fn output_limit_is_explicit_and_atomic() {
+        let lua = lua();
+        eval::<()>(&lua, r#"regex.set_limits(1000000, 4)"#);
+        let (ok, msg): (bool, String) = eval(
+            &lua,
+            r#"local ok, err = pcall(regex.gsub, "a", "aaaa", "bbbb"); return ok, tostring(err)"#,
+        );
+        assert!(!ok);
+        assert!(msg.contains("REGEX_OUTPUT_LIMIT"), "{msg}");
+        // The limited no-match path must enforce the same result-byte cap.
+        let ok: bool = eval(&lua, r#"return (pcall(regex.gsub, "z", "aaaaa", "", 1))"#);
+        assert!(!ok);
+        eval::<()>(&lua, r#"regex.set_limits(1000000, 8388608)"#);
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("a", "aaaa", "bbbb")"#);
+        assert_eq!((out.as_str(), n), ("bbbbbbbbbbbbbbbb", 4));
+    }
+
+    #[test]
+    fn compiled_pattern_survives_gc() {
+        let lua = lua();
+        let (out, n): (String, i64) = eval(
+            &lua,
+            r#"
+            local p = regex.compile("(a)")
+            collectgarbage("collect")
+            return regex.gsub(p, "banana", "<$1>")
+            "#,
+        );
+        assert_eq!((out.as_str(), n), ("b<a>n<a>n<a>", 3));
+        let kind: String = eval(&lua, r#"return type(regex.compile("a")[1])"#);
+        assert_eq!(kind, "userdata");
+        let (first, second, remaining): (String, String, i64) = eval(
+            &lua,
+            r##"
+            local iter
+            do local p = regex.compile("a"); iter = regex.gmatch(p, "aa") end
+            collectgarbage("collect"); collectgarbage("collect")
+            return iter(), iter(), select("#", iter())
+            "##,
+        );
+        assert_eq!((first.as_str(), second.as_str(), remaining), ("a", "a", 0));
+    }
+
+    #[test]
+    fn empty_match_progress_advances_utf8() {
+        let lua = lua();
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("x*", "é", "-")"#);
+        assert_eq!((out.as_str(), n), ("-é-", 2));
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("x*", "aé", "-")"#);
+        assert_eq!((out.as_str(), n), ("-a-é-", 3));
+        let count: i64 = eval(
+            &lua,
+            r#"local n = 0; for _ in regex.gmatch("x*", "aé") do n = n + 1 end; return n"#,
+        );
+        assert_eq!(count, 3);
+    }
+
+    #[test]
+    fn positive_limit_substitution_quirk() {
+        let lua = lua();
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("x*", "abc", "-", 2)"#);
+        assert_eq!((out.as_str(), n), ("--abc", 2));
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("x*", "abc", "-")"#);
+        assert_eq!((out.as_str(), n), ("-a-b-c-", 4));
+    }
+
+    #[test]
+    fn removed_match_options_are_rejected() {
+        let lua = lua();
+        let missing: i64 = eval(
+            &lua,
+            r#"
+            local n = 0
+            n = n + (regex.NOTBOL == nil and 1 or 0)
+            n = n + (regex.NOTEOL == nil and 1 or 0)
+            n = n + (regex.NOTEMPTY == nil and 1 or 0)
+            n = n + (regex.NOTEMPTY_ATSTART == nil and 1 or 0)
+            return n
+            "#,
+        );
+        assert_eq!(missing, 4);
+        assert_eq!(
+            eval::<bool>(&lua, r#"return regex.ENDANCHORED == regex.ANCHORED"#),
+            true
+        );
+        let (ok, msg): (bool, String) = eval(
+            &lua,
+            r#"local ok, err = pcall(regex.cmatch, "a", "ba", 1, 1); return ok, tostring(err)"#,
+        );
+        assert!(!ok);
+        assert!(msg.contains("REGEX_OPTIONS_ERROR"), "{msg}");
+        // ANCHORED still constrains the match to the offset.
+        let n: i64 = eval(
+            &lua,
+            r##"return select("#", regex.cmatch("a", "ba", 1, regex.ANCHORED))"##,
+        );
+        assert_eq!(n, 0);
+        let (a, b): (i64, i64) = eval(&lua, r#"return regex.cmatch("a", "ba", 1)"#);
+        assert_eq!((a, b), (2, 3));
+    }
+
+    #[test]
+    fn set_limits_then_reuse_compiled_handle() {
+        let lua = lua();
+        let out: String = eval(
+            &lua,
+            r#"
+            local p = regex.compile("a")
+            regex.set_limits(500000, 1024)
+            return regex.gsub(p, "aa", "x")
+            "#,
+        );
+        assert_eq!(out, "xx");
+        let (ok, msg): (bool, String) = eval(
+            &lua,
+            r#"local ok, err = pcall(regex.set_limits, 0, 1024); return ok, tostring(err)"#,
+        );
+        assert!(!ok);
+        assert!(msg.contains("REGEX_LIMIT_ERROR"), "{msg}");
+        let (ok, msg): (bool, String) = eval(
+            &lua,
+            r#"
+            regex.set_limits(1000, 1024)
+            local ok, err = pcall(regex.cmatch, [[(a|aa)+\1b]], string.rep("a", 1000))
+            return ok, tostring(err)
+            "#,
+        );
+        assert!(!ok);
+        assert!(msg.contains("REGEX_WORK_LIMIT"), "{msg}");
+    }
+
+    #[test]
+    fn input_assertions_are_hard() {
+        let lua = lua();
+        // Whole-subject gmatch: \A only matches the real start, not the offset.
+        let count: i64 = eval(
+            &lua,
+            r#"local n = 0; for _ in regex.gmatch("\\Aa", "ba", 2) do n = n + 1 end; return n"#,
+        );
+        assert_eq!(count, 0);
+        let (out, n): (String, i64) = eval(&lua, r#"return regex.gsub("\\Aa", "a", "z")"#);
+        assert_eq!((out.as_str(), n), ("z", 1));
+        let (a, b): (i64, i64) = eval(&lua, r#"return regex.cmatch("a\\z", "a")"#);
+        assert_eq!((a, b), (1, 2));
+    }
+
+    #[test]
+    fn cmatch_offsets_holes_and_trailing_omission() {
+        let lua = lua();
+        let (a, b): (i64, i64) = eval(&lua, r#"return regex.cmatch("a", "banana")"#);
+        assert_eq!((a, b), (2, 3));
+        // Trailing unmatched group is omitted.
+        let n: i64 = eval(
+            &lua,
+            r##"return select("#", regex.cmatch("(a)(b)?", "a"))"##,
+        );
+        assert_eq!(n, 4);
+        // A hole before a later group is nil, nil.
+        let (n, hole): (i64, bool) = eval(
+            &lua,
+            r##"
+            local _, _, _, _, e, f = regex.cmatch("(a)(b)?(c)", "ac")
+            return select("#", regex.cmatch("(a)(b)?(c)", "ac")), (e == nil and f == nil)
+            "##,
+        );
+        assert_eq!((n, hole), (8, true));
+    }
+
+    #[test]
+    fn native_unicode_classes() {
+        let lua = lua();
+        // fancy-regex is Unicode-aware by default, unlike the old PCRE2 build.
+        let (a, b): (i64, i64) = eval(&lua, r#"return regex.cmatch("\\w+", "é")"#);
+        assert_eq!((a, b), (1, 3));
+    }
+
+    #[test]
+    fn utf8_failures_are_safe() {
+        let lua = lua();
+        let (is_nil, msg_len): (bool, i64) = eval(
+            &lua,
+            r#"
+            local p, msg = regex.compile("\255")
+            return p == nil, #msg
+            "#,
+        );
+        assert!(is_nil);
+        assert!(msg_len > 0);
+        let ok: bool = eval(&lua, r#"return (pcall(regex.cmatch, "a", "\255"))"#);
+        assert!(!ok);
+        let safe: bool = eval(
+            &lua,
+            r#"
+            for _, args in ipairs({ { {}, "a" }, { {io.stdout}, "a" },
+                                    { ".", "é", 2 }, { ".", "a", 3 } }) do
+                if pcall(regex.cmatch, table.unpack(args)) then return false end
+            end
+            return true
+        "#,
+        );
+        assert!(safe);
+    }
 }

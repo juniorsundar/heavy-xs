@@ -1,0 +1,18 @@
+PASS invalid_pattern_utf_compile_pair: true | "string"
+PASS invalid_flag_byte_ignored: 1 | 2
+PASS middle_cmatch: 1 | 2 | nil | nil | 1 | 2
+PASS middle_find_offsets: 1 | 1 | nil | nil | 1 | 1
+PASS middle_find: 1 | 1 | nil | "b"
+PASS middle_match: nil | "b"
+PASS middle_gmatch: nil | "b"
+PASS trailing_omitted: 1 | 2 | 1 | 2
+PASS iterator_keeps_pattern_after_GC: "a" | "a" | 0
+PASS bad_handle: false | true
+PASS foreign_handle: false | true
+PASS offset_past_end: false | true
+PASS offset_inside_utf8: false | true
+PASS offset_at_eof: 3 | 3 | 3 | 3
+PASS mixed_empty_nonempty_iteration: 1 | "a" | 2 | 0
+PASS iterator_keeps_prefix: "a"
+PASS notempty_same_position: 1 | 2
+SUMMARY mode=safety checks=17 failures=0
