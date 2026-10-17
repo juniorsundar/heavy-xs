@@ -1,7 +1,7 @@
 //! Raw PCRE2 (8-bit code units) declarations.
 //!
-//! Hand-written rather than using the `pcre2` crate: the C core already links
-//! `libpcre2-8` (see `src/meson.build`), and the C API is only a dozen
+//! Hand-written rather than using the `pcre2` crate: `pcre2-sys` builds
+//! `libpcre2-8`, and the C API is only a dozen
 //! functions. `pcre2.h` renames everything with a `_8` suffix via
 //! `PCRE2_SUFFIX` because `PCRE2_CODE_UNIT_WIDTH == 8`.
 

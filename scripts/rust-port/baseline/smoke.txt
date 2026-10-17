@@ -8,4 +8,3 @@ type(dirmonitor)                             table
 type(utf8extra)                              table
 PLATFORM                                     Linux
 type(ARGS)                                   table
-rust_probe.ping()                            absent

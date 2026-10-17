@@ -154,17 +154,9 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             }
 
             sdl::SDL_EventType::KEY_DOWN => {
-                #[cfg(target_os = "macos")]
-                if e.key.key == sdl::SDLK_W && e.key.r#mod.0 & sdl::SDL_KMOD_GUI.0 != 0 {
-                    sdl::SDL_FlushEvent(sdl::SDL_EventType::QUIT.0);
-                }
                 event!(l, "keypressed", push_str(l, &key_name(&e.key)))
             }
             sdl::SDL_EventType::KEY_UP => {
-                #[cfg(target_os = "macos")]
-                if e.key.key == sdl::SDLK_W && e.key.r#mod.0 & sdl::SDL_KMOD_GUI.0 != 0 {
-                    sdl::SDL_FlushEvent(sdl::SDL_EventType::QUIT.0);
-                }
                 event!(l, "keyreleased", push_str(l, &key_name(&e.key)))
             }
 

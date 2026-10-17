@@ -10,8 +10,7 @@
 //!
 //! `renderer.c`'s window bookkeeping came along too (the list, `ren_create`/`ren_destroy`, the
 //! target window, `ren_get_size`, `ren_update_rects`), because all of it reads the struct's
-//! fields. `renderer.c` keeps what it is good at (FreeType and pixels); the `ren_*` declarations
-//! live on in `src/renderer.h`, and `api/renwindow.c` (the Lua binding) still calls them.
+//! fields. The Lua binding is `renwindow_api.rs`.
 
 use std::ffi::{c_int, c_void};
 use std::sync::Mutex;
