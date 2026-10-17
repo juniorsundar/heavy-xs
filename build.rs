@@ -6,7 +6,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-env-changed=LITE_ARCH_TUPLE");
     // A new commit changes logs/HEAD, so the "(git-xxxxxxxx)" suffix stays current.
-    println!("cargo:rerun-if-changed=../.git/logs/HEAD");
+    println!("cargo:rerun-if-changed=.git/logs/HEAD");
 
     let mut version = std::env::var("CARGO_PKG_VERSION").unwrap();
     // Only non-release builds carry the commit, as upstream's meson.build did.
@@ -37,7 +37,7 @@ fn main() {
 
 /// The window icon lives in `icon.inl` (a C byte array kept from upstream); extract its RGBA bytes.
 fn window_icon() {
-    let path = "../resources/icons/icon.inl";
+    let path = "resources/icons/icon.inl";
     println!("cargo:rerun-if-changed={path}");
     let text = std::fs::read_to_string(path).expect("read icon.inl");
     let body = text

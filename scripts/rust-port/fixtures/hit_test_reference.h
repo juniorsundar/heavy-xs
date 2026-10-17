@@ -1,6 +1,6 @@
 /* Verbatim copy of hit_test() and its struct from the deleted src/api/system.c (last present at
  * commit 0448df7d). scripts/rust-port/hit-test-check.sh compiles it as the reference that
- * rust/src/hit.rs is diffed against. Do not "fix" it: it is the oracle. */
+ * src/hit.rs is diffed against. Do not "fix" it: it is the oracle. */
 struct HitTestInfo {
   int title_height;
   int controls_width;

@@ -11,8 +11,8 @@ prefix=${3:-/usr/local}
 root_out=$dest$prefix
 data=$root_out/share/lite-xl
 
-# Same version string the binary reports (rust/build.rs): the release profile has no git suffix.
-version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/rust/Cargo.toml" | head -1)
+# Same version string the binary reports (build.rs): the release profile has no git suffix.
+version=$(sed -n 's/^version = "\(.*\)"/\1/p' "$root/Cargo.toml" | head -1)
 if [ "${LITE_RELEASE:-}" != 1 ]; then
   commit=$(git -C "$root" rev-parse HEAD 2>/dev/null | cut -c1-8 || true)
   [ -n "$commit" ] && version="$version (git-$commit)"

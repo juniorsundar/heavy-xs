@@ -1,4 +1,4 @@
--- Generates rust/src/plugin_syms.rs: every Lua symbol a native plugin may resolve through
+-- Generates src/plugin_syms.rs: every Lua symbol a native plugin may resolve through
 -- the `XL` resolver passed to luaopen_lite_xl_<name>(L, XL).
 --
 -- The source of truth is the header plugins compile against, not the C table in
@@ -8,7 +8,7 @@
 --   lua scripts/rust-port/gen-plugin-syms.lua           write the file
 --   lua scripts/rust-port/gen-plugin-syms.lua --check   fail if it is out of date
 local header_path = "resources/include/lite_xl_plugin_api.h"
-local out_path = "rust/src/plugin_syms.rs"
+local out_path = "src/plugin_syms.rs"
 
 local f = assert(io.open(header_path, "rb")); local header = f:read("a"); f:close()
 
