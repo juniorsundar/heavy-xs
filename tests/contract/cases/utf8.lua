@@ -3,7 +3,7 @@
 -- Two kinds of observation:
 --   * curated cases covering every exported function;
 --   * digests over thousands of codepoints, which catch drift in the Unicode
---     tables (generated into rust/src/unidata.rs from src/unidata.h).
+--     tables (generated into src/unidata.rs from upstream's C unidata.h).
 --
 -- Every case goes through `val`, which records the pcall status and, on success,
 -- the results. Error messages are deliberately not recorded: the C core raises

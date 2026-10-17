@@ -1,10 +1,10 @@
 #!/usr/bin/env sh
-# Checks what rust/src/app.rs owns and the module suites cannot reach: the globals handed to
+# Checks what src/app.rs owns and the module suites cannot reach: the globals handed to
 # start.lua, the restart loop (Lua state recreated, window kept), exit codes and error.txt.
 # Runs the staged binary left behind by verify.sh against throwaway runtimes.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-target=${TARGET_DIR:-$root/rust/target}
+target=${TARGET_DIR:-$root/target}
 case " ${CARGO_ARGS:-} " in *" --release "*) profile=release ;; *) profile=debug ;; esac
 bin=$target/$profile/lite-xl
 stage=${STAGE_DIR:-$target/stage}/usr/local

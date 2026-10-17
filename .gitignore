@@ -24,7 +24,7 @@ LiteXL*
 # direnv cache
 .direnv/
 /.pi/subagents
-rust/target/
+/target/
 result
 .serena/*
 /stage-rs/usr/local/share
