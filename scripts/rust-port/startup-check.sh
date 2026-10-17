@@ -64,4 +64,41 @@ check "failure: exit code" "$rc" 1
 check "failure: error.txt names the error" "$(grep -c 'deliberate startup failure' "$work/error.txt" 2>/dev/null || echo 0)" 1
 check "failure: stdout has traceback" "$(grep -c 'stack traceback' "$out")" 1
 
+# --- quit: Ctrl-C (SIGINT, which SDL turns into a quit event) removes every project in core.exit, and
+# core.run stops after that step. The step must not update or draw in between, or any plugin that
+# calls core.root_project() during update/draw raises (seen with lintplus and lsp).
+mkdir -p "$work/quituser" "$work/quitproj"
+echo 'local x = 1' > "$work/quitproj/a.lua"
+cat > "$work/quituser/init.lua" <<'LUA'
+local core = require "core"
+local RootView = require "core.rootview"
+for _, name in ipairs { "update", "draw" } do
+  local orig = RootView[name]
+  RootView[name] = function(...)
+    if not core.root_project() then io.stderr:write("QUIT ", name, " without a project\n") end
+    return orig(...)
+  end
+end
+core.add_thread(function()
+  coroutine.yield(0.5)
+  io.stderr:write("QUIT ready\n")
+end)
+LUA
+out=$work/quit.log
+# A non-interactive shell starts background jobs with SIGINT ignored, and the editor would inherit
+# that (it then only ends at the timeout's SIGTERM); --default-signal gives it a terminal's Ctrl-C.
+( cd "$work/quitproj" && exec env --default-signal=INT DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent SDL_VIDEODRIVER=dummy \
+  LITE_USERDIR="$work/quituser" LITE_PREFIX=$stage "$bin" "$work/quitproj/a.lua" >"$out" 2>&1 ) &
+pid=$!
+i=0; while [ $i -lt 100 ] && ! grep -q '^QUIT ready' "$out" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+kill -INT "$pid"
+# Must end on its own well before any timeout would.
+i=0; while [ $i -lt 50 ] && kill -0 "$pid" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
+if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
+wait "$pid" && rc=0 || rc=$?
+check "quit: SIGINT reached a running editor" "$(grep -c '^QUIT ready' "$out")" 1
+check "quit: exits 0 within 5s of SIGINT" "$rc" 0
+check "quit: no update/draw after projects removed" "$(grep -c '^QUIT .* without a project' "$out")" 0
+check "quit: exits cleanly" "$([ -e "$work/quituser/error.txt" ] && echo error.txt || echo clean)" clean
+
 exit $fail
