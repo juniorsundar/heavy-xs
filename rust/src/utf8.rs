@@ -3,8 +3,7 @@
 //!
 //! Two pieces: the `string`-compatible API (`len`, `sub`, `find`, `gsub`, ...)
 //! and a pattern engine that works on codepoints instead of bytes. The Unicode
-//! tables live in `unidata.rs`, generated from `src/unidata.h` by
-//! `scripts/rust-port/gen-unidata.lua`.
+//! tables live in `unidata.rs`.
 
 use std::cell::Cell;
 

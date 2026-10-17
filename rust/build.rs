@@ -9,7 +9,7 @@ fn main() {
     println!("cargo:rerun-if-changed=../.git/logs/HEAD");
 
     let mut version = std::env::var("CARGO_PKG_VERSION").unwrap();
-    // Same rule as meson.build: only non-release builds carry the commit.
+    // Only non-release builds carry the commit, as upstream's meson.build did.
     if std::env::var("PROFILE").as_deref() != Ok("release") {
         if let Ok(out) = Command::new("git").args(["rev-parse", "HEAD"]).output() {
             let commit = String::from_utf8_lossy(&out.stdout);
@@ -21,8 +21,8 @@ fn main() {
     }
     println!("cargo:rustc-env=LITE_PROJECT_VERSION_STR={version}");
 
-    // meson: '<cpu_family>-<system>'; Rust's arch names equal Meson's cpu families for the
-    // targets we ship (x86_64, x86, aarch64, arm).
+    // '<arch>-<os>', the tuple upstream's Meson build produced (its cpu families equal Rust's
+    // arch names for x86_64, x86, aarch64, arm).
     let arch = std::env::var("LITE_ARCH_TUPLE").unwrap_or_else(|_| {
         format!(
             "{}-{}",
@@ -35,7 +35,7 @@ fn main() {
     window_icon();
 }
 
-/// The window icon is kept as C source (`icon.inl`) for the Meson build; extract its RGBA bytes.
+/// The window icon lives in `icon.inl` (a C byte array kept from upstream); extract its RGBA bytes.
 fn window_icon() {
     let path = "../resources/icons/icon.inl";
     println!("cargo:rerun-if-changed={path}");

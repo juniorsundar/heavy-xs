@@ -26,10 +26,6 @@ static mut PERSISTENT_WINDOW: *mut RenWindow = ptr::null_mut();
 static ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
 
 unsafe fn init_window_icon(window: *mut sdl::SDL_Window) {
-    // The icon is skipped on Windows (resource file) and macOS (bundle), as in the C.
-    if cfg!(any(windows, target_os = "macos")) {
-        return;
-    }
     let format =
         sdl::SDL_GetPixelFormatForMasks(32, 0x0000_00ff, 0x0000_ff00, 0x00ff_0000, 0xff00_0000);
     let surface = sdl::SDL_CreateSurfaceFrom(64, 64, format, ICON_RGBA.as_ptr() as *mut _, 64 * 4);

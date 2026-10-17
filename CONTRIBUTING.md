@@ -40,14 +40,13 @@ Regular building instructions from [README.md](README.md#quick-build-guide) appl
 If you want to work with two distinct installations of Lite XL (the stable version 2, and a development version 3) here's a suggestion for how to do it on Linux:
 
 ```
-# Assuming you have all the dependencies installed.
+# Assuming you have all the dependencies installed (or are inside `nix develop`).
 cd lite-xl
-meson setup --buildtype=release --prefix /lite-xl-dev build-release
-meson compile -C build-release
+cargo build --release --manifest-path rust/Cargo.toml
 
 INSTALL_DIR=$HOME/.local
 # Installs the development version under ${INSTALL_DIR}/lite-xl-dev
-meson install --destdir "${INSTALL_DIR}" --skip-subprojects -C build-release
+scripts/install-linux.sh rust/target/release/lite-xl "${INSTALL_DIR}" /lite-xl-dev
 
 # A convenient alias to run the dev version with a dedicated config directory, 
 # to not conflict with the default one ($HOME/.config/lite-xl)

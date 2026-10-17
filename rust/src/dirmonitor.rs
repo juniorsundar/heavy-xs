@@ -7,7 +7,7 @@
 //! "dirmonitor" custom event (see `custom_events.rs`).
 //! The thread never touches Lua.
 //!
-//! Linux only. Other platforms keep the C backends in `src/api/dirmonitor/`.
+//! Linux only (the other platforms' backends were deleted in W10).
 //!
 //! Deviations from the C:
 //!   * the C walks inotify events in 16-byte steps instead of 16 + `len`, so a
