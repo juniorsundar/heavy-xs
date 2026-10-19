@@ -49,7 +49,7 @@ The user has confirmed the acceptance criteria. [Establish additional font-forma
 - FreeType itself plateaus.
 - Retention comparisons should run with `SDL_FRAMEBUFFER_ACCELERATION=0`, or the `dummy` driver for non-pixel phases. They should read the anonymous RSS and malloc in-use columns.
 - Raw accelerated-offscreen RSS would charge driver growth to whichever backend is under test.
-- The [classification probe](../assets/font-retention-classify.lua) and its variants can be reused unchanged against a candidate.
+- The [classification probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention-classify.lua) and its variants can be reused unchanged against a candidate.
 - No shared-code defect was found, so there is no inherited leak needing a migration disposition.
 
 [Establish additional font-format reference coverage](20-establish-additional-font-format-coverage.md) is resolved; use [its report and fixtures](../assets/font-format-reference.md) for the format matrix. Type 1/PFB and safe mono-BDF samples render real mapped glyphs; COLRv1/SVG samples exercise monochrome outline fallback. Several bitmap cases instead produce generic rectangles even for mapped targets, and requested sizes can fail before drawing. Do not score parser success or those rectangles as successful glyph rendering.

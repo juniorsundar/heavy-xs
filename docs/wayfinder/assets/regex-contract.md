@@ -19,7 +19,7 @@ Other relative source links locate files in the current checkout; use the same r
 
 - **Source-read:** native implementation, Lua wrappers, bundled callers/pattern definitions, contract tests and a sample installed snippet plugin.
 - **Observed:** rebuilt the current debug binary and ran `scripts/rust-port/verify.sh regex,tokenizer` in the existing Nix development environment: both suites passed. No baselines were rewritten.
-- **Observed:** [bounded probe](regex-contract-probe.lua) completed with 20 observations, 17 asserted and three error messages recorded without exact-text assertions. [Recorded output](regex-contract-probe.txt) is a new inventory asset, not a replacement oracle.
+- **Observed:** [bounded probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-contract-probe.lua) completed with 20 observations, 17 asserted and three error messages recorded without exact-text assertions. [Recorded output](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-contract-probe.txt) is a new inventory asset, not a replacement oracle.
 - **Not measured:** release performance, memory under load, JIT availability/success, adversarial-input budgets or cancellation latency. No alternative engine was researched or tested here.
 
 ## Native and Lua surface

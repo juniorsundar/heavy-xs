@@ -10,14 +10,14 @@ Evidence for [Collect the FreeType rendering and cost baseline](../issues/14-col
 | Font stack | freetype-rs 0.38.0 / freetype-sys 0.23.0 (bundled FreeType 2.13.2); system SDL3 3.4.14 |
 | `Cargo.lock` SHA-256 | `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272` |
 | Probe binary | Release build with `--features test_hooks`. SHA-256: `8e8444bbde7dbf100f88046e8ae9fb310e1f19968b5531f729e9f511004f42e3` |
-| Probe | [`freetype-baseline.lua`](freetype-baseline.lua), SHA-256 `4561a885b4b1e432ce4831afcd859da27c6d5a126e61c49a7b65654a5107d2ca` |
+| Probe | [`freetype-baseline.lua`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline.lua), SHA-256 `4561a885b4b1e432ce4831afcd859da27c6d5a126e61c49a7b65654a5107d2ca` |
 | Driver | `SDL_VIDEODRIVER=offscreen`, surface scale 1, Linux x86_64, single host |
 
 Pixel output depends on the build. A FreeType 2.14.1 build has already changed six hinted mono hashes. Compare against these artifacts only with the same build identity, or treat the difference as a reviewed observation.
 
 ## Corpus and provenance
 
-[`font-provenance.tsv`](freetype-baseline/font-provenance.tsv) records the file name, package, face-0 family/style, byte size, SHA-256, outline table, collection face count, default variation axes, licence evidence and upstream URLs. It contains no local paths.
+[`font-provenance.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/font-provenance.tsv) records the file name, package, face-0 family/style, byte size, SHA-256, outline table, collection face count, default variation axes, licence evidence and upstream URLs. It contains no local paths.
 
 | ID | Font | Format | Licence |
 | --- | --- | --- | --- |
@@ -35,11 +35,11 @@ Custom fonts are supplied as public system paths through `FONT_BASELINE_SANS/MON
 | Artifact | Covers |
 | --- | --- |
 | `sheet-<id>.png` (7) | Each font across all antialiasing × hinting combinations (3×3) at 16 px, with a red marker at the pen position returned by `draw_text`. |
-| [`sheet-features.png`](freetype-baseline/sheet-features.png) | Real ASCII-mapped icons, icon→Fira fallback, Mono→CJK fallback, an absent codepoint using the last font's `.notdef`, tabs with and without an offset, six fractional pen positions, eight style combinations, three sizes, malformed UTF-8, embedded NUL, a combining mark and U+3000. |
-| [`image-sheets.tsv`](freetype-baseline/image-sheets.tsv) | Logical-RGB surface hash and lit-pixel count for every sheet. These are the same values as `lxl_test.surface_hash`. |
-| [`font-metrics.tsv`](freetype-baseline/font-metrics.tsv) | 63 rows: size, height and widths for the sample, `A`, space, tab, tab offsets 0/3.5 and U+0301, by font × antialiasing × hinting. |
-| [`feature-metrics.tsv`](freetype-baseline/feature-metrics.tsv) | 89 rows: x/y, measured width, returned x and height for every drawn line. The probe asserts `returned_x == x + width`. |
-| [`font-timing.tsv`](freetype-baseline/font-timing.tsv) | 315 samples: 7 fonts × 9 options × 5 repetitions. |
+| [`sheet-features.png`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/sheet-features.png) | Real ASCII-mapped icons, icon→Fira fallback, Mono→CJK fallback, an absent codepoint using the last font's `.notdef`, tabs with and without an offset, six fractional pen positions, eight style combinations, three sizes, malformed UTF-8, embedded NUL, a combining mark and U+3000. |
+| [`image-sheets.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/image-sheets.tsv) | Logical-RGB surface hash and lit-pixel count for every sheet. These are the same values as `lxl_test.surface_hash`. |
+| [`font-metrics.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/font-metrics.tsv) | 63 rows: size, height and widths for the sample, `A`, space, tab, tab offsets 0/3.5 and U+0301, by font × antialiasing × hinting. |
+| [`feature-metrics.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/feature-metrics.tsv) | 89 rows: x/y, measured width, returned x and height for every drawn line. The probe asserts `returned_x == x + width`. |
+| [`font-timing.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/font-timing.tsv) | 315 samples: 7 fonts × 9 options × 5 repetitions. |
 | `font-retention-{mono,custom_cjk}.tsv` | RSS, HWM and Lua heap at 19 lifecycle phases. |
 
 The PNG files are lossless conversions of probe-written P6 PPM files. Each PPM was read through `lxl_test.pixel`, so alpha is excluded. Two fresh capture processes produced byte-identical PPM and TSV outputs. Each sheet frame must repaint the whole surface, because same-size windows share the render-cache grid. An earlier run without this check left stale pixels in the CJK sheet; the final CJK and icon sheets match standalone single-font runs byte for byte.

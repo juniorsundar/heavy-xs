@@ -12,7 +12,7 @@ Blocked by: 14
 
 The current renderer's resident memory grows during font load/copy cycles and is not returned after collection. Is that growth unbounded or does it plateau? Is it caused by FreeType-specific code a replacement would remove, or by backend-independent code a migration would keep?
 
-The [FreeType baseline](../assets/freetype-baseline.md) recorded this as an **unclassified observation**. Each cycle loads a font, calls `set_size`, copies it, then draws 64 glyphs with both fonts. Across eight cycles, resident memory rose by about 2 MiB per cycle for both JetBrains Mono and the Noto Sans CJK collection. It did not fall after weak references proved that Lua had collected every font. The Lua heap stayed near 155 KiB. The raw rows are in `font-retention-{mono,custom_cjk}.tsv` in [the baseline artifacts](../assets/freetype-baseline/).
+The [FreeType baseline](../assets/freetype-baseline.md) recorded this as an **unclassified observation**. Each cycle loads a font, calls `set_size`, copies it, then draws 64 glyphs with both fonts. Across eight cycles, resident memory rose by about 2 MiB per cycle for both JetBrains Mono and the Noto Sans CJK collection. It did not fall after weak references proved that Lua had collected every font. The Lua heap stayed near 155 KiB. The raw rows are in `font-retention-{mono,custom_cjk}.tsv` in [the baseline artifacts](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline).
 
 `src/renderer.rs` combines two kinds of code:
 
@@ -42,7 +42,7 @@ It also decides whether [Compare candidate font controls and rendering](18-compa
 ## Constraints
 
 - Evidence only. Do not fix the renderer, change production code or dependencies, or rewrite golden baselines. If a leak is confirmed, report the cause and stop. Fixing it is a separate user decision.
-- Reuse [the baseline probe](../assets/freetype-baseline.lua) and its reproduction commands. Use an isolated target, stage and user directory, a test-hooks release build, the offscreen driver, and public fonts only. Record the source commit, `Cargo.lock` SHA-256 and the binary SHA-256.
+- Reuse [the baseline probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline.lua) and its reproduction commands. Use an isolated target, stage and user directory, a test-hooks release build, the offscreen driver, and public fonts only. Record the source commit, `Cargo.lock` SHA-256 and the binary SHA-256.
 - Do not use heap-profiler tooling unless the cheaper steps cannot distinguish the classes; record which tools were used.
 - Do not set thresholds or acceptance criteria. Those belong to [Define font compatibility and acceptance criteria](15-define-font-acceptance.md).
 

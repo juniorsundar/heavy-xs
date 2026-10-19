@@ -4,11 +4,11 @@ Evidence for [Assemble the regex compatibility acceptance corpus](../issues/07-a
 
 ## Assets and results
 
-- [Runtime](regex-acceptance.lua): small assertion runner using the existing `LITE_XL_RUNTIME` mechanism. Checks exact return count, Lua types and values; errors become failures. No third-party framework.
-- [Pattern/interface/caller cases](regex-acceptance-cases.lua): 94 assertions.
-- [Replacement cases](regex-replacement-cases.lua): 61 assertions, explained by [the replacement audit](regex-replacement-audit.md).
-- [Reference results](regex-acceptance-reference.txt): **157 cases, zero failures** (155 retained-behavior assertions plus two bounded observations of old iterator bugs).
-- [Candidate-mode checks on the old reference](regex-acceptance-old-candidate.txt): **160 cases, four expected failures**. The same 155 assertions pass; five correction checks replace the two observations. Four expose the still-unfixed iterator behavior. This is a negative control, not a passing candidate evaluation or a production fix.
+- [Runtime](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance.lua): small assertion runner using the existing `LITE_XL_RUNTIME` mechanism. Checks exact return count, Lua types and values; errors become failures. No third-party framework.
+- [Pattern/interface/caller cases](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-cases.lua): 94 assertions.
+- [Replacement cases](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-replacement-cases.lua): 61 assertions, explained by [the replacement audit](regex-replacement-audit.md).
+- [Reference results](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-reference.txt): **157 cases, zero failures** (155 retained-behavior assertions plus two bounded observations of old iterator bugs).
+- [Candidate-mode checks on the old reference](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-old-candidate.txt): **160 cases, four expected failures**. The same 155 assertions pass; five correction checks replace the two observations. Four expose the still-unfixed iterator behavior. This is a negative control, not a passing candidate evaluation or a production fix.
 
 Candidate mode does not automatically approve another engine's behavior. It replaces known-bug observations with approved corrections while keeping the same retained-behavior checks. The generic zero-width progress property passes on the old engine because it terminates prematurely at position 1 for that particular input; the other correction cases demonstrate non-progress/overlap. Property checks alone do not prove enumeration completeness.
 
@@ -40,7 +40,7 @@ IDs identify executable cases, not tickets. Exact expressions, subjects, expecte
 | Compile and inline `i/m/s` | `FX_` | Other modifiers remain unclassified, not prohibited. |
 | Ordinary operators, greedy/lazy repetition, classes, anchors/word boundaries, all capture types | `OP_` | Safe participating captures only; not an exhaustive syntax grammar. |
 | UTF-8 byte spans, inclusive ends, default ASCII class behavior, invalid UTF-8 raises | `UT_` | No arbitrary-byte mode or Unicode-property default is introduced. |
-| Suffix-relative `cmatch`, option values/ANCHORED/ENDANCHORED alias, ignored flag letters, limited/global substitution | `RQ_`; original [bounded probe](regex-contract-probe.lua) | Existing negative-offset examples are retained by the old suite; unsafe upper offsets are not run. |
+| Suffix-relative `cmatch`, option values/ANCHORED/ENDANCHORED alias, ignored flag letters, limited/global substitution | `RQ_`; original [bounded probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-contract-probe.lua) | Existing negative-offset examples are retained by the old suite; unsafe upper offsets are not run. |
 | Replacement captures, escapes, defaults/conditionals, case scope and additional linked-build forms | `RP_`, 61 replacement cases; [audit](regex-replacement-audit.md) | Current dialect is the preservation target; finite audit is not proof of the complete 10.46 grammar. |
 | Failure conventions without frozen diagnostic text | `FL_`, replacement error cases | Compile returns nil plus a nonempty message; invalid arguments/replacements raise. Some old regression rows freeze PCRE2 messages and are historical evidence, not the replacement oracle. |
 | Representative snippet compile/match/gsub flow | `SYN_`: filename transform, capture extraction, `i` flag, case-template transform | **Synthetic only.** No installed snippet-expression corpus was inspected or collected; no actual plugin parser/execution is claimed. |

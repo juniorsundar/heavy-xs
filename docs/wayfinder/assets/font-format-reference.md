@@ -21,8 +21,8 @@ Opening a font is not evidence that its intended glyph renders:
 | Editor binary | Reused isolated release/test-hooks build; SHA-256 `e487b4c9fa019e9f3cf1eba2ef4edecaa13f677dd8c5a50890aea1061b85c974` |
 | Stack | freetype-rs 0.38.0, freetype-sys 0.23.0, bundled FreeType 2.13.2; system SDL3 3.4.14 |
 | Lock SHA-256 | `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272` |
-| Capture probe | [`font-format-reference.lua`](font-format-reference.lua), SHA-256 `8910d049048a04a0b555b9ddf157831a5d58f624f747a960abcebbd119b62919` |
-| Metadata helper | [`font-format-metadata.rs`](font-format-metadata.rs), SHA-256 `89d011f40d135c7f2132ad27dd5d84b0c548ff0586df8b5bd9e15fce274058b2` |
+| Capture probe | [`font-format-reference.lua`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference.lua), SHA-256 `8910d049048a04a0b555b9ddf157831a5d58f624f747a960abcebbd119b62919` |
+| Metadata helper | [`font-format-metadata.rs`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-metadata.rs), SHA-256 `89d011f40d135c7f2132ad27dd5d84b0c548ff0586df8b5bd9e15fce274058b2` |
 | Metadata executable | SHA-256 `547e3607f4f3cbe5f91ad398b95410f3dfb5fa9d44b67207abb615f8b4727407`; built against existing debug freetype-rs/FreeType artifacts, not used to render the reference images |
 | Runtime | Linux x86_64, default surface renderer, offscreen, surface scale 1, `SDL_FRAMEBUFFER_ACCELERATION=0` |
 | Per-case limits | 30 s wall, 20 s CPU, 512 MiB address space; one font/size/mode per process; isolated stage, home and user directories and minimal environment |
@@ -31,11 +31,11 @@ Acceleration is disabled to exclude the [offscreen NVIDIA framebuffer growth](fo
 
 ## Fixtures and provenance
 
-[`fixtures.tsv`](font-format-reference/fixtures.tsv) records all 12 files' basenames, byte sizes, SHA-256, package/source versions, table tags and licences. No font binaries or local paths are published. Existing bundled and baseline fonts are controls, not a repeated full matrix.
+[`fixtures.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/fixtures.tsv) records all 12 files' basenames, byte sizes, SHA-256, package/source versions, table tags and licences. No font binaries or local paths are published. Existing bundled and baseline fonts are controls, not a repeated full matrix.
 
 | Fixture | Source/licence evidence |
 | --- | --- |
-| JetBrains Mono / TeX Gyre Heros / Noto Sans CJK collection | Existing [baseline provenance](freetype-baseline/font-provenance.tsv); OFL-1.1 / GUST Font License / OFL-1.1 |
+| JetBrains Mono / TeX Gyre Heros / Noto Sans CJK collection | Existing [baseline provenance](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline/font-provenance.tsv); OFL-1.1 / GUST Font License / OFL-1.1 |
 | Static/variable COLRv1 test fonts | Local ttf-parser 0.25.1 fixtures; adjacent `colr_1_LICENSE` (Apache-2.0); [source directory](https://github.com/harfbuzz/ttf-parser/tree/v0.25.1/tests/fonts) |
 | JuliaMono 0.055 | Public Ghostty source fixture, embedded OFL notice and `res/OFL.txt`; [JuliaMono](https://github.com/cormullion/juliamono) |
 | Noto Color Emoji 2.051 | Public system package, embedded OFL notice; [upstream](https://github.com/googlefonts/noto-emoji) |
@@ -55,13 +55,13 @@ The [Ghostty fixture licence index](https://github.com/ghostty-org/ghostty/blob/
 
 | Artifact | Contents |
 | --- | --- |
-| [`cases.tsv`](font-format-reference/cases.tsv) | 20 font/size/hint/AA cases; explicitly records the safe mono BDF case |
-| [`metadata.tsv`](font-format-reference/metadata.tsv) | 60 target/control records, proving mapping and distinguishing face-open from set-size/glyph results |
-| [`results.tsv`](font-format-reference/results.tsv) | 68 editor records, with load/measure/draw status, height/advance/returned pen, RGB hash, lit/chromatic counts, ink bbox, solid-bbox flag and sanitized errors |
-| [`outcomes.tsv`](font-format-reference/outcomes.tsv) | Process status, row and assertion counts; all 20 completed without external kills |
-| [`outline-contact.png`](font-format-reference/outline-contact.png) | Controls, Type 1, COLRv1 and SVG outline fallback targets |
-| [`bitmap-contact.png`](font-format-reference/bitmap-contact.png) | Safe BDF mono, PCF/OTB placeholders and the hybrid bitmap-versus-outline cases |
-| [`emoji-contact.png`](font-format-reference/emoji-contact.png) | Native-strike target and missing control, which are pixel-identical rectangles |
+| [`cases.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/cases.tsv) | 20 font/size/hint/AA cases; explicitly records the safe mono BDF case |
+| [`metadata.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/metadata.tsv) | 60 target/control records, proving mapping and distinguishing face-open from set-size/glyph results |
+| [`results.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/results.tsv) | 68 editor records, with load/measure/draw status, height/advance/returned pen, RGB hash, lit/chromatic counts, ink bbox, solid-bbox flag and sanitized errors |
+| [`outcomes.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/outcomes.tsv) | Process status, row and assertion counts; all 20 completed without external kills |
+| [`outline-contact.png`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/outline-contact.png) | Controls, Type 1, COLRv1 and SVG outline fallback targets |
+| [`bitmap-contact.png`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/bitmap-contact.png) | Safe BDF mono, PCF/OTB placeholders and the hybrid bitmap-versus-outline cases |
+| [`emoji-contact.png`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/emoji-contact.png) | Native-strike target and missing control, which are pixel-identical rectangles |
 
 The contacts are cropped **nearest-neighbour inspection magnifications** (4× for small glyphs, 2× for emoji), with captions added outside the capture. They are not HiDPI evidence. Hashes refer to the original full surfaces, not the labelled contacts.
 
@@ -136,7 +136,7 @@ The comparison must answer:
 
 ## Validation
 
-The [validation summary](font-format-reference/validation.txt) records the checks below.
+The [validation summary](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-format-reference/validation.txt) records the checks below.
 
 - Two complete collections, each **20 processes / 68 rows / 420 probe assertions**, produced byte-identical final TSVs and 64 full-surface PPMs. All processes exited 0; four cases recorded clean load failures rather than claiming successful rendering.
 - Metadata proves **20 nonzero target mappings and 40 zero control mappings**. Every face opens; set-size failures remain separate from parser failure.

@@ -33,13 +33,13 @@ Return a coverage matrix linking fixtures/results and remaining gaps. A passing 
 
 ### Resolution
 
-Assembled the bounded [acceptance corpus and coverage matrix](../assets/regex-acceptance.md), with [pattern/interface/caller cases](../assets/regex-acceptance-cases.lua), [replacement cases](../assets/regex-replacement-cases.lua), the [replacement audit](../assets/regex-replacement-audit.md) and the [runtime](../assets/regex-acceptance.lua). The report records reference revision/build hashes, exact reproduction commands, source evidence and limitations.
+Assembled the bounded [acceptance corpus and coverage matrix](../assets/regex-acceptance.md), with [pattern/interface/caller cases](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-cases.lua), [replacement cases](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-replacement-cases.lua), the [replacement audit](../assets/regex-replacement-audit.md) and the [runtime](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance.lua). The report records reference revision/build hashes, exact reproduction commands, source evidence and limitations.
 
 Validation:
 
 - Fresh debug build and existing regex/tokenizer contract suites pass; no production code or old baseline was rewritten.
-- [Reference results](../assets/regex-acceptance-reference.txt): 157 checks, zero failures (155 retained-behavior assertions and two bounded old-iterator observations).
-- [Candidate-mode negative control on the unchanged reference](../assets/regex-acceptance-old-candidate.txt): exactly four expected iterator failures among 160 checks. This demonstrates the correction checks, not passing candidate behavior; correcting the implementation is outside this task.
+- [Reference results](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-reference.txt): 157 checks, zero failures (155 retained-behavior assertions and two bounded old-iterator observations).
+- [Candidate-mode negative control on the unchanged reference](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance-old-candidate.txt): exactly four expected iterator failures among 160 checks. This demonstrates the correction checks, not passing candidate behavior; correcting the implementation is outside this task.
 - All three new Lua assets pass syntax checks. A temporary expected-return-count mutation produces the intended failure/nonzero exit.
 - Independent deep review confirmed fixture/result agreement, provenance, bounded execution, actual bundled tokenizer coverage, and separation of synthetic snippets, retained behavior and approved corrections.
 

@@ -22,7 +22,7 @@ Sources: crate sources as fetched by Cargo (versions above); [fancy-regex docs](
 
 ## Construct probe
 
-[Probe source](regex-engine-survey-probe.rs) and [output](regex-engine-survey-probe.txt): 25 patterns, first match as a byte range on the subject, default options (regress with its `u` flag). The PCRE2 column is the target under UTF mode with UCP off. Fifteen of those values were observed on the reference build in the corpus or the [reference dialect run](fancy-regex-reference-dialect.txt). The `mark`, `branch_reset`, `conditional`, `posix` and lookbehind rows come from PCRE2 semantics and were not re-run here.
+[Probe source](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-engine-survey-probe.rs) and [output](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-engine-survey-probe.txt): 25 patterns, first match as a byte range on the subject, default options (regress with its `u` flag). The PCRE2 column is the target under UTF mode with UCP off. Fifteen of those values were observed on the reference build in the corpus or the [reference dialect run](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-reference-dialect.txt). The `mark`, `branch_reset`, `conditional`, `posix` and lookbehind rows come from PCRE2 semantics and were not re-run here.
 
 | Case | Pattern / subject | PCRE2 | fancy-regex | regress | resharp |
 |---|---|---|---|---|---|

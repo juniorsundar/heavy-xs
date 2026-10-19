@@ -8,11 +8,11 @@ Evidence for [Spike fancy-regex against the regex acceptance evidence](../issues
 
 - Base/reference: `4c02ffc8e116dc8bfbd3ba14592220a3f1a1a5ac`.
 - Disposable local branch: `spike/fancy-regex`, commit `effe6189bdcfb05318bb1139982d2633edcfa49b`, worktree `/tmp/lxl-spike`. **Never merge; not pushed.**
-- [Portable source patch](fancy-regex-spike.patch) includes the complete candidate adapter, replacement interpreter/tests, nil-aware Lua helpers, pinned Cargo.lock, raw-engine example, primary API notes, frozen Lua inputs and `SPIKE.md` instructions. It applies to the base revision in another disposable worktree.
+- [Portable source patch](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-spike.patch) includes the complete candidate adapter, replacement interpreter/tests, nil-aware Lua helpers, pinned Cargo.lock, raw-engine example, primary API notes, frozen Lua inputs and `SPIKE.md` instructions. It applies to the base revision in another disposable worktree.
 - Reference release binary SHA-256: `4381b80219660a91c68c3f79926b6c2dddc616a41cdecadb54fa61a6127c6273`.
 - Candidate release binary SHA-256: `826b85739f179f32798b16f864b1869c80b3f2f699f72a142e3b17b20bcb049c`.
 - Candidate Cargo.lock SHA-256: `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272`.
-- [Matched workload TSV](fancy-regex-workloads.tsv) SHA-256: `ddd78b38d505c97f0f3b78be0ab00a8712e936bfc0f041d8651f4a1e02c0da1f`.
+- [Matched workload TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-workloads.tsv) SHA-256: `ddd78b38d505c97f0f3b78be0ab00a8712e936bfc0f041d8651f4a1e02c0da1f`.
 
 Collected 2026-10-17 on the same Linux/i9-12900H machine and Nix toolchain as [the release baseline](regex-release-baseline.md), with the same public C source, deterministic synthetic fixtures and unmodified baseline runtime. Both use normal Cargo release optimizations (`panic=abort`, thin LTO), no extra Cargo features, dummy SDL, staged data and disposable user directories. Main-worktree production/build inputs and existing baselines were not changed. The candidate removes the `pcre2-sys` dependency and compiled binding module; symbol inspection finds no `pcre2_*` functions in its binary. SDL, FreeType and Lua remain native C dependencies.
 
@@ -22,9 +22,9 @@ Experiment settings, **not product defaults**: 1,000,000 backtracks per capture 
 
 ## Compatibility results
 
-[Candidate corpus output](fancy-regex-corpus.txt): **155/160 checks pass**—90/94 feature/interface/caller cases, 60/61 replacement cases, and all five iterator-correction checks. Candidate mode correctly replaces the old reference's two iterator-bug observations; it is 160 checks, not the 157-check reference mode.
+[Candidate corpus output](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-corpus.txt): **155/160 checks pass**—90/94 feature/interface/caller cases, 60/61 replacement cases, and all five iterator-correction checks. Candidate mode correctly replaces the old reference's two iterator-bug observations; it is 160 checks, not the 157-check reference mode.
 
-Every corpus failure is listed below. The three JavaScript failures share the actual bundled start expression printed in [dialect evidence](fancy-regex-dialect.txt), `JS_PATTERN 3:1`: `regex_pattern[1]` in [language_js.lua](../../../data/plugins/language_js.lua#L25). The candidate rejects it at pattern position 106 with `Invalid character class`; the tokenizer then attempts to use the missing compiled pattern and raises `string expected`. The latter is an adapter/caller diagnostic consequence, not a second grammar incompatibility.
+Every corpus failure is listed below. The three JavaScript failures share the actual bundled start expression printed in [dialect evidence](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-dialect.txt), `JS_PATTERN 3:1`: `regex_pattern[1]` in [language_js.lua](../../../data/plugins/language_js.lua#L25). The candidate rejects it at pattern position 106 with `Invalid character class`; the tokenizer then attempts to use the missing compiled pattern and raises `string expected`. The latter is an adapter/caller diagnostic consequence, not a second grammar incompatibility.
 
 Root cause, isolated with the raw engine: an **unescaped `[` inside a character class**. PCRE2 reads `[^\\[\/]` as a class containing a literal `[`; fancy-regex (via regex-syntax) reads it as the start of a nested class and rejects `[^\\[\/]` alone. Escaping it (`[^\\\[\/]`) makes the whole bundled expression compile. That would be a pattern rewrite, which needs explicit approval, and it does not cover third-party syntax plugins that use the PCRE2 reading. Tokens produced by the escaped expression were not measured.
 
@@ -36,7 +36,7 @@ Root cause, isolated with the raw engine: an **unescaped `[` inside a character 
 | `TOK_js_number_div_not_comment` | Same syntax on `let n = 1.5/x;` yields `keyword:let symbol: n operator: = number: 1.5 operator:/ symbol:x normal:;` | Same rejection/raise; even number/division tokenization is affected. |
 | `ext_mark_named` | `gsub("(*MARK:tag)(a)", "a", "${*MARK}")` returns `"tag",1` | Pattern rejected at position 1; current replacement/PCRE verb surface not preserved. |
 
-The standalone [dialect probe](fancy-regex-probe.lua) has eight comparisons: the [PCRE2 control](fancy-regex-reference-dialect.txt) passes all eight; [the candidate](fancy-regex-dialect.txt) fails seven:
+The standalone [dialect probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-probe.lua) has eight comparisons: the [PCRE2 control](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-reference-dialect.txt) passes all eight; [the candidate](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-dialect.txt) fails seven:
 
 | Expression / subject / option | PCRE2 control | Candidate |
 |---|---|---|
@@ -54,13 +54,13 @@ Raw-engine probes additionally show that `unicode_mode(false)` fixes the tested 
 
 ## Approved corrections and safety checks
 
-[Seventeen candidate-only checks](fancy-regex-safety.txt) pass: invalid-pattern compile failure pair, ignored invalid flag byte, middle capture holes through `cmatch`/`find_offsets`/`find`/`match`/`gmatch`, trailing omission, iterator retaining its pattern across caller GC, malformed/foreign handle rejection, beyond-end/mid-UTF-8 offsets, EOF offset, mixed empty/nonempty retry, whole-subject iterator lookbehind, and nonempty same-position matching.
+[Seventeen candidate-only checks](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-safety.txt) pass: invalid-pattern compile failure pair, ignored invalid flag byte, middle capture holes through `cmatch`/`find_offsets`/`find`/`match`/`gmatch`, trailing omission, iterator retaining its pattern across caller GC, malformed/foreign handle rejection, beyond-end/mid-UTF-8 offsets, EOF offset, mixed empty/nonempty retry, whole-subject iterator lookbehind, and nonempty same-position matching.
 
 These ran only after inspection of the safe userdata-backed adapter. The raw-pointer PCRE2 reference did **not** execute the unsafe handle/lifetime/offset cases. Returning nil as the first capture means Lua generic-for can stop on that result; the test consumes the iterator directly to verify the user-approved nil-slot convention. This consequence must remain visible in the final interface documentation, not be silently changed to a different sentinel.
 
 ## Matched workload measurements
 
-The [workload TSV](fancy-regex-workloads.tsv) prefixes every original row with `reference` or `candidate`. Original `SAMPLE` fields after that prefix are repetition, action/segment seconds, resume/yield counts, Lua pre/post/clean KiB, RSS pre/post/clean KiB, VmHWM KiB and output counts, as documented in [the baseline runtime](regex-release-baseline.lua). Cohorts are matched by workload/machine/protocol but collected sequentially, not randomized/interleaved; governor/desktop load are uncontrolled. Five observations support descriptive medians, not tight significance or tail estimates.
+The [workload TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-workloads.tsv) prefixes every original row with `reference` or `candidate`. Original `SAMPLE` fields after that prefix are repetition, action/segment seconds, resume/yield counts, Lua pre/post/clean KiB, RSS pre/post/clean KiB, VmHWM KiB and output counts, as documented in [the baseline runtime](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-release-baseline.lua). Cohorts are matched by workload/machine/protocol but collected sequentially, not randomized/interleaved; governor/desktop load are uncontrolled. Five observations support descriptive medians, not tight significance or tail estimates.
 
 | Workload | Reference median ms | Candidate median ms | Change | Candidate largest segment ms | Recorded candidate VmHWM MiB |
 |---|---:|---:|---:|---:|---:|
@@ -82,7 +82,7 @@ The exercised ordinary segment/RSS/retention observations fit the 33.3 ms/64 MiB
 
 ## Resource limits and default options
 
-[Thirteen limit assertions](fancy-regex-limits.txt) pass. These include eight timed VM-exhaustion trials:
+[Thirteen limit assertions](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-limits.txt) pass. These include eight timed VM-exhaustion trials:
 
 | Pattern / subject | Backtrack setting | Observed time to distinct work error |
 |---|---|---|
@@ -91,7 +91,7 @@ The exercised ordinary segment/RSS/retention observations fit the 33.3 ms/64 MiB
 
 The `\|` in this Markdown table escapes the column delimiter; the actual patterns contain alternation `|`, as shown in the executable probe. All eight stop within the accepted one second with `REGEX_WORK_LIMIT`. The output-expansion case (`a` ×4,096, replacement `x` ×1,024, 65,536-byte cap) raises `REGEX_OUTPUT_LIMIT` in 0.716 ms with no replacement returned. A separate 1,000-call quota stops a 5,000-match substitution in 0.379 ms. These latter timings include probe preparation/error checking.
 
-[The budget sweep](fancy-regex-budget-sweep.tsv) runs the same seven reachable workloads at four work settings and a 1 MiB output cap:
+[The budget sweep](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-budget-sweep.tsv) runs the same seven reachable workloads at four work settings and a 1 MiB output cap:
 
 - 1,000: fails dense replacement, mid/large transforms through the **adapter's match-call quota**, not native VM backtracking.
 - 10,000: fails the large transform through that call quota (its second substitution has 16,384 matches).

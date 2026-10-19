@@ -1,6 +1,6 @@
 # Replacement-template audit for the reference engine
 
-Evidence for [Assemble the regex compatibility acceptance corpus](../issues/07-assemble-regex-compatibility-corpus.md). The [corpus report](regex-acceptance.md) records the build identity, runner, results and gaps; [replacement fixtures](regex-replacement-cases.lua) contain the concrete examples.
+Evidence for [Assemble the regex compatibility acceptance corpus](../issues/07-assemble-regex-compatibility-corpus.md). The [corpus report](regex-acceptance.md) records the build identity, runner, results and gaps; [replacement fixtures](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-replacement-cases.lua) contain the concrete examples.
 
 This is a finite audit, not an exhaustive grammar specification or engine choice. [Choose the regex compatibility envelope](../issues/03-choose-regex-compatibility.md) targets preservation of the **current** replacement dialect. No version-specific forms are implicitly excluded; any candidate incompatibility still needs explicit approval.
 
@@ -52,7 +52,7 @@ These observations extend the known replacement surface of the **current-dialect
 
 ## Fixture index
 
-All 61 replacement cases pass in reference mode. Each returns exact replacement text/count or an explicit error boolean; see [the runner](regex-acceptance.lua).
+All 61 replacement cases pass in reference mode. Each returns exact replacement text/count or an explicit error boolean; see [the runner](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-acceptance.lua).
 
 | Group | Count | Fixture IDs / prefixes |
 |---|---:|---|

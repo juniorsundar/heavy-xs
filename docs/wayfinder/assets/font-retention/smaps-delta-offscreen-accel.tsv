@@ -1,4 +1,0 @@
-mapping	baseline_rss_kb	end_rss_kb	delta_kb
-[heap]	2644	3008	364
-lite-xl	2636	2828	192
-nvidiactl	3856	21136	17280

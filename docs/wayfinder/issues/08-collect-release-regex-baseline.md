@@ -46,7 +46,7 @@ Each editor process has a 30-second external timeout (2-second kill grace), 20-s
 
 ### Resolution
 
-Collected the bounded release reference survey: [report](../assets/regex-release-baseline.md), [runtime](../assets/regex-release-baseline.lua) and [raw TSV](../assets/regex-release-baseline.tsv). The report records revision, clean build inputs, release profile, toolchain, machine, linked PCRE2 10.46, fixture dimensions/hashes and exact reproduction commands. JIT is requested and compiled in, but its execution is not verified.
+Collected the bounded release reference survey: [report](../assets/regex-release-baseline.md), [runtime](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-release-baseline.lua) and [raw TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-release-baseline.tsv). The report records revision, clean build inputs, release profile, toolchain, machine, linked PCRE2 10.46, fixture dimensions/hashes and exact reproduction commands. JIT is requested and compiled in, but its execution is not verified.
 
 Twelve real or explicitly synthetic caller-path cases ran within the predeclared envelope: JavaScript highlighting (full-cache, long line, cached edits), first-hit and miss document search, eight-file project search, `Doc:replace` with the find-replace regex closure, and synthetic snippet-method transforms. Eleven completed five checked measured actions with zero failures. The 8,192-line full highlight is censored after two measured actions by the survey's aggregate CPU containment; that is not a single-call bound or product failure.
 

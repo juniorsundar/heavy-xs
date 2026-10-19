@@ -15,7 +15,7 @@ Implements the user-approved [lean contract and bounded community audit](regex-p
 
 ## Final matched release measurements
 
-[Raw TSV](regex-lean-workloads.tsv): each original record is prefixed `reference` or `lean`. Every cohort has one unmeasured warm-up and five correctness-checked actions, all with successful completion markers. Runs alternate reference/lean per workload on the same host, sequentially (not randomized), under the original 30 s watchdog / 20–25 s CPU / 2 GiB address-space envelope. No compilers run concurrently with measurements. Host load/governor, GUI behavior and tail latency remain uncontrolled/unmeasured.
+[Raw TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-lean-workloads.tsv): each original record is prefixed `reference` or `lean`. Every cohort has one unmeasured warm-up and five correctness-checked actions, all with successful completion markers. Runs alternate reference/lean per workload on the same host, sequentially (not randomized), under the original 30 s watchdog / 20–25 s CPU / 2 GiB address-space envelope. No compilers run concurrently with measurements. Host load/governor, GUI behavior and tail latency remain uncontrolled/unmeasured.
 
 Reference: original base `4c02ffc8e116dc8bfbd3ba14592220a3f1a1a5ac`, original data staged in a detached disposable worktree, preserved release SHA-256 `4381b80219660a91c68c3f79926b6c2dddc616a41cdecadb54fa61a6127c6273`.
 

@@ -28,7 +28,7 @@ Claimed by `pi-freetype-baseline` for bounded reference capture using the valida
 
 ### Resolution
 
-The FreeType reference baseline is recorded in [the baseline report](../assets/freetype-baseline.md), produced by [the bounded probe](../assets/freetype-baseline.lua) and saved in [the artifact directory](../assets/freetype-baseline/). Its source/build identity is pinned to `d9b3db31` with bundled FreeType 2.13.2.
+The FreeType reference baseline is recorded in [the baseline report](../assets/freetype-baseline.md), produced by [the bounded probe](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline.lua) and saved in [the artifact directory](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/freetype-baseline). Its source/build identity is pinned to `d9b3db31` with bundled FreeType 2.13.2.
 
 - **Corpus:** three bundled fonts plus four public custom fonts: Liberation Sans/Mono, TeX Gyre Heros CFF, and the Noto Sans CJK five-face variable collection. Provenance and licence evidence cover every file; no font files or local paths are published. The `icons.ttf` licence is still unverified.
 - **Rendering:** eight byte-reproducible contact sheets. Seven are 3×3 antialiasing × hinting matrices, and one covers features. They exercise real ASCII icons, icon→Fira and Mono→CJK fallback, `.notdef`, tabs, fractional phases, styles, sizes and malformed text. The sheets come with 63 metric rows and 89 geometry rows, each asserting that the returned pen position equals the measured end.

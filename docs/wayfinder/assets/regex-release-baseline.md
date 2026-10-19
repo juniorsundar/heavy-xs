@@ -2,7 +2,7 @@
 
 Evidence for [Collect the release regex workload baseline](../issues/08-collect-release-regex-baseline.md), to resume [Define regex performance acceptance criteria](../issues/06-define-regex-performance-criteria.md). **These are observations and options, not accepted limits, an engine comparison, or an ownership decision.**
 
-Assets: [bounded runtime](regex-release-baseline.lua), [raw TSV results](regex-release-baseline.tsv), and the earlier [compatibility corpus](regex-acceptance.md). The runtime contains the complete deterministic fixture definitions, assertions and TSV field descriptions. No production code, private configuration/project, or existing contract baseline changed.
+Assets: [bounded runtime](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-release-baseline.lua), [raw TSV results](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-release-baseline.tsv), and the earlier [compatibility corpus](regex-acceptance.md). The runtime contains the complete deterministic fixture definitions, assertions and TSV field descriptions. No production code, private configuration/project, or existing contract baseline changed.
 
 ## Protocol and provenance
 

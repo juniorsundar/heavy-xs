@@ -26,7 +26,7 @@ Deliver a report under `docs/wayfinder/assets/`: pass/fail matrix, every failure
 
 ### Resolution
 
-Completed the bounded disposable spike; the [report](../assets/fancy-regex-spike.md) links exact failing patterns, caller results, release measurements and limit options. Source is frozen on local branch `spike/fancy-regex`, commit `effe6189bdcfb05318bb1139982d2633edcfa49b`, with a [portable source patch](../assets/fancy-regex-spike.patch). Never merge this branch; it was not pushed. No production source/build input or existing contract baseline changed in the main worktree.
+Completed the bounded disposable spike; the [report](../assets/fancy-regex-spike.md) links exact failing patterns, caller results, release measurements and limit options. Source is frozen on local branch `spike/fancy-regex`, commit `effe6189bdcfb05318bb1139982d2633edcfa49b`, with a [portable source patch](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-spike.patch). Never merge this branch; it was not pushed. No production source/build input or existing contract baseline changed in the main worktree.
 
 Findings:
 

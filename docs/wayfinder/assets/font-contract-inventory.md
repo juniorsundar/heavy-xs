@@ -10,7 +10,7 @@ The timed-out worker left a draft, not a completed result. The coordinating agen
 
 - Existing **renderer and rencache contract suites pass**, byte-for-byte against their committed baselines. Their coverage combines snapshot observations with explicit assertions, including deferred-font GC lifetime; a pass does not certify every snapshot as desirable behavior.
 - Existing **hit test passes 1,239,848 grid comparisons**. This compares the Rust hit algorithm with its reference fixture; it is not a real-editor font-to-cursor alignment study.
-- [Bounded inventory checks](font-contract-check.lua) pass **23 assertions**; [raw output](font-contract-check.txt). These pin the group, path, fallback, advance and copy quirks described below, rather than inventing a new acceptance contract.
+- [Bounded inventory checks](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-contract-check.lua) pass **23 assertions**; [raw output](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-contract-check.txt). These pin the group, path, fallback, advance and copy quirks described below, rather than inventing a new acceptance contract.
 - Lua syntax, relative documentation links/source-line ranges and source/docs whitespace are checked. No golden baseline was rewritten.
 
 Validation identities (SHA-256):

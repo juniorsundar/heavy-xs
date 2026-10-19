@@ -27,8 +27,8 @@ Evidence for [Classify font memory retention in the current renderer](../issues/
 | Source | `5bd90b47e8b078e959ce5c03f59c8811eccbecd0`. `src/`, `data/`, `Cargo.toml`, `Cargo.lock` and `build.rs` are identical to the crate-move commit `98ca8cd8`, and the renderer sources are those of the baseline. |
 | `Cargo.lock` SHA-256 | `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272` (same as the baseline) |
 | Probe binary | `cargo build --release --features test_hooks`, isolated target. SHA-256 `e487b4c9fa019e9f3cf1eba2ef4edecaa13f677dd8c5a50890aea1061b85c974` |
-| Probe | [`font-retention-classify.lua`](font-retention-classify.lua), SHA-256 `d8bd0d167c0876ab7b61134321e2cb38bb3cb2c41540fa835f2aade607d2b0c8` |
-| Stats shim | [`mallinfo-shim.c`](font-retention/mallinfo-shim.c), SHA-256 `3efb30246cc1ebeca2ab97d91a289d8dcad7b02b1f21293fad299e385a22958c` (gcc 15.3.0, glibc 2.42). It is `LD_PRELOAD`ed by the probe only and is not part of Lite XL. |
+| Probe | [`font-retention-classify.lua`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention-classify.lua), SHA-256 `d8bd0d167c0876ab7b61134321e2cb38bb3cb2c41540fa835f2aade607d2b0c8` |
+| Stats shim | [`mallinfo-shim.c`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention/mallinfo-shim.c), SHA-256 `3efb30246cc1ebeca2ab97d91a289d8dcad7b02b1f21293fad299e385a22958c` (gcc 15.3.0, glibc 2.42). It is `LD_PRELOAD`ed by the probe only and is not part of Lite XL. |
 | Host | Linux x86_64, NVIDIA RTX A2000 Laptop GPU, driver 595.104.02, glvnd EGL; system SDL3 3.4.14 |
 | Fonts | bundled JetBrains Mono Regular (`mono`); Noto Sans CJK 2.004 variable collection (`custom_cjk`, face 0), public system path |
 
@@ -80,7 +80,7 @@ The tags in the file names give the driver and allocator conditions:
 
 ### 1. The growth is file-backed driver memory, not heap
 
-Baseline probe, the unchanged 8-cycle retention mode ([`baseline-probe-*`](font-retention/)), RSS in KiB:
+Baseline probe, the unchanged 8-cycle retention mode ([`baseline-probe-*`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention)), RSS in KiB:
 
 | Driver | Font | `drop` | `cycle8` | Growth |
 | --- | --- | --- | --- | --- |
@@ -91,7 +91,7 @@ Baseline probe, the unchanged 8-cycle retention mode ([`baseline-probe-*`](font-
 
 The accelerated offscreen run reproduces the original baseline to within about 0.2 MiB. With acceleration off, the same probe starts about 46 MiB lower: the NVIDIA EGL libraries are never loaded.
 
-[`smaps-delta-offscreen-accel.tsv`](font-retention/smaps-delta-offscreen-accel.tsv) compares the mappings before and after 20 `full` cycles:
+[`smaps-delta-offscreen-accel.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention/smaps-delta-offscreen-accel.tsv) compares the mappings before and after 20 `full` cycles:
 
 | Mapping | RSS change |
 | --- | --- |
@@ -99,7 +99,7 @@ The accelerated offscreen run reproduces the original baseline to within about 0
 | `[heap]` | +364 KiB |
 | binary | +192 KiB |
 
-Without acceleration ([`smaps-delta-offscreen-noaccel.tsv`](font-retention/smaps-delta-offscreen-noaccel.tsv)), only `[heap]` (+436 KiB) and the binary's own pages (+128 KiB) change. In every accelerated run, the anonymous-RSS column stays within +0.25 MiB (mono) and +1.2 MiB (CJK) while the file-backed column grows by about 17.0 MiB (+17384 to +17448 KiB).
+Without acceleration ([`smaps-delta-offscreen-noaccel.tsv`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention/smaps-delta-offscreen-noaccel.tsv)), only `[heap]` (+436 KiB) and the binary's own pages (+128 KiB) change. In every accelerated run, the anonymous-RSS column stays within +0.25 MiB (mono) and +1.2 MiB (CJK) while the file-backed column grows by about 17.0 MiB (+17384 to +17448 KiB).
 
 ### 2. It grows per frame, by window area, without fonts
 
@@ -107,7 +107,7 @@ Without acceleration ([`smaps-delta-offscreen-noaccel.tsv`](font-retention/smaps
 
 | Run | Change |
 | --- | --- |
-| offscreen 960×140, 400 frames ([`retain-mono-frames-offscreen-long`](font-retention/retain-mono-frames-offscreen-long.tsv)) | **+188 MiB** from baseline, linear, no plateau (240512 − 47104 KiB) |
+| offscreen 960×140, 400 frames ([`retain-mono-frames-offscreen-long`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention/retain-mono-frames-offscreen-long.tsv)) | **+188 MiB** from baseline, linear, no plateau (240512 − 47104 KiB) |
 | 320×60, frames 1→100 / 100→200 | +13.0 / +7.9 MiB |
 | 960×140 | +62.9 / +60.0 MiB |
 | 1920×1080 | +868 / +884 MiB |
@@ -118,7 +118,7 @@ Per frame from frames 1 to 200: 0.10, 0.62 and 8.8 MiB at the three sizes.
 
 ### 3. Font cycles plateau once the driver is excluded
 
-`full` cycle, no acceleration ([`retain-*-full-noaccel*`](font-retention/)), RSS in KiB:
+`full` cycle, no acceleration ([`retain-*-full-noaccel*`](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/font-retention)), RSS in KiB:
 
 | Font | baseline | cycle 1 | cycle 10 | cycle 100 | cycle 1000 | after `malloc_trim` |
 | --- | --- | --- | --- | --- | --- | --- |
