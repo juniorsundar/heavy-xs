@@ -5,8 +5,8 @@
 -- of the resulting surface (colour only), so a glyph that is one pixel off, hinted differently,
 -- blended differently or positioned differently changes the baseline.
 --
--- Pixel hashes depend on the FreeType build. The baseline was recorded with the C core's
--- FreeType; see docs/rust-port/PLAN.md (W7) for what that means for the Rust port.
+-- Pixel hashes use the pinned Rust-native font backend (Skrifa + Zeno + tiny-skia).
+-- ADR 0001 approves the pixel-only update from the historical FreeType baseline.
 
 local renderer = require "renderer"
 local renwindow = require "renwindow"

@@ -1,13 +1,13 @@
 //! Rust port of the Lite XL C core. Each module exports `luaopen_<name>`; `app::api_load_libs`
 //! registers them, and `app::run` is the editor's `main` (`src/main.rs`).
-//! Linux only: Cargo builds Lua and FreeType and links the system SDL3.
+//! Linux only: Cargo builds Lua and links the system SDL3; fonts use the Rust-native backend.
 
 #[cfg(not(target_os = "linux"))]
 compile_error!("Lite XL is Linux-only");
 
 pub mod app;
 mod custom_events;
-mod ft;
+mod font;
 mod renderer;
 mod renderer_api;
 mod rencache;

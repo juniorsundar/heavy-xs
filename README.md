@@ -54,7 +54,7 @@ Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, re
 ### Prerequisites
 
 - Rust (stable) and Cargo
-- A C compiler (Cargo builds the vendored Lua 5.4 and FreeType)
+- A C compiler (Cargo builds vendored Lua 5.4; the font backend is Rust-native)
 - SDL3, found through `pkg-config`
 - `pkg-config`
 
