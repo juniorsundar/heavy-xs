@@ -1,26 +1,24 @@
-//! `src/renderer.c`: the FreeType rasteriser and the drawing primitives.
+//! `src/renderer.c`: the glyph rasteriser and the drawing primitives.
 //!
 //! Fonts (`RenFont`) are opaque to C: `renderer.h` declares `typedef struct RenFont RenFont`,
 //! so the only things that cross the boundary are `RenFont *` values and the `ren_font_*` /
 //! `ren_draw_*` functions below. The struct is owned here and its layout is free to differ from
 //! the C (there is none to match any more).
 //!
-//! `src/renderer.c` was ported line by line for pixel parity: the same `FT_Load_Glyph` flags,
-//! the same outline style transforms, the same atlas bump-allocator and the same blend maths.
-//! Where the C relied on unsigned wrap-around or `char`/`float` truncation, the Rust mirrors it
-//! with explicit casts and `wrapping_*` so debug builds do not panic and release output matches.
+//! Glyphs are rasterised by the Rust-native backend in [`crate::font`]; this module keeps the
+//! atlas bump-allocator, glyph cache, fallback and blend maths ported line by line from
+//! `src/renderer.c`. Where the C relied on unsigned wrap-around or `char`/`float` truncation,
+//! the Rust mirrors it with explicit casts and `wrapping_*` so debug builds do not panic and
+//! release output matches.
 
 use core::ffi::{c_char, c_int};
 use std::ffi::{CStr, CString};
 use std::ptr;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use freetype::face::LoadFlag;
-use freetype::ffi as ft;
-use freetype::{Face, LcdFilter, Library, RenderMode};
 use sdl3_sys::everything as sdl;
 
-use crate::ft::{FT_Library_SetLcdFilterWeights, FT_LOAD_BITMAP_METRICS_ONLY};
+use crate::font::Font;
 use crate::rencache::{RenColor, RenTab, FONT_FALLBACK_MAX};
 use crate::renwindow::{RenRect, RenSurface};
 
@@ -37,16 +35,10 @@ const GLYPHMAP_ROW: usize = 128;
 const GLYPHMAP_COL: usize = 512; // ceil(65535 / 128)
 const SUBPIXEL_BITMAPS_CACHED: usize = 3;
 
-const FONT_HINTING_NONE: c_int = 0;
-const FONT_HINTING_SLIGHT: c_int = 1;
-
 const FONT_ANTIALIASING_NONE: c_int = 0;
 const FONT_ANTIALIASING_SUBPIXEL: c_int = 2;
 
-const FONT_STYLE_BOLD: u8 = 1;
-const FONT_STYLE_ITALIC: u8 = 2;
 const FONT_STYLE_UNDERLINE: u8 = 4;
-const FONT_STYLE_SMOOTH: u8 = 8;
 const FONT_STYLE_STRIKETHROUGH: u8 = 16;
 
 const EGLYPH_FORMAT_GRAYSCALE: usize = 0;
@@ -118,7 +110,9 @@ impl GlyphMap {
 
 /// `struct RenFont` (opaque to C).
 pub struct RenFont {
-    face: Face,
+    face: Font,
+    /// Raster line height in pixels (`FaceMetrics::line_px`), used to size new atlas surfaces.
+    line_px: c_int,
     charmap: CharMap,
     glyphs: GlyphMap,
     #[cfg(feature = "sdl_renderer")]
@@ -139,18 +133,6 @@ pub struct RenFont {
 
 /// The 1x1 surface `ren_draw_rect` blits for translucent rectangles.
 static mut DRAW_RECT_SURFACE: *mut sdl::SDL_Surface = ptr::null_mut();
-/// The FreeType library, created by `ren_init`, owned in a box behind a raw pointer so the
-/// `static mut` is only ever copied, never borrowed. Freed by `ren_free`.
-static mut LIBRARY: *mut Library = ptr::null_mut();
-
-/// The raw library handle the remaining FFI calls (`FT_Open_Face`, LCD filter weights) need.
-unsafe fn lib() -> ft::FT_Library {
-    if LIBRARY.is_null() {
-        ptr::null_mut()
-    } else {
-        (*LIBRARY).raw()
-    }
-}
 
 fn check_alloc<T>(ptr: *mut T) -> *mut T {
     if ptr.is_null() {
@@ -160,178 +142,11 @@ fn check_alloc<T>(ptr: *mut T) -> *mut T {
     ptr
 }
 
-/// `get_ft_error`: the message is the one FreeType's `fterrdef.h` gives for the error base.
-fn get_ft_error(err: ft::FT_Error) -> &'static CStr {
-    // FreeType 2.14.1 fterrdef.h; the crate's Display changes the C diagnostic strings.
-    match err & 0xFF {
-        0x00 => c"no error",
-        0x01 => c"cannot open resource",
-        0x02 => c"unknown file format",
-        0x03 => c"broken file",
-        0x04 => c"invalid FreeType version",
-        0x05 => c"module version is too low",
-        0x06 => c"invalid argument",
-        0x07 => c"unimplemented feature",
-        0x08 => c"broken table",
-        0x09 => c"broken offset within table",
-        0x0A => c"array allocation size too large",
-        0x0B => c"missing module",
-        0x0C => c"missing property",
-        0x10 => c"invalid glyph index",
-        0x11 => c"invalid character code",
-        0x12 => c"unsupported glyph image format",
-        0x13 => c"cannot render this glyph format",
-        0x14 => c"invalid outline",
-        0x15 => c"invalid composite glyph",
-        0x16 => c"too many hints",
-        0x17 => c"invalid pixel size",
-        0x18 => c"invalid SVG document",
-        0x20 => c"invalid object handle",
-        0x21 => c"invalid library handle",
-        0x22 => c"invalid module handle",
-        0x23 => c"invalid face handle",
-        0x24 => c"invalid size handle",
-        0x25 => c"invalid glyph slot handle",
-        0x26 => c"invalid charmap handle",
-        0x27 => c"invalid cache manager handle",
-        0x28 => c"invalid stream handle",
-        0x30 => c"too many modules",
-        0x31 => c"too many extensions",
-        0x40 => c"out of memory",
-        0x41 => c"unlisted object",
-        0x51 => c"cannot open stream",
-        0x52 => c"invalid stream seek",
-        0x53 => c"invalid stream skip",
-        0x54 => c"invalid stream read",
-        0x55 => c"invalid stream operation",
-        0x56 => c"invalid frame operation",
-        0x57 => c"nested frame access",
-        0x58 => c"invalid frame read",
-        0x60 => c"raster uninitialized",
-        0x61 => c"raster corrupted",
-        0x62 => c"raster overflow",
-        0x63 => c"negative height while rastering",
-        0x70 => c"too many registered caches",
-        0x80 => c"invalid opcode",
-        0x81 => c"too few arguments",
-        0x82 => c"stack overflow",
-        0x83 => c"code overflow",
-        0x84 => c"bad argument",
-        0x85 => c"division by zero",
-        0x86 => c"invalid reference",
-        0x87 => c"found debug opcode",
-        0x88 => c"found ENDF opcode in execution stream",
-        0x89 => c"nested DEFS",
-        0x8A => c"invalid code range",
-        0x8B => c"execution context too long",
-        0x8C => c"too many function definitions",
-        0x8D => c"too many instruction definitions",
-        0x8E => c"SFNT font table missing",
-        0x8F => c"horizontal header (hhea) table missing",
-        0x90 => c"locations (loca) table missing",
-        0x91 => c"name table missing",
-        0x92 => c"character map (cmap) table missing",
-        0x93 => c"horizontal metrics (hmtx) table missing",
-        0x94 => c"PostScript (post) table missing",
-        0x95 => c"invalid horizontal metrics",
-        0x96 => c"invalid character map (cmap) format",
-        0x97 => c"invalid ppem value",
-        0x98 => c"invalid vertical metrics",
-        0x99 => c"could not find context",
-        0x9A => c"invalid PostScript (post) table format",
-        0x9B => c"invalid PostScript (post) table",
-        0x9C => c"found FDEF or IDEF opcode in glyf bytecode",
-        0x9D => c"missing bitmap in strike",
-        0x9E => c"SVG hooks have not been set",
-        0xA0 => c"opcode syntax error",
-        0xA1 => c"argument stack underflow",
-        0xA2 => c"ignore",
-        0xA3 => c"no Unicode glyph name found",
-        0xA4 => c"glyph too big for hinting",
-        0xB0 => c"`STARTFONT' field missing",
-        0xB1 => c"`FONT' field missing",
-        0xB2 => c"`SIZE' field missing",
-        0xB3 => c"`FONTBOUNDINGBOX' field missing",
-        0xB4 => c"`CHARS' field missing",
-        0xB5 => c"`STARTCHAR' field missing",
-        0xB6 => c"`ENCODING' field missing",
-        0xB7 => c"`BBX' field missing",
-        0xB8 => c"`BBX' too big",
-        0xB9 => c"Font header corrupted or missing fields",
-        0xBA => c"Font glyphs corrupted or missing fields",
-        _ => c"unknown error",
-    }
-}
-
 unsafe fn set_error(msg: &'static CStr) {
     sdl::SDL_SetError(c"%s".as_ptr(), msg.as_ptr());
 }
 
-// --------------------------------------------------------------- font options
-
-fn font_set_load_options(font: &RenFont) -> LoadFlag {
-    let load_target = if font.antialiasing == FONT_ANTIALIASING_NONE {
-        LoadFlag::TARGET_MONO
-    } else if font.hinting == FONT_HINTING_SLIGHT {
-        LoadFlag::TARGET_LIGHT
-    } else {
-        LoadFlag::TARGET_NORMAL
-    };
-    let hinting = if font.hinting == FONT_HINTING_NONE {
-        LoadFlag::NO_HINTING
-    } else {
-        LoadFlag::FORCE_AUTOHINT
-    };
-    load_target | hinting
-}
-
-fn font_set_render_options(font: &RenFont) -> RenderMode {
-    if font.antialiasing == FONT_ANTIALIASING_NONE {
-        return RenderMode::Mono;
-    }
-    if font.antialiasing == FONT_ANTIALIASING_SUBPIXEL {
-        let mut weights: [u8; 5] = [0x10, 0x40, 0x70, 0x40, 0x10];
-        match font.hinting {
-            FONT_HINTING_NONE => unsafe {
-                let _ = (*LIBRARY).set_lcd_filter(LcdFilter::LcdFilterNone);
-            },
-            _ => unsafe {
-                FT_Library_SetLcdFilterWeights(lib(), weights.as_mut_ptr());
-            },
-        }
-        return RenderMode::Lcd;
-    }
-    match font.hinting {
-        FONT_HINTING_NONE => RenderMode::Normal,
-        _ => RenderMode::Light,
-    }
-}
-
-/// `font_set_style`: translate the outline for subpixel positioning, then apply the styles.
-unsafe fn font_set_style(slot: ft::FT_GlyphSlot, x_translation: c_int, style: u8) -> c_int {
-    let outline: *mut ft::FT_Outline = &mut (*slot).outline;
-    ft::FT_Outline_Translate(
-        outline as *const ft::FT_Outline,
-        x_translation as ft::FT_Pos,
-        0,
-    );
-    if style & FONT_STYLE_SMOOTH != 0 {
-        ft::FT_Outline_Embolden(outline, 1 << 5);
-    }
-    if style & FONT_STYLE_BOLD != 0 {
-        ft::FT_Outline_EmboldenXY(outline, 1 << 5, 0);
-    }
-    if style & FONT_STYLE_ITALIC != 0 {
-        let matrix = ft::FT_Matrix {
-            xx: 1 << 16,
-            xy: 1 << 14,
-            yx: 0,
-            yy: 1 << 16,
-        };
-        ft::FT_Outline_Transform(outline as *const ft::FT_Outline, &matrix);
-    }
-    0
-}
+// --------------------------------------------------------------- font helpers
 
 fn font_is_subpixel(font: &RenFont) -> bool {
     font.antialiasing == FONT_ANTIALIASING_SUBPIXEL
@@ -342,14 +157,6 @@ fn font_bitmap_count(font: &RenFont) -> usize {
         SUBPIXEL_BITMAPS_CACHED
     } else {
         1
-    }
-}
-
-unsafe fn slot_bitmap_type(slot: ft::FT_GlyphSlot) -> usize {
-    if (*slot).bitmap.pixel_mode as u8 as u32 == ft::FT_PIXEL_MODE_LCD {
-        EGLYPH_FORMAT_SUBPIXEL
-    } else {
-        EGLYPH_FORMAT_GRAYSCALE
     }
 }
 
@@ -419,9 +226,9 @@ unsafe fn font_get_glyph_id(font: &mut RenFont, codepoint: u32) -> u32 {
     }
     let cells = font.charmap.rows[row].as_mut().unwrap();
     if cells[col] == 0 {
-        let glyph_id = font.face.get_char_index(codepoint as usize);
-        // -1 marks "not available"; OpenType glyph IDs are uint16 so this is unreachable in theory.
-        cells[col] = glyph_id.unwrap_or(u32::MAX);
+        let glyph_id = font.face.glyph_id(codepoint);
+        // 0 marks "not available"; store the sentinel so the row is only probed once.
+        cells[col] = if glyph_id == 0 { u32::MAX } else { glyph_id };
     }
     if cells[col] == u32::MAX {
         0
@@ -433,12 +240,10 @@ unsafe fn font_get_glyph_id(font: &mut RenFont, codepoint: u32) -> u32 {
 /// `font_allocate_glyph_surface`: pick or create the atlas surface with the least waste.
 unsafe fn font_allocate_glyph_surface(
     font: &mut RenFont,
-    slot: ft::FT_GlyphSlot,
-    _bitmap_idx: c_int,
+    glyph_format: usize,
+    bitmap_rows: c_int,
     metric: *mut GlyphMetric,
 ) -> *mut sdl::SDL_Surface {
-    let glyph_format = slot_bitmap_type(slot);
-
     let mut atlas_idx: c_int = -1;
     for (i, atlas) in font.glyphs.atlas[glyph_format].iter().enumerate() {
         if atlas.width >= (*metric).x1 {
@@ -477,13 +282,9 @@ unsafe fn font_allocate_glyph_surface(
         }
 
         if surface_idx < 0 {
-            let mut h = FONT_HEIGHT_OVERFLOW_PX
-                + font
-                    .face
-                    .size_metrics()
-                    .map_or(0, |m| m.height as f64 as c_int / 64);
+            let mut h = FONT_HEIGHT_OVERFLOW_PX + font.line_px;
             if h <= FONT_HEIGHT_OVERFLOW_PX {
-                h += (*slot).bitmap.rows;
+                h += bitmap_rows;
             }
             if h <= FONT_HEIGHT_OVERFLOW_PX {
                 h += font.size as c_int;
@@ -524,7 +325,6 @@ unsafe fn font_load_glyph_metric(
     glyph_id: u32,
     bitmap_idx: usize,
 ) -> *mut GlyphMetric {
-    let load_option = font_set_load_options(font);
     let row = glyph_id as usize / GLYPHMAP_COL;
     let col = glyph_id as usize - row * GLYPHMAP_COL;
     let bitmaps = font_bitmap_count(font);
@@ -532,16 +332,9 @@ unsafe fn font_load_glyph_metric(
     let needs_load = font.glyphs.metrics[0][row].is_none()
         || (font.glyphs.metrics[0][row].as_ref().unwrap()[col].flags & EGLYPH_XADVANCE) == 0;
     if needs_load {
-        // Load without hinting to get the correct LSB/RSB delta for monospaced fonts. The
-        // transform and subpixel positioning do not affect the xadvance.
-        let flags = (load_option
-            | LoadFlag::from_bits_retain(FT_LOAD_BITMAP_METRICS_ONLY)
-            | LoadFlag::NO_HINTING)
-            & !LoadFlag::FORCE_AUTOHINT;
-        if font.face.load_glyph(glyph_id, flags).is_err() {
+        let Some(advance) = font.face.advance(glyph_id) else {
             return ptr::null_mut();
-        }
-        let advance_x = font.face.glyph().advance().x;
+        };
         for i in 0..bitmaps {
             if font.glyphs.metrics[i][row].is_none() {
                 font.glyphs.metrics[i][row] =
@@ -550,7 +343,7 @@ unsafe fn font_load_glyph_metric(
             }
             let metric = &mut font.glyphs.metrics[i][row].as_mut().unwrap()[col];
             metric.flags |= EGLYPH_XADVANCE;
-            metric.xadvance = advance_x as f32 / 64.0;
+            metric.xadvance = advance;
         }
     }
 
@@ -576,84 +369,35 @@ unsafe fn font_load_glyph_bitmap(
             .surface;
     }
 
-    let load_option = font_set_load_options(font);
-    let render_option = font_set_render_options(font);
-    if font
+    let x_shift = bitmap_idx as f32 / SUBPIXEL_BITMAPS_CACHED as f32;
+    let Some(image) = font
         .face
-        .load_glyph(
-            glyph_id,
-            load_option | LoadFlag::from_bits_retain(FT_LOAD_BITMAP_METRICS_ONLY),
-        )
-        .is_err()
-    {
+        .render(glyph_id, x_shift, font.antialiasing, font.style)
+    else {
         return ptr::null_mut();
-    }
-    let slot = font.face.raw().glyph;
-    if font_set_style(
-        slot,
-        bitmap_idx as c_int * (64 / SUBPIXEL_BITMAPS_CACHED as c_int),
-        font.style,
-    ) != 0
-        || font.face.glyph().render_glyph(render_option).is_err()
-    {
-        return ptr::null_mut();
-    }
-
-    let (bmp_rows, bmp_width, bmp_pitch, bmp_buffer, bmp_pixel_mode) = {
-        let bitmap = &(*slot).bitmap;
-        (
-            bitmap.rows,
-            bitmap.width,
-            bitmap.pitch,
-            bitmap.buffer,
-            bitmap.pixel_mode,
-        )
     };
-
-    // An empty bitmap, or one in a format we cannot draw, just keeps the xadvance.
-    if bmp_width == 0
-        || bmp_rows == 0
-        || bmp_buffer.is_null()
-        || (bmp_pixel_mode as u8 as u32 != ft::FT_PIXEL_MODE_MONO
-            && bmp_pixel_mode as u8 as u32 != ft::FT_PIXEL_MODE_GRAY
-            && bmp_pixel_mode as u8 as u32 != ft::FT_PIXEL_MODE_LCD)
-    {
-        return ptr::null_mut();
-    }
-
-    let bitmaps = font_bitmap_count(font);
-    let mut glyph_width = bmp_width as u32 / bitmaps as u32;
-    // FT_PIXEL_MODE_MONO uses a 1-bit-per-pixel packed bitmap.
-    if bmp_pixel_mode as u8 as u32 == ft::FT_PIXEL_MODE_MONO {
-        glyph_width *= 8;
-    }
-
-    (*metric).x1 = glyph_width;
-    (*metric).y1 = bmp_rows as u32;
-    (*metric).bitmap_left = font.face.glyph().bitmap_left();
-    (*metric).bitmap_top = font.face.glyph().bitmap_top();
+    let format = if image.subpixel {
+        EGLYPH_FORMAT_SUBPIXEL
+    } else {
+        EGLYPH_FORMAT_GRAYSCALE
+    };
+    (*metric).x1 = image.width;
+    (*metric).y1 = image.rows;
+    // The FreeType mono copy writes column c at atlas x = c + 1; keep mono placement identical.
+    (*metric).bitmap_left = image.left + (font.antialiasing == FONT_ANTIALIASING_NONE) as i32;
+    (*metric).bitmap_top = image.top;
     (*metric).flags |= EGLYPH_BITMAP;
-    (*metric).format = slot_bitmap_type(slot) as u8;
-
-    let surface = font_allocate_glyph_surface(font, slot, bitmap_idx as c_int, metric);
+    (*metric).format = format as u8;
+    let surface = font_allocate_glyph_surface(font, format, image.rows as c_int, metric);
     let pixels = (*surface).pixels as *mut u8;
-    for line in 0..bmp_rows {
-        let target_offset = (*surface).pitch * (line + (*metric).y0 as c_int);
-        let source_offset = line * bmp_pitch;
-        if font.antialiasing == FONT_ANTIALIASING_NONE {
-            for column in 0..bmp_width {
-                let current_source_offset = source_offset + (column / 8);
-                let source_pixel = *bmp_buffer.offset(current_source_offset as isize);
-                let value = (((source_pixel as u32) >> (7 - (column % 8) as u32)) & 1) * 0xFF;
-                *pixels.offset((target_offset + 1 + column) as isize) = value as u8;
-            }
-        } else {
-            ptr::copy_nonoverlapping(
-                bmp_buffer.offset(source_offset as isize),
-                pixels.offset(target_offset as isize),
-                bmp_width as usize,
-            );
-        }
+    let row_bytes = image.width as usize * if image.subpixel { 3 } else { 1 };
+    for line in 0..image.rows as usize {
+        let target = (*surface).pitch as usize * (line + (*metric).y0 as usize);
+        ptr::copy_nonoverlapping(
+            image.data.as_ptr().add(line * row_bytes),
+            pixels.add(target),
+            row_bytes,
+        );
     }
     surface
 }
@@ -728,43 +472,31 @@ unsafe fn font_clear_glyph_cache(font: &mut RenFont) {
 /// `font_set_face_metrics`.
 ///
 /// # Safety
-/// `face` is an open face; `font.size` is set.
-unsafe fn font_set_face_metrics(font: &mut RenFont) -> ft::FT_Error {
+/// `font.size` and the font backend are set.
+unsafe fn font_set_face_metrics(font: &mut RenFont) -> c_int {
     let pixel_size = font.size;
     #[cfg(feature = "sdl_renderer")]
     let pixel_size = pixel_size * font.scale as f32;
-    if let Err(err) = font.face.set_pixel_sizes(0, pixel_size as i32 as u32) {
-        return err as ft::FT_Error;
+    // Same truncation the caller applied to the logical size; heights stay in logical units.
+    // `as i32 as u32` wraps negative sizes before the backend clamps them.
+    let px = pixel_size as i32 as u32 as f32;
+    match font
+        .face
+        .configure(font.size, px, font.antialiasing, font.hinting)
+    {
+        Ok(m) => {
+            font.height = m.height as i16 as u16;
+            font.baseline = m.ascent as i16 as u16;
+            font.underline_thickness = m.underline_thickness as u16;
+            if font.underline_thickness == 0 {
+                font.underline_thickness = (font.height as f64 / 14.0).ceil() as u16;
+            }
+            font.space_advance = m.space_advance;
+            font.line_px = m.line_px;
+            0
+        }
+        Err(_) => 0x17, // FreeType's "invalid pixel size"
     }
-
-    if font.face.is_scalable() {
-        let upem = font.face.raw().units_per_EM as f32;
-        font.height = ((font.face.height() as f32 / upem) * font.size) as i16 as u16;
-        font.baseline = ((font.face.ascender() as f32 / upem) * font.size) as i16 as u16;
-        font.underline_thickness =
-            ((font.face.underline_thickness() as f32 / upem) * font.size) as u16;
-    } else {
-        // C: `(short) metrics.height / 64.0f` -- the cast binds before the division.
-        let metrics = font
-            .face
-            .size_metrics()
-            .expect("size metrics after set_pixel_sizes");
-        font.height = ((metrics.height as i16) as f32 / 64.0) as u16;
-        font.baseline = ((metrics.ascender as i16) as f32 / 64.0) as u16;
-    }
-    if font.underline_thickness == 0 {
-        font.underline_thickness = (font.height as f64 / 14.0).ceil() as u16;
-    }
-
-    let flags = (font_set_load_options(font)
-        | LoadFlag::from_bits_retain(FT_LOAD_BITMAP_METRICS_ONLY)
-        | LoadFlag::NO_HINTING)
-        & !LoadFlag::FORCE_AUTOHINT;
-    if let Err(err) = font.face.load_char(b' ' as usize, flags) {
-        return err as ft::FT_Error;
-    }
-    font.space_advance = font.face.glyph().advance().x as f32 / 64.0;
-    0
 }
 
 // --------------------------------------------------------------- font lifecycle
@@ -781,34 +513,18 @@ pub unsafe extern "C" fn ren_font_load(
     hinting: c_int,
     style: u8,
 ) -> *mut RenFont {
-    let file = sdl::SDL_IOFromFile(path, c"rb".as_ptr());
-    if file.is_null() {
-        return ptr::null_mut(); // error set by SDL_IOFromFile
-    }
-
-    let stream = crate::ft::font_stream_new(file);
-    let mut face: ft::FT_Face = ptr::null_mut();
-    let args = ft::FT_Open_Args {
-        flags: ft::FT_OPEN_STREAM,
-        memory_base: ptr::null(),
-        memory_size: 0,
-        pathname: ptr::null_mut(),
-        stream,
-        driver: ptr::null_mut(),
-        num_params: 0,
-        params: ptr::null_mut(),
-    };
-    let err = ft::FT_Open_Face(lib(), &args, 0, &mut face);
-    if err != 0 {
-        if !face.is_null() {
-            ft::FT_Done_Face(face);
+    let face = match Font::load(CStr::from_ptr(path)) {
+        Ok(face) => face,
+        Err(msg) => {
+            let msg = CString::new(msg).unwrap_or_default();
+            sdl::SDL_SetError(c"%s".as_ptr(), msg.as_ptr());
+            return ptr::null_mut();
         }
-        set_error(get_ft_error(err));
-        return ptr::null_mut();
-    }
+    };
 
     let mut font = Box::new(RenFont {
-        face: Face::from_raw(lib(), face, None),
+        face,
+        line_px: 0,
         charmap: CharMap::new(),
         glyphs: GlyphMap::new(),
         #[cfg(feature = "sdl_renderer")]
@@ -827,8 +543,9 @@ pub unsafe extern "C" fn ren_font_load(
 
     let err = font_set_face_metrics(&mut font);
     if err != 0 {
-        set_error(get_ft_error(err));
-        return ptr::null_mut(); // dropping `font` runs the owned `Face`'s FT_Done_Face
+        // The backend hides the hinting-failure detail behind FreeType's pixel-size error.
+        set_error(c"invalid pixel size");
+        return ptr::null_mut();
     }
     Box::into_raw(font)
 }
@@ -873,7 +590,7 @@ pub unsafe extern "C" fn ren_font_get_path(font: *mut RenFont) -> *const c_char 
 pub unsafe extern "C" fn ren_font_free(font: *mut RenFont) {
     let mut font = Box::from_raw(font);
     font_clear_glyph_cache(&mut font);
-    // `font` drops here, running the owned `Face`'s FT_Done_Face and its library reference release.
+    // `font` drops here, unmapping the font file and releasing the backend.
     drop(font);
 }
 
@@ -1296,15 +1013,6 @@ pub unsafe extern "C" fn ren_init() -> c_int {
         return -1;
     }
     DRAW_RECT_SURFACE = surface;
-
-    let library = match Library::init() {
-        Ok(library) => library,
-        Err(err) => {
-            return sdl::SDL_SetError(c"%s".as_ptr(), get_ft_error(err as ft::FT_Error).as_ptr())
-                as c_int
-        }
-    };
-    LIBRARY = Box::into_raw(Box::new(library));
     0
 }
 
@@ -1313,11 +1021,6 @@ pub unsafe extern "C" fn ren_init() -> c_int {
 pub unsafe extern "C" fn ren_free() {
     sdl::SDL_DestroySurface(DRAW_RECT_SURFACE);
     DRAW_RECT_SURFACE = ptr::null_mut();
-    if !LIBRARY.is_null() {
-        // `Library` drop runs FT_Done_Library (the FT_Done_FreeType equivalent).
-        drop(Box::from_raw(LIBRARY));
-        LIBRARY = ptr::null_mut();
-    }
 }
 
 /// `update_font_scale`: re-rasterise the group when the surface scale changed.

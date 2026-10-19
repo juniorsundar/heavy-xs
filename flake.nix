@@ -45,7 +45,7 @@
       # anywhere a nix store exists (i.e. outside of the dev shell too).
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in rec {
-          # Cargo builds Lua and FreeType itself (all from crates.io, pinned by
+          # Cargo builds Lua and the Rust font backend (all from crates.io, pinned by
           # Cargo.lock, so the sandboxed build needs no network) and links the system SDL3.
           lite-xl = pkgs.rustPlatform.buildRustPackage rec {
             pname = "lite-xl";
@@ -58,8 +58,7 @@
             doCheck = false;
 
             nativeBuildInputs = [ pkgs.pkg-config ];
-            # zlib: the bundled FreeType compiles libpng, which includes zlib.h.
-            buildInputs = sdlDeps pkgs ++ [ pkgs.zlib ];
+            buildInputs = sdlDeps pkgs;
 
             # Data files, desktop entry etc. live outside the crate: same script as the dev flow.
             installPhase = ''
@@ -92,8 +91,7 @@
               cargo
               rustc
               pkg-config
-              stdenv.cc # vendored Lua/FreeType, and the contract plugin fixtures
-              zlib # the bundled FreeType compiles libpng, which includes zlib.h
+              stdenv.cc # vendored Lua and the contract plugin fixtures
               git # build.rs embeds the commit in debug builds, optional
               lua5_4 # scripts/rust-port/gen-plugin-syms.lua
 
