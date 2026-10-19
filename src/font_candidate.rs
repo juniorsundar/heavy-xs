@@ -9,6 +9,8 @@
 use core::ffi::c_int;
 use std::ffi::CStr;
 
+use std::ptr;
+
 use sdl3_sys::everything as sdl;
 
 use skrifa::instance::{LocationRef, Size};
@@ -33,8 +35,68 @@ const EMBOLDEN_PX: f32 = 0.5;
 const BOLD_PER_PX: f32 = 1.0 / 20.0;
 const MAX_GLYPH_PX: f32 = 4096.0;
 
+/// A read-only, private file mapping: font bytes are paged in on demand and shared with the
+/// page cache, like FreeType's stream reads, instead of being copied onto the heap.
+struct FontData {
+    ptr: *mut libc::c_void,
+    len: usize,
+}
+
+impl FontData {
+    fn open(path: &CStr) -> Result<Self, String> {
+        // SDL validates and opens first so error messages keep SDL's wording (as on FreeType).
+        let io = unsafe { sdl::SDL_IOFromFile(path.as_ptr(), c"rb".as_ptr()) };
+        if io.is_null() {
+            return Err(unsafe { CStr::from_ptr(sdl::SDL_GetError()) }
+                .to_string_lossy()
+                .into_owned());
+        }
+        unsafe { sdl::SDL_CloseIO(io) };
+        unsafe {
+            let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
+            if fd < 0 {
+                return Err(std::io::Error::last_os_error().to_string());
+            }
+            let mut st: libc::stat = std::mem::zeroed();
+            let len = if libc::fstat(fd, &mut st) == 0 {
+                st.st_size as usize
+            } else {
+                0
+            };
+            let ptr = if len == 0 {
+                libc::MAP_FAILED
+            } else {
+                libc::mmap(
+                    ptr::null_mut(),
+                    len,
+                    libc::PROT_READ,
+                    libc::MAP_PRIVATE,
+                    fd,
+                    0,
+                )
+            };
+            libc::close(fd);
+            if ptr == libc::MAP_FAILED {
+                return Err("unknown file format".to_string());
+            }
+            Ok(Self { ptr, len })
+        }
+    }
+
+    fn bytes(&self) -> &[u8] {
+        // SAFETY: the mapping lives as long as `self` and is never written.
+        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
+    }
+}
+
+impl Drop for FontData {
+    fn drop(&mut self) {
+        unsafe { libc::munmap(self.ptr, self.len) };
+    }
+}
+
 pub struct CandFont {
-    data: Vec<u8>,
+    data: FontData,
     pixel_size: f32,
     hint: Option<HintingInstance>,
 }
@@ -64,26 +126,17 @@ fn quantize(v: f32) -> f32 {
 
 impl CandFont {
     fn font(&self) -> FontRef<'_> {
-        FontRef::from_index(&self.data, 0).expect("face 0 validated at load")
+        FontRef::from_index(self.data.bytes(), 0).expect("face 0 validated at load")
     }
 
     pub fn load(path: &CStr) -> Result<Self, String> {
-        // SDL opens the file, as on the FreeType path, so open errors keep SDL's wording.
-        let data = unsafe {
-            let mut len = 0usize;
-            let ptr = sdl::SDL_LoadFile(path.as_ptr(), &mut len);
-            if ptr.is_null() {
-                return Err(CStr::from_ptr(sdl::SDL_GetError())
-                    .to_string_lossy()
-                    .into_owned());
+        let data = FontData::open(path)?;
+        {
+            let font = FontRef::from_index(data.bytes(), 0)
+                .map_err(|_| "unknown file format".to_string())?;
+            if font.outline_glyphs().format().is_none() {
+                return Err("unknown file format".into());
             }
-            let data = std::slice::from_raw_parts(ptr as *const u8, len).to_vec();
-            sdl::SDL_free(ptr);
-            data
-        };
-        let font = FontRef::from_index(&data, 0).map_err(|_| "unknown file format".to_string())?;
-        if font.outline_glyphs().format().is_none() {
-            return Err("unknown file format".into());
         }
         Ok(Self {
             data,
