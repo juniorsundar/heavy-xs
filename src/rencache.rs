@@ -86,8 +86,8 @@ const CMD_BUF_INIT_SIZE: usize = 1024 * 512;
 const HASH_INITIAL: u32 = 2166136261;
 
 use crate::renderer::{
-    ren_font_group_get_width, ren_font_group_get_height, ren_font_group_get_tab_size,
-    ren_font_group_set_tab_size, ren_draw_text, ren_draw_rect,
+    ren_draw_rect, ren_draw_text, ren_font_group_get_height, ren_font_group_get_tab_size,
+    ren_font_group_get_width, ren_font_group_set_tab_size,
 };
 
 // ------------------------------------------------------------------- state
@@ -125,10 +125,25 @@ fn cache() -> &'static mut Cache {
                 box2: Box::new([0u32; CELLS]),
                 cells: ptr::null_mut(),
                 cells_prev: ptr::null_mut(),
-                rect_buf: [RenRect { x: 0, y: 0, width: 0, height: 0 }; CELLS / 2],
+                rect_buf: [RenRect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                }; CELLS / 2],
                 resize_issue: false,
-                screen_rect: RenRect { x: 0, y: 0, width: 0, height: 0 },
-                last_clip_rect: RenRect { x: 0, y: 0, width: 0, height: 0 },
+                screen_rect: RenRect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
+                last_clip_rect: RenRect {
+                    x: 0,
+                    y: 0,
+                    width: 0,
+                    height: 0,
+                },
                 show_debug: false,
                 #[cfg(feature = "test_hooks")]
                 debug_rect_count: 0,
@@ -144,11 +159,19 @@ fn cache() -> &'static mut Cache {
 // ------------------------------------------------------------------- helpers
 
 fn min(a: c_int, b: c_int) -> c_int {
-    if a < b { a } else { b }
+    if a < b {
+        a
+    } else {
+        b
+    }
 }
 
 fn max(a: c_int, b: c_int) -> c_int {
-    if a > b { a } else { b }
+    if a > b {
+        a
+    } else {
+        b
+    }
 }
 
 /// 32-bit FNV-1a, matching the C's `hash`.
@@ -164,10 +187,7 @@ fn cell_idx(x: c_int, y: c_int) -> usize {
 
 /// Note `>=` / `<=`: rects that merely touch count as overlapping, as in C.
 fn rects_overlap(a: RenRect, b: RenRect) -> bool {
-    b.x + b.width >= a.x
-        && b.x <= a.x + a.width
-        && b.y + b.height >= a.y
-        && b.y <= a.y + a.height
+    b.x + b.width >= a.x && b.x <= a.x + a.width && b.y + b.height >= a.y && b.y <= a.y + a.height
 }
 
 fn intersect_rects(a: RenRect, b: RenRect) -> RenRect {
@@ -175,7 +195,12 @@ fn intersect_rects(a: RenRect, b: RenRect) -> RenRect {
     let y1 = max(a.y, b.y);
     let x2 = min(a.x + a.width, b.x + b.width);
     let y2 = min(a.y + a.height, b.y + b.height);
-    RenRect { x: x1, y: y1, width: max(0, x2 - x1), height: max(0, y2 - y1) }
+    RenRect {
+        x: x1,
+        y: y1,
+        width: max(0, x2 - x1),
+        height: max(0, y2 - y1),
+    }
 }
 
 fn merge_rects(a: RenRect, b: RenRect) -> RenRect {
@@ -183,7 +208,12 @@ fn merge_rects(a: RenRect, b: RenRect) -> RenRect {
     let y1 = min(a.y, b.y);
     let x2 = max(a.x + a.width, b.x + b.width);
     let y2 = max(a.y + a.height, b.y + b.height);
-    RenRect { x: x1, y: y1, width: x2 - x1, height: y2 - y1 }
+    RenRect {
+        x: x1,
+        y: y1,
+        width: x2 - x1,
+        height: y2 - y1,
+    }
 }
 
 /// `update_overlapping_cells`: mix `hash_value` into every cell the rect touches.
@@ -258,7 +288,8 @@ unsafe fn command_rect(cmd: *const CommandHeader) -> RenRect {
 /// The text of a `DRAW_TEXT` command, which follows the fixed part. `cmd` is the *command*
 /// (the header), not the payload.
 unsafe fn command_text(cmd: *const CommandHeader) -> *const c_char {
-    (cmd as *const u8).add(COMMAND_BARE_SIZE + std::mem::size_of::<DrawTextCommand>()) as *const c_char
+    (cmd as *const u8).add(COMMAND_BARE_SIZE + std::mem::size_of::<DrawTextCommand>())
+        as *const c_char
 }
 
 /// Walk the frame's commands from the start of the buffer to `command_buf_idx`.
@@ -285,7 +316,12 @@ pub extern "C" fn rencache_show_debug(enable: bool) {
 #[no_mangle]
 pub unsafe extern "C" fn rencache_set_clip_rect(window: *mut RenWindow, rect: RenRect) {
     let cache = cache();
-    let cmd = push_command(cache, window, SET_CLIP, std::mem::size_of::<SetClipCommand>());
+    let cmd = push_command(
+        cache,
+        window,
+        SET_CLIP,
+        std::mem::size_of::<SetClipCommand>(),
+    );
     if !cmd.is_null() {
         let rect = intersect_rects(rect, cache.screen_rect);
         (*(cmd as *mut SetClipCommand)).rect = rect;
@@ -296,12 +332,21 @@ pub unsafe extern "C" fn rencache_set_clip_rect(window: *mut RenWindow, rect: Re
 /// # Safety
 /// `window` is a live `RenWindow`.
 #[no_mangle]
-pub unsafe extern "C" fn rencache_draw_rect(window: *mut RenWindow, rect: RenRect, color: RenColor) {
+pub unsafe extern "C" fn rencache_draw_rect(
+    window: *mut RenWindow,
+    rect: RenRect,
+    color: RenColor,
+) {
     let cache = cache();
     if rect.width == 0 || rect.height == 0 || !rects_overlap(cache.last_clip_rect, rect) {
         return;
     }
-    let cmd = push_command(cache, window, DRAW_RECT, std::mem::size_of::<DrawRectCommand>());
+    let cmd = push_command(
+        cache,
+        window,
+        DRAW_RECT,
+        std::mem::size_of::<DrawRectCommand>(),
+    );
     if !cmd.is_null() {
         let cmd = cmd as *mut DrawRectCommand;
         (*cmd).rect = rect;
@@ -380,6 +425,9 @@ pub unsafe extern "C" fn rencache_begin_frame(window: *mut RenWindow) {
     cache.last_clip_rect = cache.screen_rect;
 }
 
+/// PROTOTYPE: nanoseconds spent presenting the last frame (0 when nothing changed).
+pub static LAST_PRESENT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// # Safety
 /// `window` is a live `RenWindow` whose command buffer holds this frame's commands.
 #[no_mangle]
@@ -410,7 +458,16 @@ pub unsafe extern "C" fn rencache_end_frame(window: *mut RenWindow) {
         for x in 0..max_x {
             let idx = cell_idx(x, y);
             if *cache.cells.add(idx) != *cache.cells_prev.add(idx) {
-                push_rect(&mut cache.rect_buf, &mut rect_count, RenRect { x, y, width: 1, height: 1 });
+                push_rect(
+                    &mut cache.rect_buf,
+                    &mut rect_count,
+                    RenRect {
+                        x,
+                        y,
+                        width: 1,
+                        height: 1,
+                    },
+                );
             }
             *cache.cells_prev.add(idx) = HASH_INITIAL;
         }
@@ -464,13 +521,26 @@ pub unsafe extern "C" fn rencache_end_frame(window: *mut RenWindow) {
         });
 
         if cache.show_debug {
-            let color = RenColor { b: libc::rand() as u8, g: libc::rand() as u8, r: libc::rand() as u8, a: 50 };
+            let color = RenColor {
+                b: libc::rand() as u8,
+                g: libc::rand() as u8,
+                r: libc::rand() as u8,
+                a: 50,
+            };
             ren_draw_rect(&mut rs, r, color);
         }
     }
 
     if rect_count > 0 {
+        // PROTOTYPE: time presentation separately from drawing for the paired frame measurements.
+        let t0 = std::time::Instant::now();
         ren_update_rects(window, cache.rect_buf.as_mut_ptr(), rect_count as c_int);
+        LAST_PRESENT_NS.store(
+            t0.elapsed().as_nanos() as u64,
+            std::sync::atomic::Ordering::Relaxed,
+        );
+    } else {
+        LAST_PRESENT_NS.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Swap the cell buffers, reset the command buffer, and remember the frame for the tests.
