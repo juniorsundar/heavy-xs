@@ -36,6 +36,6 @@ Backslashes are literal. `\n` is two characters, not a newline; `\U$1\E` does no
 
 This is **not a deadline, total-operation budget or sandbox**. Delegated scans are outside the backtrack counter, compilation has separate approximate size settings, and substitutions may run many individually bounded matches. Positive-limit substitution can repeatedly rebuild its subject. Long inputs or patterns can still block the editor. The output cap bounds result bytes, not total process memory; Lua, input copies, caches and allocator overhead also consume memory.
 
-For follow-up profiling of the accepted cached-edit and synthetic-transform slowdowns, use the [agent handoff](regex-slowdown-handoff.md).
+The accepted cached-edit and synthetic-transform slowdowns have not been profiled; the requested follow-up handoff was never written.
 
 Historical PCRE2 compatibility evidence is retained under `docs/wayfinder/assets/`; it is not the current dialect specification.
