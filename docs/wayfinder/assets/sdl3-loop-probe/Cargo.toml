@@ -1,0 +1,16 @@
+[package]
+name = "sdl3-loop-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+winit = { version = "=0.30.13", features = ["wayland", "x11"] }
+softbuffer = { version = "=0.4.8", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "x11-dlopen"] }
+skrifa = "=0.48.0"
+zeno = "=0.3.3"
+arboard = { version = "=3.7.0", default-features = false, features = ["wayland-data-control"] }
+rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
+ashpd = { version = "=0.13.13", features = ["file_chooser", "raw_handle", "wayland"] }
+tokio = { version = "=1.53.3", features = ["rt", "net", "time"] }
+log = "0.4"

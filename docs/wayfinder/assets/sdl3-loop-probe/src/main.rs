@@ -1,4 +1,6 @@
-//! Throwaway native window/scale/IME probe for Wayfinder issue 29. Not an editor.
+//! Throwaway loop, clipboard and dialog probe. Not an editor or a selected platform stack.
+mod services;
+use services::{ClipAction, ClipboardWorker, DialogApi, DialogKind, Event};
 use skrifa::instance::{LocationRef, Size as FontSize};
 use skrifa::outline::{DrawSettings, OutlinePen};
 use skrifa::{FontRef, GlyphId, MetadataProvider};
@@ -10,8 +12,9 @@ use std::time::{Duration, Instant};
 use winit::application::ApplicationHandler;
 use winit::dpi::{PhysicalPosition, PhysicalSize};
 use winit::event::{Ime, MouseButton, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop};
+use winit::event_loop::{ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
+use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
 use winit::platform::wayland::EventLoopBuilderExtWayland;
 use winit::platform::x11::EventLoopBuilderExtX11;
 use winit::window::{CursorIcon, Icon, ResizeDirection, Window, WindowId};
@@ -25,10 +28,10 @@ impl Backend {
     fn name(self) -> &'static str { match self { Backend::Wayland => "wayland", Backend::X11 => "x11" } }
 }
 #[rustfmt::skip]
-struct Args { backend: Backend, borderless: bool, smoke: Option<Duration> }
+struct Args { backend: Backend, borderless: bool, smoke: Option<Duration>, self_check: bool }
 #[rustfmt::skip]
 fn parse_args() -> Result<Args, String> {
-    let (mut backend, mut borderless, mut smoke) = (None, false, None);
+    let (mut backend, mut borderless, mut smoke, mut self_check) = (None, false, None, false);
     let mut it = std::env::args().skip(1);
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -38,6 +41,7 @@ fn parse_args() -> Result<Args, String> {
                 _ => return Err("--backend wayland|x11 is required".into()),
             }),
             "--borderless" => borderless = true,
+            "--self-check" => self_check = true,
             "--smoke-seconds" => {
                 let value = it.next().ok_or("--smoke-seconds needs a positive integer")?;
                 let secs: u64 = value.parse().map_err(|_| format!("invalid --smoke-seconds {value:?}"))?;
@@ -47,7 +51,8 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other:?}")),
         }
     }
-    Ok(Args { backend: backend.ok_or("--backend wayland|x11 is required")?, borderless, smoke })
+    if self_check && smoke.is_none() { smoke = Some(Duration::from_secs(3)); }
+    Ok(Args { backend: backend.ok_or("--backend wayland|x11 is required")?, borderless, smoke, self_check })
 }
 #[rustfmt::skip]
 fn main() {
@@ -57,6 +62,7 @@ fn main() {
 #[rustfmt::skip]
 fn run() -> Result<i32, String> {
     let args = parse_args()?;
+    services::init_diagnostics();
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unset".into());
     println!("probe: requested/forced backend={} borderless={} smoke={:?}", args.backend.name(), args.borderless, args.smoke);
     println!("probe: session XDG_SESSION_TYPE={session} WAYLAND_DISPLAY={} DISPLAY={}",
@@ -64,13 +70,43 @@ fn run() -> Result<i32, String> {
     if args.backend == Backend::X11 && session == "wayland" {
         println!("probe: backend label: X11 (XWayland expected; not native X11 evidence)");
     }
-    let mut builder = EventLoop::builder();
+    let mut builder = EventLoop::<Event>::with_user_event();
     match args.backend { Backend::Wayland => { builder.with_wayland(); } Backend::X11 => { builder.with_x11(); } }
-    let event_loop = builder.build().map_err(|error| format!(
+    let mut event_loop = builder.build().map_err(|error| format!(
         "could not create forced {} event loop (backend unavailable or no display): {error}", args.backend.name()))?;
-    let mut app = App::new(args);
-    event_loop.run_app(&mut app).map_err(|error| format!("event loop failed: {error}"))?;
-    Ok(app.exit_code)
+    let proxy = event_loop.create_proxy();
+    let mut app = App::new(args, proxy.clone());
+    let mut started_worker = false;
+    let (mut pumps, mut waited_wakes) = (0_u64, 0_u64);
+    loop {
+        pumps += 1;
+        if let PumpStatus::Exit(code) = event_loop.pump_app_events(Some(Duration::ZERO), &mut app) {
+            app.exit_code = app.exit_code.max(code); break;
+        }
+        if !started_worker && app.window.is_some() {
+            services::wake(proxy.clone(), false); started_worker = true;
+        }
+        let before = app.received;
+        let start = Instant::now();
+        let status = event_loop.pump_app_events(Some(Duration::from_secs(5)), &mut app);
+        let elapsed = start.elapsed();
+        if app.received > before {
+            println!("probe: wait interrupted by proxy elapsed_ms={:.1} timeout_ms=5000", elapsed.as_secs_f64() * 1000.0);
+            if elapsed >= Duration::from_millis(20) && elapsed < Duration::from_secs(2) { waited_wakes += 1; }
+        }
+        if let PumpStatus::Exit(code) = status { app.exit_code = app.exit_code.max(code); break; }
+    }
+    println!("probe: loop summary pumps={pumps} waited_wakes={waited_wakes} worker={} simulated_result={} frames={}", app.worker_wakes, app.simulated_wakes, app.frames);
+    if app.args.self_check {
+        if app.worker_wakes == 0 || app.simulated_wakes == 0 || waited_wakes < 2 || app.frames < 2 || pumps > 100 {
+            return Err("self-check failed: missing blocked-pump wake, redraw, or bounded idle behaviour".into());
+        }
+        println!("probe: SELF-CHECK PASS (no clipboard or real dialog calls)");
+    }
+    // Drop the clipboard sender before returning; no helper process preserves ownership after exit.
+    let code = app.exit_code;
+    drop(app);
+    Ok(code)
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[rustfmt::skip]
@@ -302,10 +338,13 @@ struct App {
     pointer: PhysicalPosition<f64>, last_cursor: Option<CursorIcon>,
     cursor_cycle: usize, cursor_override: bool,
     last_ime_area: Option<(PhysicalPosition<i32>, PhysicalSize<u32>, f64)>,
+    proxy: EventLoopProxy<Event>, clipboard: ClipboardWorker,
+    dialog_api: DialogApi, dialog_pending: bool, service_status: String,
+    received: u64, worker_wakes: u64, simulated_wakes: u64, frames: u64,
 }
 #[rustfmt::skip]
 impl App {
-    fn new(args: Args) -> Self {
+    fn new(args: Args, proxy: EventLoopProxy<Event>) -> Self {
         let fallback = std::env::var_os("PROBE_FONT").and_then(|path| std::fs::read(path).ok()).filter(|data| {
             let ok = FontRef::from_index(data, 0).is_ok();
             println!("probe: optional fallback font loaded={ok} (path hidden)");
@@ -318,6 +357,9 @@ impl App {
             modifiers: ModifiersState::empty(), ime_enabled: false,
             pointer: PhysicalPosition::new(0.0, 0.0), last_cursor: None, cursor_cycle: 0, cursor_override: false,
             last_ime_area: None,
+            clipboard: ClipboardWorker::new(proxy.clone()), proxy,
+            dialog_api: DialogApi::Rfd, dialog_pending: false, service_status: "No clipboard or portal access yet".into(),
+            received: 0, worker_wakes: 0, simulated_wakes: 0, frames: 0,
         }
     }
     fn fail(&mut self, event_loop: &ActiveEventLoop, message: impl Into<String>) {
@@ -325,8 +367,8 @@ impl App {
     }
     fn request_redraw(&self) { if let Some(window) = &self.window { window.request_redraw(); } }
     fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
-        let attributes = Window::default_attributes().with_title("sdl3 window probe (throwaway)")
-            .with_inner_size(PhysicalSize::new(800, 520)).with_decorations(!self.args.borderless);
+        let attributes = Window::default_attributes().with_title("sdl3 LOOP / CLIPBOARD / DIALOG probe (throwaway)")
+            .with_inner_size(PhysicalSize::new(1000, 700)).with_decorations(!self.args.borderless);
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| format!("window creation failed: {e}"))?);
         let (scale, size) = (window.scale_factor(), window.inner_size());
         println!("probe: window created scale={scale:.3} physical={}x{} logical={:.1}x{:.1}",
@@ -433,6 +475,14 @@ impl App {
                 "borderless: drag top zone, resize edges/corners; click field sets caret to end"
             } else { "F7 cycles cursor until pointer moves; Escape closes unless composing; Enter logged" };
             c.text(fonts, hint, margin as f32, y as f32, 0x88a0b8);
+            y = field.1 + field.3 + 2 * line;
+            for label in ["F1 wake | F2 COPY marker | F3 read clipboard",
+                "F4 PRIMARY marker | F5 read primary | F6 API",
+                "F8 open | F9 save | F10 folder | F11 sandbox"] {
+                c.text(fonts, label, margin as f32, y as f32, 0xb8d8e8); y += line;
+            }
+            let service = format!("API: {:?} | {}", self.dialog_api, self.service_status);
+            c.text(fonts, &service, margin as f32, y as f32, 0xffd166);
         }
         let ime_area = (PhysicalPosition::new(caret_area.0, caret_area.1),
             PhysicalSize::new(caret_area.2, caret_area.3), window.scale_factor());
@@ -448,12 +498,30 @@ impl App {
         window.pre_present_notify();
         buffer.present().map_err(|e| format!("softbuffer present failed: {e}"))?;
         self.presented = true;
+        self.frames += 1;
         println!("probe: presented frame {w}x{h} at scale {scale:.3}");
         Ok(())
     }
 }
 #[rustfmt::skip]
-impl ApplicationHandler for App {
+impl ApplicationHandler<Event> for App {
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: Event) {
+        self.received += 1;
+        match event {
+            Event::Wake { sent, simulated } => {
+                if simulated { self.simulated_wakes += 1; } else { self.worker_wakes += 1; }
+                self.service_status = format!("{} proxy wake, latency {:.2} ms; dialog_pending={}",
+                    if simulated { "SIMULATED result" } else { "worker" }, sent.elapsed().as_secs_f64() * 1000.0, self.dialog_pending);
+                if self.args.self_check && !simulated { services::wake(self.proxy.clone(), true); }
+            }
+            Event::Result { sent, summary, dialog } => {
+                if dialog { self.dialog_pending = false; }
+                self.service_status = format!("{summary}; elapsed {:.1} ms", sent.elapsed().as_secs_f64() * 1000.0);
+            }
+        }
+        println!("probe: service {}", self.service_status);
+        self.request_redraw();
+    }
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_some() { return; }
         if let Err(error) = self.create_window(event_loop) { self.fail(event_loop, error); return; }
@@ -488,7 +556,46 @@ impl ApplicationHandler for App {
             WindowEvent::KeyboardInput { event, is_synthetic, .. } => {
                 println!("probe: key synthetic={is_synthetic} {event:?}");
                 if !event.state.is_pressed() { return; }
-                match event.logical_key.as_ref() {
+                let key = event.logical_key.as_ref();
+                if !event.repeat {
+                    let action = match key {
+                        Key::Named(NamedKey::F2) => Some(ClipAction::SetClipboard),
+                        Key::Named(NamedKey::F3) => Some(ClipAction::GetClipboard),
+                        Key::Named(NamedKey::F4) => Some(ClipAction::SetPrimary),
+                        Key::Named(NamedKey::F5) => Some(ClipAction::GetPrimary),
+                        _ => None,
+                    };
+                    if let Some(action) = action {
+                        if self.args.self_check { return; }
+                        self.service_status = match self.clipboard.send(action) { Ok(()) => format!("queued {action:?}"), Err(error) => error };
+                        self.request_redraw(); return;
+                    }
+                    match key {
+                        Key::Named(NamedKey::F1) => { services::wake(self.proxy.clone(), false); return; }
+                        Key::Named(NamedKey::F6) => {
+                            self.dialog_api = if self.dialog_api == DialogApi::Rfd { DialogApi::Ashpd } else { DialogApi::Rfd };
+                            self.service_status = "API changed; no dialog opened".into(); self.request_redraw(); return;
+                        }
+                        Key::Named(NamedKey::F8 | NamedKey::F9 | NamedKey::F10) => {
+                            if self.args.self_check || self.dialog_pending { return; }
+                            let kind = match key { Key::Named(NamedKey::F8) => DialogKind::Open,
+                                Key::Named(NamedKey::F9) => DialogKind::Save, _ => DialogKind::Directory };
+                            self.dialog_pending = true;
+                            self.service_status = format!("{:?} {kind:?} pending", self.dialog_api);
+                            println!("probe: service {}", self.service_status);
+                            services::dialog(self.proxy.clone(), window.clone(), self.dialog_api, kind);
+                            services::wake(self.proxy.clone(), false);
+                            self.request_redraw(); return;
+                        }
+                        Key::Named(NamedKey::F11) => {
+                            if self.args.self_check { return; }
+                            self.service_status = format!("ashpd sandbox heuristic={}; actual sandbox review pending", ashpd::is_sandboxed());
+                            println!("probe: service {}", self.service_status); self.request_redraw(); return;
+                        }
+                        _ => {}
+                    }
+                }
+                match key {
                     Key::Named(NamedKey::Escape) => {
                         if self.text.preedit.is_empty() { println!("probe: Escape with no composition; closing"); event_loop.exit(); }
                         else { println!("probe: Escape during composition; cancellation belongs to the IME"); }
