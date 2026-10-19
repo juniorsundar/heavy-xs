@@ -3,7 +3,8 @@
 The user chose `docs/wayfinder/` instead of the default `.scratch/` location. Each effort has its own map and child issues:
 
 - [Rust/Lua responsibilities and a Rust-native regex design](map.md): completed regex effort.
-- [A Rust-native font backend to replace FreeType](freetype-map.md): planning the next C-library replacement.
+- [A Rust-native font backend to replace FreeType](freetype-map.md): completed; implemented in the Rust port.
+- [Replace SDL3 with Rust-native platform crates](sdl3-map.md): planning complete; [implementation handoff](assets/sdl3-migration-handoff.md) prepared, implementation not started by the map.
 
 ## Wayfinding operations
 
@@ -19,6 +20,6 @@ The user chose `docs/wayfinder/` instead of the default `.scratch/` location. Ea
 - Refer to maps and tickets by linked title in prose, never by bare numbers. Numeric IDs are only tracker metadata.
 - Create issues before wiring dependencies and links. Check for cycles. Read current files before updates; other sessions may be working concurrently.
 - Charting creates the map; it does not resolve decision tickets. In a working session, resolve at most one non-research ticket.
-- Planning is the default; any execution override must be explicit in that effort's Notes. The FreeType effort is planning only: implementation, backend adoption and feature removals require a later handoff.
+- Planning is the default; any execution override must be explicit in that effort's Notes. The SDL3 effort is planning only: implementation, adoption and feature removals require a later handoff.
 
-To resume the current effort: ask Wayfinder to work through [A Rust-native font backend to replace FreeType](freetype-map.md); it takes the first frontier ticket unless the user names another. The completed regex map remains a separate historical effort.
+The SDL3 route is mapped. Start a separately authorized implementation session with the [SDL3 replacement implementation handoff](assets/sdl3-migration-handoff.md); invoking Wayfinder does not authorize execution. The completed regex and FreeType maps remain separate historical efforts.
