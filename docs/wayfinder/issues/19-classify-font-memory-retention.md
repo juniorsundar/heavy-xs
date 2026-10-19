@@ -4,8 +4,8 @@ Parent: ../freetype-map.md
 Labels: wayfinder:task
 Type: task
 Mode: AFK
-Status: open
-Assignee: none
+Status: resolved
+Assignee: pi-font-retention
 Blocked by: 14
 
 ## Question
@@ -53,3 +53,41 @@ Add an evidence asset under `docs/wayfinder/assets/` with probe changes, raw TSV
 ## Comments
 
 Created during the baseline resolution so it can run in parallel with the acceptance discussion. It deliberately does not block acceptance. Its result should inform the memory criterion when available.
+
+### Resolution
+
+**Classification: not a font leak and not allocator retention in font code.** The baseline's RSS growth across font cycles is **file-backed memory in the NVIDIA EGL driver mapping (`/dev/nvidiactl`)**. It grows while SDL's offscreen video driver uses its accelerated window framebuffer on this host. Evidence: [Font memory retention classification](../assets/font-retention-classification.md).
+
+- **Driver memory, not heap:**
+  - Across the baseline's cycles, anonymous RSS and malloc in-use bytes stay flat.
+  - The whole rise is file-backed: about +17 MiB in the `nvidiactl` mapping.
+- **Grows per frame, without fonts:**
+  - A control that loads no font and only presents frames grows linearly and without bound: +188 MiB over 400 frames at 960×140.
+  - Growth scales with window area: about 0.10, 0.62 and 8.8 MiB per frame.
+  - The baseline cycle repeats a two-shade frame, so the render cache skips repeated frames. That is why its growth looked like steps of about 2 MiB per font cycle.
+- **Gone with `SDL_FRAMEBUFFER_ACCELERATION=0`** (or the `dummy` driver):
+  - The unchanged baseline probe grows only +0.12 MiB (mono) and +0.7 MiB (CJK) from `drop` to `cycle8`, against +15.3 and +16.5 MiB with acceleration.
+  - The full load → `set_size` → `copy` → draw cycle **plateaus after the first cycle per font type**: mono is flat from cycle 1 to cycle 1000; CJK settles at +0.5–0.8 MiB.
+  - `malloc_trim(0)` returns most of the remaining rise, which is ordinary glibc free-list retention. The same goes for the eight-fonts-live step.
+- **Font code, measured with acceleration off:**
+  - Load and free leave nothing measurable beyond the font-free control.
+  - Drawing adds about 70 B per cycle, which does not increase with glyph count.
+  - Over 1000 full cycles, about 14 B per cycle remains after subtracting the Lua heap. That is **undetermined**: below the method's resolution, with no RSS effect.
+- **Source reading of `__gc` → `ren_font_free`:** every allocation has a matching free:
+  - atlas SDL surfaces and their bookkeeping
+  - glyph and charmap rows
+  - the FreeType face (library reference balanced) and its stream
+  - the per-frame render-cache roots
+
+  The fd count stays constant across the per-cycle release variants.
+
+Per-cost estimate: no leak per font or per glyph was found to estimate.
+
+Tools: the probe, `/proc` status/smaps, and an `LD_PRELOAD` `mallinfo2`/`malloc_trim` shim. No heap profiler was needed. No production code, dependency or golden baseline changed.
+
+**For downstream tickets (facts, not criteria):**
+- Font memory evidence should be measured with `SDL_FRAMEBUFFER_ACCELERATION=0` or the `dummy` driver, and read from the anonymous and malloc in-use columns, not from raw accelerated-offscreen RSS.
+- The release path a replacement would keep (atlas, glyph and charmap rows, frame roots) is shared code and showed no leak. A candidate replaces only the face, stream and rasterizer parts.
+- Whether a real NVIDIA window shows the same per-frame driver growth was not tested. It is a non-font observation outside this effort.
+
+Limits: one host and one NVIDIA driver; grayscale antialiasing only in the cycles; `sdl_renderer`, HiDPI, subpixel and malformed fonts were not cycled.

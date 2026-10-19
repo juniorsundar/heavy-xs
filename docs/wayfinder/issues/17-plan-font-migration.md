@@ -4,8 +4,8 @@ Parent: ../freetype-map.md
 Labels: wayfinder:grilling
 Type: grilling
 Mode: HITL
-Status: open
-Assignee: none
+Status: resolved
+Assignee: pi-font-handoff
 Blocked by: 15, 16
 
 ## Question
@@ -19,3 +19,19 @@ Distinguish decisions already made from implementation tasks. Link source-of-tru
 Prerequisites: [Define font compatibility and acceptance criteria](15-define-font-acceptance.md) and [Select the Rust-native font backend](16-select-rust-font-backend.md).
 
 ## Comments
+
+### Grilling round 1 — answers
+
+The user answered yes to all six recommendations: plan only; a fresh port of the prototype module with every prototype hook removed; the renderer golden re-recorded in its own commit, pixel hashes only; the validation list; the stop conditions; and the doc updates, including a new `docs/fonts.md` with `PLAN.md` left as history.
+
+## Resolution
+
+The handoff was `docs/font-backend-handoff.md`. It was implemented in `b7413210` (backend) and `49333384` (pixel-only golden), then deleted at the user's request. It named:
+
+- the change: three pinned dependencies in, `freetype-rs` and `src/ft.rs` out; FreeType touchpoints in `src/renderer.rs` replaced with a ported font module; prototype-only hooks listed for exclusion;
+- the doc updates;
+- the single golden re-record and its precondition (only pixel-hash rows change);
+- the validation checklist: 16 suites in debug and release, the `sdl_renderer` build, the geometry probe against the prototype output, the inventory assertions, the 114-case malformed corpus, absence of FreeType from `cargo tree` and the binary, a headless user-config startup, the hit-test and startup checks;
+- stop conditions and four non-blocking follow-ups.
+
+The reference prototype branch `prototype/font-editor-candidate` (`9723a24b`) remains on `origin` without a PR. This ticket itself was planning only; the user authorized the implementation separately.

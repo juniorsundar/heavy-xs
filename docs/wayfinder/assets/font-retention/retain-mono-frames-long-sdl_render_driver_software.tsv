@@ -1,0 +1,9 @@
+id	variant	tag	phase	rss_kb	hwm_kb	lua_kb	arena_b	mmap_b	inuse_b	free_b	fds	anon_kb	file_kb
+mono	frames	long-sdl_render_driver_software	baseline	59836	59836	125.9	3112960	6971392	2753392	359568	28	12900	46936
+mono	frames	long-sdl_render_driver_software	cycle1	61884	61884	125.9	3112960	6971392	2756832	356128	28	12900	48984
+mono	frames	long-sdl_render_driver_software	cycle100	126268	126268	126.1	3112960	6971392	2770016	342944	28	12900	113368
+mono	frames	long-sdl_render_driver_software	cycle200	187708	187708	126.3	3112960	6971392	2784192	328768	28	12900	174808
+mono	frames	long-sdl_render_driver_software	cycle300	245052	245052	126.4	3112960	6971392	2797360	315600	28	12900	232152
+mono	frames	long-sdl_render_driver_software	cycle400	290108	290108	126.6	3112960	6971392	2812672	300288	28	12900	277208
+mono	frames	long-sdl_render_driver_software	end	290108	290108	126.7	3112960	6971392	2812944	300016	28	12900	277208
+mono	frames	long-sdl_render_driver_software	after-trim	290088	290088	127.3	2981888	6971392	2814512	167376	28	12880	277208

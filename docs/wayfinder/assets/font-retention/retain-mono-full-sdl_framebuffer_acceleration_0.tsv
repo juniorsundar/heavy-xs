@@ -1,0 +1,15 @@
+id	variant	tag	phase	rss_kb	hwm_kb	lua_kb	arena_b	mmap_b	inuse_b	free_b	fds	anon_kb	file_kb
+mono	full	sdl_framebuffer_acceleration_0	baseline	14116	14116	125.9	540672	1069056	345856	194816	5	2532	11584
+mono	full	sdl_framebuffer_acceleration_0	cycle1	14504	14524	126.0	794624	1069056	352896	441728	5	2752	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle10	14724	14724	126.1	1069056	1069056	359264	709792	5	2972	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle20	14724	14724	126.2	1069056	1069056	359888	709168	5	2972	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle30	14724	14724	126.4	1069056	1069056	360256	708800	5	2972	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle40	14736	14736	126.6	1069056	1069056	360928	708128	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle50	14736	14736	126.7	1069056	1069056	361328	707728	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle60	14736	14736	126.8	1069056	1069056	361472	707584	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle70	14736	14736	127.0	1069056	1069056	362688	706368	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle80	14736	14736	127.2	1069056	1069056	362960	706096	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle90	14736	14736	127.3	1069056	1069056	363360	705696	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	cycle100	14736	14736	127.5	1069056	1069056	364272	704784	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	end	14736	14736	127.6	1069056	1069056	364064	704992	5	2984	11752
+mono	full	sdl_framebuffer_acceleration_0	after-trim	14568	14568	128.2	1085440	1069056	364656	720784	5	2816	11752

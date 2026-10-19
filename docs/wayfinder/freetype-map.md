@@ -22,12 +22,22 @@ Choose a Rust-native replacement for FreeType and produce a concrete migration a
 
 - [Inventory the observable font contract](issues/12-inventory-font-contract.md): source-backed API/rendering behavior, bundled font identities, exercised regressions and concrete coverage gaps are recorded for baseline and compatibility decisions.
 - [Survey Rust-native font backends](issues/13-survey-rust-font-backends.md): released Rust stacks and their native-dependency audit expose concrete control/rendering questions for candidate evidence; no backend is selected.
-- [Collect the FreeType rendering and cost baseline](issues/14-collect-freetype-baseline.md): build-pinned reference sheets, metrics, fresh/warm cost and retention for bundled and public custom fonts are recorded, including unmeasured paths; RSS retention across font cycles remains unclassified and is tracked by [Classify font memory retention in the current renderer](issues/19-classify-font-memory-retention.md).
+- [Collect the FreeType rendering and cost baseline](issues/14-collect-freetype-baseline.md): build-pinned reference sheets, metrics, fresh/warm cost and retention for bundled and public custom fonts are recorded, including unmeasured paths; the initial RSS observation is addressed by [Classify font memory retention in the current renderer](issues/19-classify-font-memory-retention.md).
+
+- [Define font compatibility and acceptance criteria](issues/15-define-font-acceptance.md): the user confirmed required formats/controls and API rules, explicit geometry review, matched performance/memory evidence and live normal/HiDPI gates; no candidate or compatibility loss is approved.
+- [Classify font memory retention in the current renderer](issues/19-classify-font-memory-retention.md): the baseline's RSS growth is NVIDIA driver memory from the accelerated offscreen framebuffer, growing per frame, not a font leak; with acceleration off, FreeType font cycles plateau and the shared release path frees everything. Measure font memory that way.
+
+- [Establish additional font-format reference coverage](issues/20-establish-additional-font-format-coverage.md): mapped-glyph evidence separates working extra inputs, outline fallbacks and bitmap placeholders/unsafe paths; unavailable formats and user support-gap decisions remain explicit.
+- [Investigate Rust-native mono rendering alternatives](issues/21-investigate-mono-rendering-alternatives.md): versioned APIs and archived code identify two bounded follow-up paths and their untested limits; the rejected 50% conversion stays rejected, with no replacement approved.
+- [Compare candidate font controls and rendering](issues/18-compare-font-controls-and-rendering.md): per-glyph routing works on Skrifa + Zeno; the user accepted tiny-skia non-AA as the mono construction (unhinted thin-stroke loss accepted, hinted retains strokes); live, cost and format evidence moved to the in-editor prototype and format research.
+- [Investigate Rust-native paths for legacy and bitmap font formats](issues/22-investigate-rust-native-legacy-and-bitmap-formats.md): Type 1 (read-fonts) and BDF (third-party parsers) have existing Rust paths needing glue, X11 PCF has none, bitmap strikes are readable by Skrifa; dispositions stay with the user.
+- [Prototype the candidate backend inside the editor](issues/23-prototype-candidate-in-editor.md): Skrifa + Zeno + tiny-skia behind the renderer seam; the user accepted live appearance and performance, size-scaled bold is an approved difference, geometry is identical, no leak or malformed-font failure; CJK peak memory and the sdl_renderer fractional-scale crash are deferred follow-ups.
+- [Select the Rust-native font backend](issues/16-select-rust-font-backend.md): Skrifa + Zeno + tiny-skia selected (ADR 0001); approved differences, excluded legacy/bitmap formats and a waived normal-density review are recorded, with four follow-ups for the handoff.
+- [Define the FreeType replacement handoff](issues/17-plan-font-migration.md): the handoff gave the exact change, single pixel-hash golden update, validation checklist, stop conditions and follow-ups; it was implemented in `b7413210` and `49333384` and then deleted.
 
 ## Not yet specified
 
-- Whether further per-format, malformed-font or retention investigations are needed beyond the initial comparison depends on the baseline, agreed criteria and actual candidate results.
-- Any compatibility accommodations or migration hazards exposed by those experiments. A gap triggers a decision, not a silent sacrifice or an emulation project.
+Nothing: the destination is reached. The migration is implemented (`b7413210`, `49333384`); the remaining follow-ups are listed in [Select the Rust-native font backend](issues/16-select-rust-font-backend.md#resolution).
 
 ## Out of scope
 

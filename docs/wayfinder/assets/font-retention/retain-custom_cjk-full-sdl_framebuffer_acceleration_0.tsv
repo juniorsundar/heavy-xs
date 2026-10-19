@@ -1,0 +1,15 @@
+id	variant	tag	phase	rss_kb	hwm_kb	lua_kb	arena_b	mmap_b	inuse_b	free_b	fds	anon_kb	file_kb
+custom_cjk	full	sdl_framebuffer_acceleration_0	baseline	13988	13988	125.9	540672	1069056	345856	194816	5	2532	11456
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle1	14768	15592	126.0	1073152	1069056	369392	703760	5	3080	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle10	14812	15716	126.2	1064960	1069056	373472	691488	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle20	14812	15716	126.3	1064960	1069056	374064	690896	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle30	14812	15716	126.5	1064960	1069056	375200	689760	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle40	14812	15716	126.7	1064960	1069056	375952	689008	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle50	14812	15716	126.8	1064960	1069056	377984	686976	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle60	14812	15716	127.0	1064960	1069056	378688	686272	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle70	14812	15716	127.1	1064960	1069056	379376	685584	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle80	14812	15716	127.4	1064960	1069056	380080	684880	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle90	14812	15716	127.5	1064960	1069056	380896	684064	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	cycle100	14812	15716	127.6	1064960	1069056	381296	683664	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	end	14812	15716	127.7	1064960	1069056	381088	683872	5	3124	11688
+custom_cjk	full	sdl_framebuffer_acceleration_0	after-trim	14340	15716	128.3	933888	1069056	381888	552000	5	2652	11688

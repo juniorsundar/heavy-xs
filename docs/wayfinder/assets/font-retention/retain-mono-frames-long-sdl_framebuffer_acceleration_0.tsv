@@ -1,0 +1,9 @@
+id	variant	tag	phase	rss_kb	hwm_kb	lua_kb	arena_b	mmap_b	inuse_b	free_b	fds	anon_kb	file_kb
+mono	frames	long-sdl_framebuffer_acceleration_0	baseline	14264	14264	125.9	540672	1069056	345904	194768	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	cycle1	14264	14264	125.9	540672	1069056	349536	191136	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	cycle100	14264	14264	126.1	540672	1069056	349744	190928	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	cycle200	14264	14264	126.3	540672	1069056	349952	190720	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	cycle300	14264	14264	126.4	540672	1069056	350544	190128	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	cycle400	14264	14264	126.6	540672	1069056	350784	189888	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	end	14264	14264	126.7	540672	1069056	351168	189504	5	2532	11732
+mono	frames	long-sdl_framebuffer_acceleration_0	after-trim	14260	14260	127.3	503808	1069056	352704	151104	5	2528	11732

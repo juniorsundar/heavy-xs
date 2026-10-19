@@ -1,0 +1,15 @@
+id	variant	tag	phase	rss_kb	hwm_kb	lua_kb	arena_b	mmap_b	inuse_b	free_b	fds	anon_kb	file_kb
+custom_cjk	full	sdl_render_driver_software	baseline	60092	60092	125.9	3112960	6971392	2753360	359600	28	12900	47192
+custom_cjk	full	sdl_render_driver_software	cycle1	62716	63360	126.0	3477504	6971392	2774768	702736	28	13372	49344
+custom_cjk	full	sdl_render_driver_software	cycle10	78992	78992	126.2	4530176	6971392	2780528	1749648	28	14416	64576
+custom_cjk	full	sdl_render_driver_software	cycle20	78244	78732	126.3	3727360	6971392	2781120	946240	28	13668	64576
+custom_cjk	full	sdl_render_driver_software	cycle30	78244	78732	126.5	3727360	6971392	2781312	946048	28	13668	64576
+custom_cjk	full	sdl_render_driver_software	cycle40	79052	79052	126.7	4554752	6971392	2781840	1772912	28	14476	64576
+custom_cjk	full	sdl_render_driver_software	cycle50	78244	78732	126.8	3727360	6971392	2782496	944864	28	13668	64576
+custom_cjk	full	sdl_render_driver_software	cycle60	78244	78732	127.0	3727360	6971392	2782896	944464	28	13668	64576
+custom_cjk	full	sdl_render_driver_software	cycle70	79040	79040	127.1	4603904	6971392	2783568	1820336	28	14464	64576
+custom_cjk	full	sdl_render_driver_software	cycle80	79056	79056	127.3	4603904	6971392	2784352	1819552	28	14480	64576
+custom_cjk	full	sdl_render_driver_software	cycle90	79056	79056	127.5	4603904	6971392	2784240	1819664	28	14480	64576
+custom_cjk	full	sdl_render_driver_software	cycle100	79056	79056	127.6	4603904	6971392	2784624	1819280	28	14480	64576
+custom_cjk	full	sdl_render_driver_software	end	79056	79056	127.7	4603904	6971392	2784416	1819488	28	14480	64576
+custom_cjk	full	sdl_render_driver_software	after-trim	77504	78732	128.3	4259840	6971392	2785760	1474080	28	12928	64576
