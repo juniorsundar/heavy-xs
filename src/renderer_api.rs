@@ -496,6 +496,13 @@ unsafe extern "C-unwind" fn f_end_frame(l: *mut lua_State) -> c_int {
     assert!(!window.is_null());
     rencache_end_frame(window);
     ren_set_target_window(ptr::null_mut());
+    // PROTOTYPE: expose the present time as a global for the frame-timing probe.
+    lua_pushnumber(
+        l,
+        crate::rencache::LAST_PRESENT_NS.load(std::sync::atomic::Ordering::Relaxed) as lua_Number
+            / 1e9,
+    );
+    mlua::ffi::lua_setglobal(l, c"LXL_LAST_PRESENT_S".as_ptr());
     // Clear the font reference table.
     lua_newtable(l);
     lua_rawseti(l, LUA_REGISTRYINDEX, RENDERER_FONT_REF as lua_Integer);
