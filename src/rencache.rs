@@ -380,6 +380,9 @@ pub unsafe extern "C" fn rencache_begin_frame(window: *mut RenWindow) {
     cache.last_clip_rect = cache.screen_rect;
 }
 
+/// PROTOTYPE: nanoseconds spent presenting the last frame (0 when nothing changed).
+pub static LAST_PRESENT_NS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
 /// # Safety
 /// `window` is a live `RenWindow` whose command buffer holds this frame's commands.
 #[no_mangle]
@@ -469,8 +472,13 @@ pub unsafe extern "C" fn rencache_end_frame(window: *mut RenWindow) {
         }
     }
 
+    // PROTOTYPE (cost baseline): time presentation separately from active work.
     if rect_count > 0 {
+        let t0 = std::time::Instant::now();
         ren_update_rects(window, cache.rect_buf.as_mut_ptr(), rect_count as c_int);
+        LAST_PRESENT_NS.store(t0.elapsed().as_nanos() as u64, std::sync::atomic::Ordering::Relaxed);
+    } else {
+        LAST_PRESENT_NS.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     // Swap the cell buffers, reset the command buffer, and remember the frame for the tests.
