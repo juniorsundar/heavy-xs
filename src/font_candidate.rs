@@ -26,8 +26,11 @@ const HINT_SLIGHT: c_int = 1;
 const STYLE_BOLD: u8 = 1;
 const STYLE_ITALIC: u8 = 2;
 const STYLE_SMOOTH: u8 = 8;
-/// FreeType's embolden strength `1 << 5` in 26.6 is half a pixel of total growth.
+/// FreeType's embolden strength `1 << 5` in 26.6 is half a pixel of total growth (smoothing).
 const EMBOLDEN_PX: f32 = 0.5;
+/// User-approved: synthetic bold grows with size (0.75 px total at 15 px, ink close to real Bold faces) so it is
+/// visible; FreeType's fixed half pixel was imperceptible on a HiDPI panel.
+const BOLD_PER_PX: f32 = 1.0 / 20.0;
 const MAX_GLYPH_PX: f32 = 4096.0;
 
 pub struct CandFont {
@@ -198,7 +201,7 @@ impl CandFont {
             embolden += EMBOLDEN_PX;
         }
         if style & STYLE_BOLD != 0 {
-            embolden += EMBOLDEN_PX;
+            embolden += self.pixel_size * BOLD_PER_PX;
         }
 
         let bounds = zeno::bounds(&pen.cmds, zeno::Fill::NonZero, None);
