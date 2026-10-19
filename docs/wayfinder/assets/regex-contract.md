@@ -24,7 +24,7 @@ Other relative source links locate files in the current checkout; use the same r
 
 ## Native and Lua surface
 
-The native module is loaded before editor startup ([app.rs:71](../../../rust/src/app.rs#L71)). `require "core.regex"` adds convenience functions and method lookup to that same global table ([core/regex.lua:1–82](../../../data/core/regex.lua#L1)).
+The native module is loaded before editor startup ([app.rs:71](https://github.com/juniorsundar/heavy-xs/blob/d9b3db31/rust/src/app.rs#L71)). `require "core.regex"` adds convenience functions and method lookup to that same global table ([core/regex.lua:1–82](../../../data/core/regex.lua#L1)).
 
 | Operation | Current observable behavior | Evidence |
 |---|---|---|

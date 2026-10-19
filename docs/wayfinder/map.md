@@ -34,7 +34,7 @@ Agree on a Rust/Lua responsibility policy and a concrete design for replacing PC
 
 ## Follow-up
 
-- The lean integration is implemented and [validated](assets/regex-lean-validation.md). The user accepted the four measured relative slowdowns; a separate [agent handoff](../regex-slowdown-handoff.md) scopes their investigation without reopening the dialect choice.
+- The lean integration is implemented and [validated](assets/regex-lean-validation.md). The user accepted the four measured relative slowdowns; a separate agent handoff was requested to investigate them (never written) without reopening the dialect choice.
 
 ## Out of scope
 

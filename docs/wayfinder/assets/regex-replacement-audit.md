@@ -13,7 +13,7 @@ Two different PCRE2 versions matter:
 | Evidence | Finding | Limitation |
 |---|---|---|
 | Optional repository-local `subprojects/pcre2-10.44/doc/pcre2api.3` and `src/pcre2_substitute.c` | Old C-build source/manual, version 10.44 | This leftover tree is untracked and is not the current Cargo dependency; it is not needed to rerun fixtures. |
-| [Cargo.lock](../../../rust/Cargo.lock#L225) | `pcre2-sys` 0.2.10 | Crate version alone is not a PCRE2 runtime-version query. |
+| [Cargo.lock](https://github.com/juniorsundar/heavy-xs/blob/e269ee69/rust/Cargo.lock#L225) | `pcre2-sys` 0.2.10 | Crate version alone is not a PCRE2 runtime-version query. |
 | Build archives `rust/target/debug/build/pcre2-sys-*/out/libpcre2.a` | Embedded string `10.46 2025-08-27` | Build-artifact evidence, not a Lua-exposed runtime version API. |
 | [Cargo configuration](../../../.cargo/config.toml#L4) | Forces static PCRE2 | Together with the fresh Cargo verification/build and binary hash in the report, identifies the reference build without relying on the old 10.44 tree. |
 
