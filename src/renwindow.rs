@@ -2,11 +2,9 @@
 //!
 //! A `RenWindow` is the per-window state: the SDL window, its surface (or SDL renderer +
 //! texture), the scale between window points and surface pixels, and the frame's command
-//! buffer that `rencache.rs` fills. The struct lives here and is **opaque to C** — the C that
-//! remains (`renderer.c` for FreeType and the drawing primitives, `main.c`, `api/renderer.c`)
-//! goes through the `ren_*` functions below. That is deliberate: the struct's layout changes
-//! with `LITE_USE_SDL_RENDERER`, and mirroring it in a header would be a silent
-//! memory-corruption bug when the two drift.
+//! buffer that `rencache.rs` fills. The struct lives here and is opaque across the `ren_*`
+//! interface used by `renderer.rs`, `rencache.rs` and the Lua bindings. Its layout changes with
+//! `sdl_renderer`, so callers must not mirror it in a header.
 //!
 //! `renderer.c`'s window bookkeeping came along too (the list, `ren_create`/`ren_destroy`, the
 //! target window, `ren_get_size`, `ren_update_rects`), because all of it reads the struct's
