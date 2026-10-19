@@ -137,6 +137,13 @@ impl TextState {
     fn new() -> Self { Self { committed: String::new(), preedit: String::new(), preedit_cursor: None, caret: 0 } }
     fn insert(&mut self, value: &str) { insert_at(&mut self.committed, &mut self.caret, value); }
     fn clear_preedit(&mut self) { self.preedit.clear(); self.preedit_cursor = None; }
+    fn set_preedit(&mut self, text: String, cursor: Option<(usize, usize)>) -> bool {
+        let cursor = normalize_range(&text, cursor);
+        if self.preedit == text && self.preedit_cursor == cursor { return false; }
+        self.preedit = text;
+        self.preedit_cursor = cursor;
+        true
+    }
 }
 #[rustfmt::skip]
 struct Face { data: Vec<u8>, px: f32 }
@@ -223,6 +230,9 @@ fn stroke(buf: &mut [u32], stride: u32, height: u32, x: i32, y: i32, w: i32, h: 
     fill(buf, stride, height, x, y, w, 1, color); fill(buf, stride, height, x, y + h - 1, w, 1, color);
     fill(buf, stride, height, x, y, 1, h, color); fill(buf, stride, height, x + w - 1, y, 1, h, color);
 }
+fn opaque_xrgb(rgb: u32) -> u32 {
+    rgb | 0xff000000
+}
 #[rustfmt::skip]
 fn blend(dst: u32, src: u32, alpha: u32) -> u32 {
     let inv = 255 - alpha;
@@ -291,6 +301,7 @@ struct App {
     presented: bool, modifiers: ModifiersState, ime_enabled: bool,
     pointer: PhysicalPosition<f64>, last_cursor: Option<CursorIcon>,
     cursor_cycle: usize, cursor_override: bool,
+    last_ime_area: Option<(PhysicalPosition<i32>, PhysicalSize<u32>, f64)>,
 }
 #[rustfmt::skip]
 impl App {
@@ -306,6 +317,7 @@ impl App {
             primary: BUNDLED_FONT.to_vec(), fallback, font_scale: 0.0, presented: false,
             modifiers: ModifiersState::empty(), ime_enabled: false,
             pointer: PhysicalPosition::new(0.0, 0.0), last_cursor: None, cursor_cycle: 0, cursor_override: false,
+            last_ime_area: None,
         }
     }
     fn fail(&mut self, event_loop: &ActiveEventLoop, message: impl Into<String>) {
@@ -422,9 +434,16 @@ impl App {
             } else { "F7 cycles cursor until pointer moves; Escape closes unless composing; Enter logged" };
             c.text(fonts, hint, margin as f32, y as f32, 0x88a0b8);
         }
-        if self.ime_enabled {
-            window.set_ime_cursor_area(PhysicalPosition::new(caret_area.0, caret_area.1),
-                PhysicalSize::new(caret_area.2, caret_area.3));
+        let ime_area = (PhysicalPosition::new(caret_area.0, caret_area.1),
+            PhysicalSize::new(caret_area.2, caret_area.3), window.scale_factor());
+        if self.ime_enabled && self.last_ime_area != Some(ime_area) {
+            // Updating the area can itself produce an empty preedit notification.
+            window.set_ime_cursor_area(ime_area.0, ime_area.1);
+            self.last_ime_area = Some(ime_area);
+        }
+        if self.args.backend == Backend::Wayland {
+            // shortcut: this Wayland path needs opaque XRGB padding; investigate below softbuffer before production use.
+            for pixel in buffer.iter_mut() { *pixel = opaque_xrgb(*pixel); }
         }
         window.pre_present_notify();
         buffer.present().map_err(|e| format!("softbuffer present failed: {e}"))?;
@@ -504,14 +523,13 @@ impl ApplicationHandler for App {
                 }
             }
             WindowEvent::Ime(ime) => match ime {
-                Ime::Enabled => { self.ime_enabled = true; println!("probe: IME Enabled"); self.request_redraw(); }
+                Ime::Enabled => { self.ime_enabled = true; self.last_ime_area = None; println!("probe: IME Enabled"); self.request_redraw(); }
                 Ime::Preedit(text, cursor) => {
-                    let cursor = normalize_range(&text, cursor);
                     println!("probe: IME Preedit bytes={} cursor={cursor:?}", text.len());
-                    self.text.preedit = text; self.text.preedit_cursor = cursor; self.request_redraw();
+                    if self.text.set_preedit(text, cursor) { self.request_redraw(); }
                 }
                 Ime::Commit(text) => { println!("probe: IME Commit bytes={}", text.len()); self.text.insert(&text); self.text.clear_preedit(); self.request_redraw(); }
-                Ime::Disabled => { self.ime_enabled = false; println!("probe: IME Disabled"); self.text.clear_preedit(); self.request_redraw(); }
+                Ime::Disabled => { self.ime_enabled = false; self.last_ime_area = None; println!("probe: IME Disabled"); self.text.clear_preedit(); self.request_redraw(); }
             },
             WindowEvent::CursorMoved { position, .. } => {
                 self.pointer = position;
@@ -610,6 +628,23 @@ mod tests {
         assert!(delete_previous(&mut text, &mut caret));
         assert!(!delete_previous(&mut text, &mut caret));
         assert_eq!((text.as_str(), caret), ("", 0));
+    }
+    #[test]
+    fn repeated_empty_preedit_does_not_request_another_redraw() {
+        let mut text = TextState::new();
+        assert!(!text.set_preedit(String::new(), None));
+        assert!(text.set_preedit("漢".into(), Some((3, 3))));
+        assert!(!text.set_preedit("漢".into(), Some((3, 3))));
+        assert!(text.set_preedit(String::new(), None));
+        assert!(!text.set_preedit(String::new(), None));
+    }
+    #[test]
+    fn opaque_padding_preserves_every_rgb_channel() {
+        for rgb in [0, 0x244c3a, 0x15151c, 0xffffff] {
+            let pixel = opaque_xrgb(rgb);
+            assert_eq!(pixel >> 24, 0xff);
+            assert_eq!(pixel & 0xffffff, rgb);
+        }
     }
     #[test]
     fn text_measurement_matches_visible_missing_glyphs() {
