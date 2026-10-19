@@ -19,3 +19,15 @@ _Avoid_: Bold face, when the font file itself is regular
 **Bold face**:
 A font file designed as the bold member of a family, loaded explicitly like any other font.
 _Avoid_: Bold option, synthetic bold
+
+**Coverage atlas**:
+Cached glyph samples describing how much of each color channel a glyph covers. These are coverage values, not the finished text colors or the window image.
+_Avoid_: Glyph image when implying finished colors
+
+**Draw target**:
+The editor's retained, composed window image, including pixels in regions not redrawn this frame. It is distinct from the image storage used to present a frame to the desktop.
+_Avoid_: Surface when its role is ambiguous
+
+**Presentation buffer**:
+Image storage handed to the desktop to display a frame. It is distinct from the editor's retained draw target and may not contain the immediately preceding frame.
+_Avoid_: Framebuffer when implying the retained draw target
