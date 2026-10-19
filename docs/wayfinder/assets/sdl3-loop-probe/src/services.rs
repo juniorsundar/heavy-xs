@@ -237,13 +237,25 @@ pub fn dialog(proxy: EventLoopProxy<Event>, window: Arc<Window>, api: DialogApi,
     });
 }
 
+/// Runs one dialog future on a runtime that lives for the whole process.
+/// ashpd caches its zbus connection process-wide, and zbus runs that connection's tasks on the
+/// runtime that created it; a per-dialog runtime would strand every later request.
+fn on_dialog_runtime<F: std::future::Future>(future: F) -> Option<F::Output> {
+    static RUNTIME: std::sync::OnceLock<Option<tokio::runtime::Runtime>> =
+        std::sync::OnceLock::new();
+    let runtime = RUNTIME.get_or_init(|| {
+        Builder::new_multi_thread()
+            .worker_threads(1)
+            .enable_all()
+            .build()
+            .ok()
+    });
+    Some(runtime.as_ref()?.block_on(future))
+}
+
 fn run_dialog_rfd(window: &Window, kind: DialogKind) -> String {
     RFD_FALLBACK.store(false, std::sync::atomic::Ordering::Relaxed);
-    let runtime = match Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(_) => return "rfd runtime-unavailable".to_string(),
-    };
-    runtime.block_on(async move {
+    on_dialog_runtime(async move {
         let dialog = rfd::AsyncFileDialog::new()
             .set_parent(window)
             .set_title(DIALOG_TITLE)
@@ -264,6 +276,7 @@ fn run_dialog_rfd(window: &Window, kind: DialogKind) -> String {
             RFD_FALLBACK.load(std::sync::atomic::Ordering::Relaxed),
         )
     })
+    .unwrap_or_else(|| "rfd runtime-unavailable".to_string())
 }
 
 /// Stage of an rfd failure from its pinned 0.17.2 message prefixes; the message itself may hold paths.
@@ -293,11 +306,7 @@ fn rfd_summary(picked: bool, fallback: bool) -> String {
 }
 
 fn run_dialog_ashpd(window: &Window, kind: DialogKind) -> String {
-    let runtime = match Builder::new_current_thread().enable_all().build() {
-        Ok(runtime) => runtime,
-        Err(_) => return "ashpd runtime-unavailable".to_string(),
-    };
-    runtime.block_on(async move {
+    on_dialog_runtime(async move {
         let window_handle = match window.window_handle() {
             Ok(handle) => handle,
             Err(_) => return "ashpd parent-unavailable".to_string(),
@@ -344,6 +353,7 @@ fn run_dialog_ashpd(window: &Window, kind: DialogKind) -> String {
         };
         ashpd_result_summary(response)
     })
+    .unwrap_or_else(|| "ashpd runtime-unavailable".to_string())
 }
 
 fn ashpd_result_summary(result: Result<Request<SelectedFiles>, ashpd::Error>) -> String {
@@ -411,6 +421,28 @@ mod tests {
             available,
             "rfd cannot load libdbus in the launcher environment; no bus connection attempted"
         );
+    }
+
+    #[test]
+    #[ignore = "needs a private portal-less bus; check-loop.sh runs it under dbus-run-session"]
+    fn ashpd_requests_complete_on_successive_dialog_threads() {
+        // Guard: never risk a real dialog on the user's session bus.
+        assert_eq!(
+            std::env::var("PROBE_PRIVATE_BUS").as_deref(),
+            Ok("1"),
+            "run via check-loop.sh"
+        );
+        for attempt in 1..=3 {
+            let (tx, rx) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let done =
+                    on_dialog_runtime(async { SelectedFiles::open_file().send().await.is_ok() });
+                tx.send(done).ok();
+            });
+            // No portal exists here, so each request must fail promptly, not hang.
+            let outcome = rx.recv_timeout(Duration::from_secs(5));
+            assert!(outcome.is_ok(), "ashpd request {attempt} never completed");
+        }
     }
 
     #[test]

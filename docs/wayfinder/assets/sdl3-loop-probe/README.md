@@ -78,6 +78,10 @@ The first live Wayland F8 attempt with rfd failed in 35 ms: no dialog appeared, 
 
 `env.sh` enters the repository's pinned dev shell **plus `dbus`** (probe-only `--impure` override; the repository flake is unchanged) and adds its library directory. The F-key logs now name the failure stage from rfd's pinned message prefixes (`libdbus-missing`, `session-bus-unavailable`, `portal-call-failed`, `zenity-fallback-failed`, `other-error`) without printing details. Whether rfd's portal call then works is a live check. A shipping editor would need to make libdbus available the same way; that is a packaging fact for selection, not a decision made here.
 
+## Live finding: ashpd hung after its first dialog
+
+On Wayland, ashpd's first Open worked; the next request (Save) never opened or returned, and later keys were ignored because one dialog was still pending. Cause: ashpd caches its zbus connection for the whole process, and zbus runs that connection's background tasks on the Tokio runtime that created it. The probe built a fresh runtime per dialog, so the first dialog's runtime was dropped and every later request waited forever. The probe now keeps one process-lifetime Tokio runtime for dialogs and logs ignored dialog keys. `check-loop.sh` runs three successive ashpd requests on a private bus with no portal: before the fix the second request hung past 5 s; after it, all three fail promptly. **Integration fact for selection:** ashpd requires a long-lived async runtime owned by the application.
+
 ## Recorded automated run
 
 - All **12 unit tests**, formatting and shell syntax checks pass. Both decorated and borderless private-Xvfb runs passed: 6 pump iterations, 2 blocked-wait interruptions, one worker wake, one simulated-result wake and 3 frames each. Individual wait interruptions were approximately 150–175 ms against the 5-second bound.

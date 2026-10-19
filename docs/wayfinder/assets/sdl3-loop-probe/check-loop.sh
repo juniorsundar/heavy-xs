@@ -10,6 +10,10 @@ export CARGO_TARGET_DIR="$here/target"
 cargo test --locked --manifest-path "$here/Cargo.toml"
 # Loader preflight in the launcher environment; opens no bus connection or dialog.
 cargo test --locked --manifest-path "$here/Cargo.toml" -- --ignored rfd_libdbus_loader_resolves
+# Successive ashpd requests on a private bus with no portal and no display: they must fail promptly, not hang.
+env -u WAYLAND_DISPLAY -u DISPLAY PROBE_PRIVATE_BUS=1 \
+  dbus-run-session --config-file="$here/private-bus.conf" -- \
+  cargo test --locked --manifest-path "$here/Cargo.toml" -- --ignored ashpd_requests_complete_on_successive_dialog_threads
 cargo build --locked --manifest-path "$here/Cargo.toml"
 out=$(mktemp -d)
 Xvfb -displayfd 3 -screen 0 1200x900x24 -nolisten tcp 3> "$out/display" > "$out/xvfb.log" 2>&1 &

@@ -577,7 +577,11 @@ impl ApplicationHandler<Event> for App {
                             self.service_status = "API changed; no dialog opened".into(); self.request_redraw(); return;
                         }
                         Key::Named(NamedKey::F8 | NamedKey::F9 | NamedKey::F10) => {
-                            if self.args.self_check || self.dialog_pending { return; }
+                            if self.args.self_check { return; }
+                            if self.dialog_pending {
+                                println!("probe: dialog key ignored: a {:?} dialog request is still pending", self.dialog_api);
+                                return;
+                            }
                             let kind = match key { Key::Named(NamedKey::F8) => DialogKind::Open,
                                 Key::Named(NamedKey::F9) => DialogKind::Save, _ => DialogKind::Directory };
                             self.dialog_pending = true;

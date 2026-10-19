@@ -12,5 +12,5 @@ zeno = "=0.3.3"
 arboard = { version = "=3.7.0", default-features = false, features = ["wayland-data-control"] }
 rfd = { version = "=0.17.2", default-features = false, features = ["xdg-portal", "wayland"] }
 ashpd = { version = "=0.13.13", features = ["file_chooser", "raw_handle", "wayland"] }
-tokio = { version = "=1.53.3", features = ["rt", "net", "time"] }
+tokio = { version = "=1.53.3", features = ["rt", "rt-multi-thread", "net", "time"] }
 log = "0.4"
