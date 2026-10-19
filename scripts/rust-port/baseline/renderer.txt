@@ -109,91 +109,91 @@ set_clip_rect bad arg                        ERR bad argument #4 to 'renderer.se
 show_debug no arg                            ERR bad argument #1 to 'renderer.show_debug' (value expected)
 show_debug false                             ok 
 get_size outside frame                       ok float:0.0,float:0.0
-mono none none                               41eb79ed/588
-mono none slight                             edb35ba6/541
-mono none full                               edb35ba6/541
-mono grayscale none                          7c4e830f/1134
-mono grayscale slight                        452993c1/1096
-mono grayscale full                          ee79c10c/1214
-mono subpixel none                           8917a284/1342
-mono subpixel slight                         035ad930/1285
-mono subpixel full                           d274e643/1313
-fira none none                               575662e4/569
-fira none slight                             efd56f77/494
-fira none full                               efd56f77/494
-fira grayscale none                          1da9d677/1060
-fira grayscale slight                        c1841e62/1073
-fira grayscale full                          a108f2f6/1174
-fira subpixel none                           8d099911/1260
-fira subpixel slight                         238d8b9b/1264
-fira subpixel full                           d32948d2/1268
-size 6                                       ebe2645a/92
-size 8                                       eea7abcd/150
-size 11                                      4cc41a90/262
-size 13.5                                    7eefdd6a/335
-size 18                                      e4b8d9ea/592
-size 24                                      b8e6ef42/909
-size 36                                      632e65ee/1889
-size 48                                      6d7ca66a/3055
-subpixel x=10                                7ce06f45/311
-subpixel x=10.2                              cc7eda6f/308
-subpixel x=10.34                             83222181/296
-subpixel x=10.5                              7e647d0b/297
-subpixel x=10.67                             f1d5a802/297
-subpixel x=10.99                             3a456130/309
-subpixel string drift                        b991769f/1839
-style bold (subpixel)                        9a270a49/830
-style bold (none)                            6633f397/528
-style italic (subpixel)                      57622690/768
-style italic (none)                          7c7d310e/399
-style bold italic (subpixel)                 c62e4c38/843
-style bold italic (none)                     a316f0f2/487
-style smoothing (subpixel)                   2fea6d15/917
-style smoothing (none)                       3147ddb2/603
-style underline (subpixel)                   8a388303/968
-style underline (none)                       3e3d0d80/601
-style strikethrough (subpixel)               0502da4e/838
-style strikethrough (none)                   d891faea/535
-style underline+strike (subpixel)            26784fca/1026
-style underline+strike (none)                9a2cca66/723
-style all (subpixel)                         25bdd301/1225
-style all (none)                             8e5cb8e7/922
-color 255,0,0,255                            22c2d142/72800
-color 10,200,90,255                          61d454bc/72800
-color 255,255,255,128                        b32622ca/72800
-color 255,255,255,1                          12cbf92d/72800
-color 255,255,255,254                        e630516e/72800
-color 200,100,50,77                          f8c18d78/72800
+mono none none                               5eabdce4/581
+mono none slight                             6575a520/533
+mono none full                               6575a520/533
+mono grayscale none                          5073bb89/1134
+mono grayscale slight                        34ff76d9/1096
+mono grayscale full                          d1177f0c/1214
+mono subpixel none                           783559d6/1322
+mono subpixel slight                         2790fe8a/1266
+mono subpixel full                           f3329df7/1283
+fira none none                               8570367e/565
+fira none slight                             15f051cb/480
+fira none full                               15f051cb/480
+fira grayscale none                          ececf6f5/1060
+fira grayscale slight                        309b7bc9/1073
+fira grayscale full                          113e7b5d/1174
+fira subpixel none                           857c86de/1246
+fira subpixel slight                         9a3d55e1/1244
+fira subpixel full                           285cccdc/1256
+size 6                                       d0630562/92
+size 8                                       9022ae14/150
+size 11                                      f41a6298/262
+size 13.5                                    d8f4a4db/335
+size 18                                      efc78725/591
+size 24                                      2867d06d/909
+size 36                                      7ffd6d14/1888
+size 48                                      aa6b58ac/3056
+subpixel x=10                                e59f5a0a/311
+subpixel x=10.2                              65bfb483/307
+subpixel x=10.34                             3a86a669/295
+subpixel x=10.5                              a3acb9f6/297
+subpixel x=10.67                             efc67347/297
+subpixel x=10.99                             34b252ef/309
+subpixel string drift                        015da2c8/1826
+style bold (subpixel)                        893fc447/992
+style bold (none)                            f199fe83/536
+style italic (subpixel)                      1ce4e4bc/752
+style italic (none)                          6e7a8c8c/397
+style bold italic (subpixel)                 fddc7467/1003
+style bold italic (none)                     a91d47de/613
+style smoothing (subpixel)                   c28c21ac/941
+style smoothing (none)                       b5fe86de/489
+style underline (subpixel)                   bf59ed41/952
+style underline (none)                       51749c5b/586
+style strikethrough (subpixel)               61649ec1/825
+style strikethrough (none)                   179de944/521
+style underline+strike (subpixel)            1c0b3e3d/1013
+style underline+strike (none)                79cb20c0/709
+style all (subpixel)                         d618a596/1331
+style all (none)                             7b01ba6d/1058
+color 255,0,0,255                            d0e56631/72800
+color 10,200,90,255                          1c226b8b/72800
+color 255,255,255,128                        fdcca946/72800
+color 255,255,255,1                          89fcd6f7/72800
+color 255,255,255,254                        0c151a09/72800
+color 200,100,50,77                          50fee5ea/72800
 color 255,255,255,0                          ced034c5/72800
-color 0,0,0,255                              b076004d/72594
+color 0,0,0,255                              f728ed37/72587
 rect alpha over rect                         721fbbd9/20500
 rect alpha, odd sizes                        548b80c1/1708
-clip left                                    cad5edb0/715
-clip right                                   59f124e1/523
-clip top                                     f652b90f/725
-clip bottom                                  f5a3afe3/502
-clip window                                  8ac7251a/303
+clip left                                    179b6cf2/715
+clip right                                   023d340c/523
+clip top                                     85106797/725
+clip bottom                                  4270c2ae/502
+clip window                                  7dad9715/303
 clip empty                                   3e132845/0
-clip subpixel                                07c0ee27/331
-text starting off the left edge              3293a310/715
-text off the right edge                      2ce34d55/179
-text above/below                             2d682d1a/236
-tabs rendered                                337926e8/461
-group mono+fira                              7ed5c4bc/524
-group fira+icons                             4eb9eacf/1059
-single font, missing glyph                   c9cbc8ff/322
-box glyph itself missing                     cd1e75de/201
-whitespace kinds                             9b4c7e87/628
-group underline                              87c56f84/612
-group strikethrough mixed                    8aed9293/350
+clip subpixel                                01fa1b91/324
+text starting off the left edge              1a3c1192/715
+text off the right edge                      2b7fcc77/179
+text above/below                             8e64fb71/236
+tabs rendered                                8fedf7a1/461
+group mono+fira                              406e6498/524
+group fira+icons                             3239c10d/1059
+single font, missing glyph                   3bbe5f2f/322
+box glyph itself missing                     ec587cc2/201
+whitespace kinds                             cb4a9e35/628
+group underline                              d1da5547/612
+group strikethrough mixed                    1ea61945/350
 empty string                                 3e132845/0
-invalid utf8                                 edf32ce5/211
-controls                                     141bbc9b/466
-NUL inside                                   804ef69d/279
-long line                                    b71e9b2d/2678
-many small draws                             7d6d4bfa/3052
-same font after set_size                     1017a92f/904
-font copy renders like original              659cf8dd/684
+invalid utf8                                 87839c60/211
+controls                                     d33395c5/466
+NUL inside                                   e2c86a59/279
+long line                                    7cb9643d/2678
+many small draws                             04354c15/3048
+same font after set_size                     b56ddde7/904
+font copy renders like original              845ff1e5/684
 draw_text return, mono                       49.609375
 draw_text return, fira+tab                   44.875
 draw_text return, group                      32.84375
