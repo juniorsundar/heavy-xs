@@ -1,0 +1,11 @@
+[package]
+name = "sdl3-window-probe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+winit = { version = "=0.30.13", features = ["wayland", "x11"] }
+softbuffer = { version = "=0.4.8", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "x11-dlopen"] }
+skrifa = "=0.48.0"
+zeno = "=0.3.3"
