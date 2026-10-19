@@ -4,6 +4,7 @@
 #   config: user     -> your ~/.config/lite-xl (default)
 #           bundled  -> a throwaway user dir with the stock fonts at the defaults (subpixel/slight)
 #           mode=AA/HINT -> stock fonts forced to one mode, e.g. mode=none/full
+# LITE_FT_SCALED_BOLD=1 in the environment gives the FreeType window the candidate's bold strength.
 # Each window title starts with [freetype] or [candidate]. Both windows share nothing but the file on disk.
 set -eu
 prefix=$1

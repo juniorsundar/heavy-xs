@@ -322,8 +322,18 @@ fn font_set_render_options(font: &RenFont) -> RenderMode {
     }
 }
 
+fn scaled_bold() -> bool {
+    static CHOICE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *CHOICE.get_or_init(|| std::env::var("LITE_FT_SCALED_BOLD").as_deref() == Ok("1"))
+}
+
 /// `font_set_style`: translate the outline for subpixel positioning, then apply the styles.
-unsafe fn font_set_style(slot: ft::FT_GlyphSlot, x_translation: c_int, style: u8) -> c_int {
+unsafe fn font_set_style(
+    slot: ft::FT_GlyphSlot,
+    x_translation: c_int,
+    style: u8,
+    pixel_size: f32,
+) -> c_int {
     let outline: *mut ft::FT_Outline = &mut (*slot).outline;
     ft::FT_Outline_Translate(
         outline as *const ft::FT_Outline,
@@ -334,7 +344,15 @@ unsafe fn font_set_style(slot: ft::FT_GlyphSlot, x_translation: c_int, style: u8
         ft::FT_Outline_Embolden(outline, 1 << 5);
     }
     if style & FONT_STYLE_BOLD != 0 {
-        ft::FT_Outline_EmboldenXY(outline, 1 << 5, 0);
+        // PROTOTYPE: LITE_FT_SCALED_BOLD=1 applies the candidate's size-scaled bold strength
+        // (pixel_size / 20 px, in 26.6) for side-by-side comparison.
+        // Scaled bold thickens on both axes, like the candidate's stroke; the default stays X-only.
+        if scaled_bold() {
+            let strength = (pixel_size / 20.0 * 64.0) as ft::FT_Pos;
+            ft::FT_Outline_EmboldenXY(outline, strength, strength);
+        } else {
+            ft::FT_Outline_EmboldenXY(outline, 1 << 5, 0);
+        }
     }
     if style & FONT_STYLE_ITALIC != 0 {
         let matrix = ft::FT_Matrix {
@@ -436,7 +454,11 @@ unsafe fn font_get_glyph_id(font: &mut RenFont, codepoint: u32) -> u32 {
     if cells[col] == 0 {
         let glyph_id = match &font.cand {
             Some(cand) => Some(cand.glyph_id(codepoint)).filter(|&g| g != 0),
-            None => font.face.as_ref().expect("FreeType face").get_char_index(codepoint as usize),
+            None => font
+                .face
+                .as_ref()
+                .expect("FreeType face")
+                .get_char_index(codepoint as usize),
         };
         // -1 marks "not available"; OpenType glyph IDs are uint16 so this is unreachable in theory.
         cells[col] = glyph_id.unwrap_or(u32::MAX);
@@ -455,7 +477,6 @@ unsafe fn font_allocate_glyph_surface(
     bitmap_rows: c_int,
     metric: *mut GlyphMetric,
 ) -> *mut sdl::SDL_Surface {
-
     let mut atlas_idx: c_int = -1;
     for (i, atlas) in font.glyphs.atlas[glyph_format].iter().enumerate() {
         if atlas.width >= (*metric).x1 {
@@ -495,7 +516,9 @@ unsafe fn font_allocate_glyph_surface(
 
         if surface_idx < 0 {
             let line_px = match &font.face {
-                Some(face) => face.size_metrics().map_or(0, |m| m.height as f64 as c_int / 64),
+                Some(face) => face
+                    .size_metrics()
+                    .map_or(0, |m| m.height as f64 as c_int / 64),
                 None => font.line_px,
             };
             let mut h = FONT_HEIGHT_OVERFLOW_PX + line_px;
@@ -627,6 +650,7 @@ unsafe fn font_load_glyph_bitmap(
         slot,
         bitmap_idx as c_int * (64 / SUBPIXEL_BITMAPS_CACHED as c_int),
         font.style,
+        font.size,
     ) != 0
         || font.ft().glyph().render_glyph(render_option).is_err()
     {
@@ -700,15 +724,19 @@ unsafe fn candidate_load_glyph_bitmap(
     metric: *mut GlyphMetric,
 ) -> *mut sdl::SDL_Surface {
     let x_shift = bitmap_idx as f32 / SUBPIXEL_BITMAPS_CACHED as f32;
-    let Some(image) = font.cand.as_ref().unwrap().render(
-        glyph_id,
-        x_shift,
-        font.antialiasing,
-        font.style,
-    ) else {
+    let Some(image) =
+        font.cand
+            .as_ref()
+            .unwrap()
+            .render(glyph_id, x_shift, font.antialiasing, font.style)
+    else {
         return ptr::null_mut();
     };
-    let format = if image.subpixel { EGLYPH_FORMAT_SUBPIXEL } else { EGLYPH_FORMAT_GRAYSCALE };
+    let format = if image.subpixel {
+        EGLYPH_FORMAT_SUBPIXEL
+    } else {
+        EGLYPH_FORMAT_GRAYSCALE
+    };
     (*metric).x1 = image.width;
     (*metric).y1 = image.rows;
     // The FreeType mono copy writes column c at atlas x = c + 1; keep mono placement identical.
@@ -833,8 +861,7 @@ unsafe fn font_set_face_metrics(font: &mut RenFont) -> ft::FT_Error {
         let upem = face.raw().units_per_EM as f32;
         font.height = ((face.height() as f32 / upem) * font.size) as i16 as u16;
         font.baseline = ((face.ascender() as f32 / upem) * font.size) as i16 as u16;
-        font.underline_thickness =
-            ((face.underline_thickness() as f32 / upem) * font.size) as u16;
+        font.underline_thickness = ((face.underline_thickness() as f32 / upem) * font.size) as u16;
     } else {
         // C: `(short) metrics.height / 64.0f` -- the cast binds before the division.
         let metrics = face
