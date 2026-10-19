@@ -1,5 +1,7 @@
 # THROWAWAY: native window, scale and IME probe
 
+**Historical window/IME evidence below. For this branch's presentation diagnostic, use [PRESENTATION.md](PRESENTATION.md).** Its default is now documented zero padding and Nix is opt-in; the old workaround instructions and executable identity below describe `f8dacae0`, not this revision. The inherited `check-visible.sh` launches windows and captures the screen; do not use it for the SSH/offline handoff.
+
 Question: can winit 0.30.13 + softbuffer 0.4.8 provide usable CPU pixel presentation, scale changes, IME and borderless move/resize on Linux?
 
 **Pending human review. No production stack selected.** This binary does not load the editor or modify its configuration. Sources and dependencies live only on a throwaway prototype branch. Rendering this test field is not editor rendering parity. The editor loop/pump, clipboard and dialogs belong to a separate prototype.

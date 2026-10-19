@@ -17,19 +17,28 @@ use winit::platform::x11::EventLoopBuilderExtX11;
 use winit::window::{CursorIcon, Icon, ResizeDirection, Window, WindowId};
 const BUNDLED_FONT: &[u8] = include_bytes!("../../../../../data/fonts/FiraSans-Regular.ttf");
 const MAX_TEXT_BYTES: usize = 512;
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[rustfmt::skip]
 enum Backend { Wayland, X11 }
 #[rustfmt::skip]
 impl Backend {
     fn name(self) -> &'static str { match self { Backend::Wayland => "wayland", Backend::X11 => "x11" } }
 }
+#[derive(Clone, Copy, Debug, PartialEq)]
 #[rustfmt::skip]
-struct Args { backend: Backend, borderless: bool, smoke: Option<Duration> }
+enum Padding { Zero, Ff }
 #[rustfmt::skip]
-fn parse_args() -> Result<Args, String> {
-    let (mut backend, mut borderless, mut smoke) = (None, false, None);
-    let mut it = std::env::args().skip(1);
+impl Padding {
+    fn name(self) -> &'static str { match self { Padding::Zero => "zero", Padding::Ff => "ff" } }
+    fn pixel(self, pixel: u32) -> u32 { match self { Padding::Zero => pixel & 0x00ff_ffff, Padding::Ff => pixel | 0xff00_0000 } }
+}
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[rustfmt::skip]
+struct Args { backend: Backend, borderless: bool, smoke: Option<Duration>, padding: Padding }
+#[rustfmt::skip]
+fn parse_args_from<I: IntoIterator<Item = String>>(args: I) -> Result<Args, String> {
+    let (mut backend, mut borderless, mut smoke, mut padding) = (None, false, None, Padding::Zero);
+    let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--backend" => backend = Some(match it.next().as_deref() {
@@ -38,6 +47,12 @@ fn parse_args() -> Result<Args, String> {
                 _ => return Err("--backend wayland|x11 is required".into()),
             }),
             "--borderless" => borderless = true,
+            "--wayland-padding" => padding = match it.next().as_deref() {
+                Some("zero") => Padding::Zero,
+                Some("ff") => Padding::Ff,
+                Some(other) => return Err(format!("--wayland-padding must be zero|ff, got {other:?}")),
+                None => return Err("--wayland-padding needs zero|ff".into()),
+            },
             "--smoke-seconds" => {
                 let value = it.next().ok_or("--smoke-seconds needs a positive integer")?;
                 let secs: u64 = value.parse().map_err(|_| format!("invalid --smoke-seconds {value:?}"))?;
@@ -47,8 +62,14 @@ fn parse_args() -> Result<Args, String> {
             other => return Err(format!("unknown argument {other:?}")),
         }
     }
-    Ok(Args { backend: backend.ok_or("--backend wayland|x11 is required")?, borderless, smoke })
+    let backend = backend.ok_or("--backend wayland|x11 is required")?;
+    if backend == Backend::X11 && padding == Padding::Ff {
+        return Err("--wayland-padding ff is Wayland-only and cannot be combined with --backend x11".into());
+    }
+    Ok(Args { backend, borderless, smoke, padding })
 }
+#[rustfmt::skip]
+fn parse_args() -> Result<Args, String> { parse_args_from(std::env::args().skip(1)) }
 #[rustfmt::skip]
 fn main() {
     let code = match run() { Ok(code) => code, Err(error) => { eprintln!("probe: error: {error}"); 1 } };
@@ -61,6 +82,10 @@ fn run() -> Result<i32, String> {
     println!("probe: requested/forced backend={} borderless={} smoke={:?}", args.backend.name(), args.borderless, args.smoke);
     println!("probe: session XDG_SESSION_TYPE={session} WAYLAND_DISPLAY={} DISPLAY={}",
         std::env::var_os("WAYLAND_DISPLAY").is_some(), std::env::var_os("DISPLAY").is_some());
+    println!("probe: wayland padding={} in XRGB8888: {}", args.padding.name(), match args.padding {
+        Padding::Zero => "documented zero high byte, 0RGB reproduction (default)",
+        Padding::Ff => "high byte forced to ff: diagnostic workaround outside softbuffer's documented contract, not supported",
+    });
     if args.backend == Backend::X11 && session == "wayland" {
         println!("probe: backend label: X11 (XWayland expected; not native X11 evidence)");
     }
@@ -230,9 +255,6 @@ fn stroke(buf: &mut [u32], stride: u32, height: u32, x: i32, y: i32, w: i32, h: 
     fill(buf, stride, height, x, y, w, 1, color); fill(buf, stride, height, x, y + h - 1, w, 1, color);
     fill(buf, stride, height, x, y, 1, h, color); fill(buf, stride, height, x + w - 1, y, 1, h, color);
 }
-fn opaque_xrgb(rgb: u32) -> u32 {
-    rgb | 0xff000000
-}
 #[rustfmt::skip]
 fn blend(dst: u32, src: u32, alpha: u32) -> u32 {
     let inv = 255 - alpha;
@@ -325,7 +347,8 @@ impl App {
     }
     fn request_redraw(&self) { if let Some(window) = &self.window { window.request_redraw(); } }
     fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
-        let attributes = Window::default_attributes().with_title("sdl3 window probe (throwaway)")
+        let attributes = Window::default_attributes()
+            .with_title(format!("sdl3 window probe (throwaway) wayland-padding={}", self.args.padding.name()))
             .with_inner_size(PhysicalSize::new(800, 520)).with_decorations(!self.args.borderless);
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| format!("window creation failed: {e}"))?);
         let (scale, size) = (window.scale_factor(), window.inner_size());
@@ -442,8 +465,8 @@ impl App {
             self.last_ime_area = Some(ime_area);
         }
         if self.args.backend == Backend::Wayland {
-            // shortcut: this Wayland path needs opaque XRGB padding; investigate below softbuffer before production use.
-            for pixel in buffer.iter_mut() { *pixel = opaque_xrgb(*pixel); }
+            // shortcut: ff is an observed diagnostic workaround, not a supported softbuffer contract; investigate before production use.
+            for pixel in buffer.iter_mut() { *pixel = self.args.padding.pixel(*pixel); }
         }
         window.pre_present_notify();
         buffer.present().map_err(|e| format!("softbuffer present failed: {e}"))?;
@@ -639,12 +662,33 @@ mod tests {
         assert!(!text.set_preedit(String::new(), None));
     }
     #[test]
-    fn opaque_padding_preserves_every_rgb_channel() {
+    fn wayland_padding_modes_preserve_every_rgb_channel() {
         for rgb in [0, 0x244c3a, 0x15151c, 0xffffff] {
-            let pixel = opaque_xrgb(rgb);
-            assert_eq!(pixel >> 24, 0xff);
-            assert_eq!(pixel & 0xffffff, rgb);
+            let zero = Padding::Zero.pixel(rgb | 0x12000000);
+            assert_eq!((zero >> 24, zero & 0xffffff), (0, rgb));
+            let ff = Padding::Ff.pixel(rgb | 0x12000000);
+            assert_eq!((ff >> 24, ff & 0xffffff), (0xff, rgb));
         }
+    }
+    fn parse(items: &[&str]) -> Result<Args, String> {
+        parse_args_from(items.iter().map(|item| item.to_string()))
+    }
+    #[test]
+    fn wayland_padding_parser_defaults_and_rejects_missing_or_invalid_values() {
+        let default = parse(&["--backend", "wayland"]).unwrap();
+        assert_eq!((default.backend, default.padding), (Backend::Wayland, Padding::Zero));
+        assert_eq!(parse(&["--backend", "wayland", "--wayland-padding", "zero"]).unwrap().padding, Padding::Zero);
+        assert_eq!(parse(&["--backend", "wayland", "--wayland-padding", "ff"]).unwrap().padding, Padding::Ff);
+        assert!(parse(&["--backend", "wayland", "--wayland-padding"]).is_err());
+        assert!(parse(&["--backend", "wayland", "--wayland-padding", "opaque"]).is_err());
+        assert!(parse(&["--wayland-padding", "zero"]).is_err());
+    }
+    #[test]
+    fn rejected_x11_ff_fails_in_parsing_before_the_event_loop() {
+        let error = parse(&["--backend", "x11", "--wayland-padding", "ff"]).unwrap_err();
+        assert!(error.contains("Wayland-only"));
+        assert_eq!(parse(&["--backend", "x11", "--wayland-padding", "zero"]).unwrap().padding, Padding::Zero);
+        assert_eq!(parse(&["--backend", "x11"]).unwrap().padding, Padding::Zero);
     }
     #[test]
     fn text_measurement_matches_visible_missing_glyphs() {
