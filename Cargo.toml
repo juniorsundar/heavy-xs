@@ -22,6 +22,10 @@ libc = "0.2"
 sdl3-sys = { version = "0.7", default-features = false, features = ["use-pkg-config"] }
 freetype-rs = { version = "0.38", features = ["bundled"] }
 fancy-regex = "=0.19.2"
+# PROTOTYPE: candidate font backend (LITE_FONT_BACKEND=candidate).
+skrifa = "=0.48.0"
+zeno = "=0.3.3"
+tiny-skia = { version = "=0.12.0", default-features = false, features = ["std", "simd"] }
 
 [features]
 # Test-only synthetic event injection (src/test_hooks.rs). Never enable in a shipping build.

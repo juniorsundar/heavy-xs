@@ -76,7 +76,17 @@ pub unsafe extern "C-unwind" fn set_cursor(l: *mut lua_State) -> c_int {
 pub unsafe extern "C-unwind" fn set_window_title(l: *mut lua_State) -> c_int {
     let window = check_sdl_window(l);
     let title = luaL_checkstring(l, 2);
-    sdl::SDL_SetWindowTitle(window, title);
+    // PROTOTYPE: label the font backend so side-by-side review windows are distinguishable.
+    match std::env::var("LITE_FONT_BACKEND") {
+        Ok(backend) => {
+            let text = std::ffi::CStr::from_ptr(title).to_string_lossy();
+            let labelled = std::ffi::CString::new(format!("[{backend}] {text}")).unwrap_or_default();
+            sdl::SDL_SetWindowTitle(window, labelled.as_ptr());
+        }
+        Err(_) => {
+            sdl::SDL_SetWindowTitle(window, title);
+        }
+    }
     0
 }
 
