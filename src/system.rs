@@ -276,6 +276,11 @@ fn get_process_id(_: &Lua, _: Variadic<Value>) -> LuaResult<i64> {
     Ok(std::process::id() as i64)
 }
 
+// PROTOTYPE (cost baseline): live allocations made through SDL_malloc and friends.
+fn sdl_allocations(_: &Lua, _: Variadic<Value>) -> LuaResult<i64> {
+    Ok(sdl3_sys::stdinc::SDL_GetNumAllocations() as i64)
+}
+
 fn get_time(_: &Lua, _: Variadic<Value>) -> LuaResult<f64> {
     unsafe { Ok(sdl::SDL_GetPerformanceCounter() as f64 / sdl::SDL_GetPerformanceFrequency() as f64) }
 }
@@ -522,6 +527,8 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
     set!("ftruncate", ftruncate);
     set!("get_process_id", get_process_id);
     set!("get_time", get_time);
+    // PROTOTYPE (cost baseline): count SDL allocations to attribute memory growth.
+    set!("sdl_allocations", sdl_allocations);
     set!("sleep", sleep);
     set!("exec", exec);
     set!("setenv", setenv);
