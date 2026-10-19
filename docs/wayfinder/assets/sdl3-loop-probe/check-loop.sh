@@ -3,11 +3,13 @@
 set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 root=$(cd "$here/../../../.." && pwd)
-if [[ ${PROBE_IN_SHELL:-} != 1 ]]; then
-  exec nix develop "$root" --command env PROBE_IN_SHELL=1 bash "$here/check-loop.sh"
-fi
+source "$here/env.sh"
+[[ ${PROBE_IN_SHELL:-} == 1 ]] || probe_enter_shell "$here/check-loop.sh"
+probe_library_path
 export CARGO_TARGET_DIR="$here/target"
 cargo test --locked --manifest-path "$here/Cargo.toml"
+# Loader preflight in the launcher environment; opens no bus connection or dialog.
+cargo test --locked --manifest-path "$here/Cargo.toml" -- --ignored rfd_libdbus_loader_resolves
 cargo build --locked --manifest-path "$here/Cargo.toml"
 out=$(mktemp -d)
 Xvfb -displayfd 3 -screen 0 1200x900x24 -nolisten tcp 3> "$out/display" > "$out/xvfb.log" 2>&1 &

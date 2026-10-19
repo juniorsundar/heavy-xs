@@ -36,7 +36,10 @@ impl log::Log for RfdDiagnostics {
             RFD_FALLBACK.store(true, std::sync::atomic::Ordering::Relaxed);
             println!("probe: rfd FALLBACK zenity (not portal evidence)");
         } else {
-            println!("probe: rfd backend warning/error (private details suppressed)");
+            println!(
+                "probe: rfd backend {} (details suppressed)",
+                rfd_failure_stage(&record.args().to_string())
+            );
         }
     }
     fn flush(&self) {}
@@ -263,6 +266,21 @@ fn run_dialog_rfd(window: &Window, kind: DialogKind) -> String {
     })
 }
 
+/// Stage of an rfd failure from its pinned 0.17.2 message prefixes; the message itself may hold paths.
+fn rfd_failure_stage(message: &str) -> &'static str {
+    if message.contains("libdbus-1.so not found") {
+        "libdbus-missing"
+    } else if message.starts_with("Failed to connect to session bus") {
+        "session-bus-unavailable"
+    } else if message.starts_with("OpenFile failed") {
+        "portal-call-failed"
+    } else if message.contains("zenity") {
+        "zenity-fallback-failed"
+    } else {
+        "other-error"
+    }
+}
+
 fn rfd_summary(picked: bool, fallback: bool) -> String {
     format!(
         "rfd {} fallback-zenity={fallback}",
@@ -367,6 +385,54 @@ fn ashpd_error_category(error: &ashpd::Error) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[ignore = "requires launcher LD_LIBRARY_PATH; check-loop.sh runs this explicitly"]
+    fn rfd_libdbus_loader_resolves() {
+        use std::ffi::{c_char, c_int, c_void};
+        #[link(name = "dl")]
+        extern "C" {
+            fn dlopen(name: *const c_char, flags: c_int) -> *mut c_void;
+            fn dlclose(handle: *mut c_void) -> c_int;
+        }
+        let available = [b"libdbus-1.so.3\0".as_slice(), b"libdbus-1.so\0".as_slice()]
+            .iter()
+            .any(|name| {
+                let handle = unsafe { dlopen(name.as_ptr().cast(), 1) };
+                if handle.is_null() {
+                    return false;
+                }
+                unsafe {
+                    dlclose(handle);
+                }
+                true
+            });
+        assert!(
+            available,
+            "rfd cannot load libdbus in the launcher environment; no bus connection attempted"
+        );
+    }
+
+    #[test]
+    fn rfd_failure_stages_use_pinned_prefixes_without_details() {
+        assert_eq!(
+            rfd_failure_stage("Can't connect to a portal: libdbus-1.so not found"),
+            "libdbus-missing"
+        );
+        assert_eq!(
+            rfd_failure_stage("Failed to connect to session bus: /private"),
+            "session-bus-unavailable"
+        );
+        assert_eq!(
+            rfd_failure_stage("OpenFile failed: /private"),
+            "portal-call-failed"
+        );
+        assert_eq!(
+            rfd_failure_stage("Failed to pick file with zenity: /private"),
+            "zenity-fallback-failed"
+        );
+        assert_eq!(rfd_failure_stage("/private/path"), "other-error");
+    }
 
     #[test]
     fn rfd_cancel_or_error_and_fallback_are_not_hidden() {

@@ -72,6 +72,12 @@ This runs unit tests and decorated/borderless self-checks on a **private Xvfb di
 
 Live Wayland/X11 clipboard, primary, real dialogs, after-exit ownership, actual sandbox behaviour and runtime dependency traces remain pending until separately recorded. The reused development shell still contains SDL, so it is not evidence of final editor dependency removal. No stack, feature drop, numerical performance tolerance or gate waiver is approved.
 
+## Live finding: rfd could not load libdbus
+
+The first live Wayland F8 attempt with rfd failed in 35 ms: no dialog appeared, rfd fell back to Zenity, and that fallback also failed. This was a failure, not a cancellation. The cause was isolated without opening dialogs: neither of rfd's dlopen names (`libdbus-1.so.3`, `libdbus-1.so`) resolved in the launcher environment, because the repository dev shell does not include dbus. `check-loop.sh` now runs that loader test explicitly; it failed before the change and passes after it. It opens no bus connection.
+
+`env.sh` enters the repository's pinned dev shell **plus `dbus`** (probe-only `--impure` override; the repository flake is unchanged) and adds its library directory. The F-key logs now name the failure stage from rfd's pinned message prefixes (`libdbus-missing`, `session-bus-unavailable`, `portal-call-failed`, `zenity-fallback-failed`, `other-error`) without printing details. Whether rfd's portal call then works is a live check. A shipping editor would need to make libdbus available the same way; that is a packaging fact for selection, not a decision made here.
+
 ## Recorded automated run
 
 - All **12 unit tests**, formatting and shell syntax checks pass. Both decorated and borderless private-Xvfb runs passed: 6 pump iterations, 2 blocked-wait interruptions, one worker wake, one simulated-result wake and 3 frames each. Individual wait interruptions were approximately 150–175 ms against the 5-second bound.
