@@ -29,6 +29,8 @@ if (args.length === 1 && args[0] === '--self-check') {
     assert.ok(matches(s,'DP-8')); assert.ok(!matches({...s,active:false},'DP-8'));
     assert.ok(!matches(s,'eDP-1')); assert.ok(!matches({...s,scale:1},'DP-8'));
     assert.ok(same(s,{...s})); assert.ok(!same(s,{...s,id:'different'}));
+    assert.ok(same({...s,armed:undefined},s));
+    assert.ok(!same(s,{...s,geometry:[0,0,2543,2076]}));
     // Exercise the real observer against mocks: missing signals must fail closed.
     const execute = new Function('workspace','print',source.replace('__CAPTURE_CONFIG__',JSON.stringify({phase:'watch',marker:'MARK',pid:123,title:'probe'})));
     const messages=[], signal={connect(){}};
@@ -43,7 +45,7 @@ if (args.length === 1 && args[0] === '--self-check') {
 }
 if (args.length !== 3 || args[0] !== '--run') { console.error(usage); process.exit(2); }
 const output = args[1], dir = resolve(args[2]);
-let journal, probe, captureChild, currentPng, currentValid = false;
+let journal, probe, captureChild, currentPng, currentValid = false, createdDir = false;
 const scripts = new Map(), events = [], marker = 'LXL_CAPTURE_' + randomBytes(8).toString('hex');
 function cmd(exe, argv, timeout=10000) {
     const r = spawnSync(exe, argv, {encoding:'utf8',timeout});
@@ -55,6 +57,8 @@ function unload(name) {
     if (scripts.has(name)) { dbus('/Scripting','org.kde.kwin.Scripting.unloadScript',name); scripts.delete(name); }
 }
 function cleanup() {
+    try { if (createdDir) writeFileSync(join(dir,'guard-events.json'),JSON.stringify(events,null,2)+'\n',{mode:0o600}); }
+    catch { console.error('Could not preserve guard events'); process.exitCode=2; }
     if (captureChild) { try { process.kill(-captureChild.pid, 'SIGKILL'); } catch {} }
     if (currentPng && !currentValid && existsSync(currentPng)) unlinkSync(currentPng);
     for (const name of scripts.keys()) { try { unload(name); } catch { console.error('ERROR: could not unload observer '+name); process.exitCode=2; } }
@@ -91,7 +95,7 @@ async function run() {
     if (process.env.SSH_CONNECTION || process.env.SSH_CLIENT || process.env.SSH_TTY) throw new Error('SSH session refused');
     if (process.env.XDG_SESSION_TYPE!=='wayland' || !process.env.WAYLAND_DISPLAY) throw new Error('Native Wayland session required');
     if (!output || existsSync(dir)) throw new Error('Need output name and NEW output directory');
-    mkdirSync(dir,{mode:0o700});
+    mkdirSync(dir,{mode:0o700}); createdDir=true;
     writeFileSync(join(dir,'metadata.txt'),[
         'commit='+cmd('git',['-C',root,'rev-parse','HEAD']),
         'lock_sha256='+createHash('sha256').update(readFileSync(join(here,'Cargo.lock'))).digest('hex'),
@@ -124,10 +128,20 @@ async function run() {
         const cfg={pid,title:'sdl3 window probe (throwaway) wayland-padding='+mode};
         const watched=await snapshot('watch',cfg);
         if(watched.armed!==true || !matches(watched,output) || watched.scale!==initial.scale) throw new Error('Probe not active on the agreed fractional output; no capture');
-        await sleep(300);
+        // The tiling manager may resize after the first present: settle before arming capture.
+        let stable=watched, settledGeometry=false;
+        const end=Date.now()+2500;
+        while(Date.now()<end) {
+            await sleep(250);
+            const next=await snapshot('stable',cfg);
+            if(!matches(next,output) || next.id!==watched.id || next.scale!==initial.scale) throw new Error('Probe identity/output changed while settling');
+            if(same({...stable,armed:undefined},next)) { stable=next; settledGeometry=true; break; }
+            stable=next;
+        }
+        if(!settledGeometry) throw new Error('Probe geometry did not settle');
         const start=events.length;
         const pre=await snapshot('pre',cfg);
-        if(!matches(pre,output) || !same({...watched,armed:undefined},pre)) throw new Error('Probe changed before capture');
+        if(!same(stable,pre)) throw new Error('Probe changed before capture');
         await capture(currentPng);
         const post=await snapshot('post',cfg);
         await sleep(200);
@@ -156,4 +170,7 @@ async function run() {
     writeFileSync(join(dir,'comparison.txt'),'pixel_AE='+ae.stderr.trim()+'\n',{mode:0o600});
     console.log('Pixel comparison AE='+ae.stderr.trim()+'; artifacts: '+dir+' (private). This is not a supported remedy verdict.');
 }
-try {await run();} catch(e) {console.error('capture-compare: '+e.message);process.exitCode=2;} finally {cleanup();}
+try {await run();} catch(e) {
+    if(createdDir) writeFileSync(join(dir,'failure.txt'),e.message+'\n',{mode:0o600});
+    console.error('capture-compare: '+e.message);process.exitCode=2;
+} finally {cleanup();}
