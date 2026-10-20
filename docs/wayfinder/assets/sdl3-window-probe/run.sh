@@ -4,7 +4,7 @@ set -euo pipefail
 here=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 usage() {
   cat <<'EOF'
-Usage: run.sh --backend wayland|x11 [--borderless] [--smoke-seconds N] [--wayland-padding zero|ff]
+Usage: run.sh --backend wayland|x11 [--borderless] [--smoke-seconds N] [--wayland-padding zero|ff] [--transparent-window]
 
 --help prints this text without building or launching the probe.
 
@@ -12,6 +12,9 @@ Usage: run.sh --backend wayland|x11 [--borderless] [--smoke-seconds N] [--waylan
     Wayland XRGB8888 high-byte padding. zero (default) follows softbuffer's
     documented 0RGB format. ff keeps the earlier diagnostic workaround and is
     rejected with --backend x11.
+
+--transparent-window requests winit's supported transparency hint (default off).
+    The softbuffer buffer remains XRGB8888; this does not enable alpha rendering.
 
 PROBE_NIX=1 builds and runs inside this repository's nix develop shell
 (useful when the system X11/Wayland libraries are missing). Without it the

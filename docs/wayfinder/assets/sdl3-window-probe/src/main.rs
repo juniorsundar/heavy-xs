@@ -34,10 +34,11 @@ impl Padding {
 }
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[rustfmt::skip]
-struct Args { backend: Backend, borderless: bool, smoke: Option<Duration>, padding: Padding }
+struct Args { backend: Backend, borderless: bool, transparent_window: bool, smoke: Option<Duration>, padding: Padding }
 #[rustfmt::skip]
 fn parse_args_from<I: IntoIterator<Item = String>>(args: I) -> Result<Args, String> {
-    let (mut backend, mut borderless, mut smoke, mut padding) = (None, false, None, Padding::Zero);
+    let (mut backend, mut borderless, mut transparent_window, mut smoke, mut padding) =
+        (None, false, false, None, Padding::Zero);
     let mut it = args.into_iter();
     while let Some(arg) = it.next() {
         match arg.as_str() {
@@ -47,6 +48,7 @@ fn parse_args_from<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Stri
                 _ => return Err("--backend wayland|x11 is required".into()),
             }),
             "--borderless" => borderless = true,
+            "--transparent-window" => transparent_window = true,
             "--wayland-padding" => padding = match it.next().as_deref() {
                 Some("zero") => Padding::Zero,
                 Some("ff") => Padding::Ff,
@@ -66,7 +68,7 @@ fn parse_args_from<I: IntoIterator<Item = String>>(args: I) -> Result<Args, Stri
     if backend == Backend::X11 && padding == Padding::Ff {
         return Err("--wayland-padding ff is Wayland-only and cannot be combined with --backend x11".into());
     }
-    Ok(Args { backend, borderless, smoke, padding })
+    Ok(Args { backend, borderless, transparent_window, smoke, padding })
 }
 #[rustfmt::skip]
 fn parse_args() -> Result<Args, String> { parse_args_from(std::env::args().skip(1)) }
@@ -80,7 +82,8 @@ fn run() -> Result<i32, String> {
     let args = parse_args()?;
     println!("probe: pid={}", std::process::id());
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unset".into());
-    println!("probe: requested/forced backend={} borderless={} smoke={:?}", args.backend.name(), args.borderless, args.smoke);
+    println!("probe: requested/forced backend={} borderless={} transparent_window={} smoke={:?}",
+        args.backend.name(), args.borderless, args.transparent_window, args.smoke);
     println!("probe: session XDG_SESSION_TYPE={session} WAYLAND_DISPLAY={} DISPLAY={}",
         std::env::var_os("WAYLAND_DISPLAY").is_some(), std::env::var_os("DISPLAY").is_some());
     println!("probe: wayland padding={} in XRGB8888: {}", args.padding.name(), match args.padding {
@@ -349,7 +352,9 @@ impl App {
     fn request_redraw(&self) { if let Some(window) = &self.window { window.request_redraw(); } }
     fn create_window(&mut self, event_loop: &ActiveEventLoop) -> Result<(), String> {
         let attributes = Window::default_attributes()
-            .with_title(format!("sdl3 window probe (throwaway) wayland-padding={}", self.args.padding.name()))
+            .with_title(format!("sdl3 window probe (throwaway) wayland-padding={} transparent={}",
+                self.args.padding.name(), self.args.transparent_window))
+            .with_transparent(self.args.transparent_window)
             .with_inner_size(PhysicalSize::new(800, 520)).with_decorations(!self.args.borderless);
         let window = Arc::new(event_loop.create_window(attributes).map_err(|e| format!("window creation failed: {e}"))?);
         let (scale, size) = (window.scale_factor(), window.inner_size());
@@ -683,6 +688,14 @@ mod tests {
         assert!(parse(&["--backend", "wayland", "--wayland-padding"]).is_err());
         assert!(parse(&["--backend", "wayland", "--wayland-padding", "opaque"]).is_err());
         assert!(parse(&["--wayland-padding", "zero"]).is_err());
+    }
+    #[test]
+    fn transparent_window_parser_defaults_off_and_enables_the_hint() {
+        assert!(!parse(&["--backend", "wayland"]).unwrap().transparent_window);
+        assert!(parse(&["--backend", "wayland", "--transparent-window"]).unwrap().transparent_window);
+        assert!(!parse(&["--backend", "x11"]).unwrap().transparent_window);
+        assert!(parse(&["--backend", "x11", "--transparent-window"]).unwrap().transparent_window);
+        assert!(parse(&["--backend", "wayland", "--transparent-window", "false"]).is_err());
     }
     #[test]
     fn rejected_x11_ff_fails_in_parsing_before_the_event_loop() {

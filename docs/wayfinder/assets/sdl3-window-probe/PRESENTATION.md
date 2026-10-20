@@ -8,15 +8,18 @@ Question: on a Wayland desktop, does the earlier black/blank window reproduce wi
 softbuffer 0.4.8 + winit 0.30.13 while the high byte of every XRGB8888 pixel is zero,
 and does forcing that byte to `0xff` change what the user sees?
 
-In scope: one throwaway probe, one explicit `--wayland-padding zero|ff` toggle, and a
-comparison of two matched live observations. Out of scope: editor integration, IME or
-scale re-qualification, transparency, screen capture, compositor/driver attribution,
-and any product decision or supported remedy.
+In scope: one throwaway probe, one explicit `--wayland-padding zero|ff` toggle, an
+opt-in `--transparent-window` attribute for a separate capture case, and a comparison
+of two matched live observations. Out of scope: editor integration, IME or scale
+re-qualification, alpha/translucent rendering, screen capture in the no-capture
+launcher, compositor/driver attribution, and any product decision or supported remedy.
+The capture case below toggles only winit's window transparency hint; the probe keeps
+drawing opaque XRGB8888 content in both cases.
 
 `zero` is the default and restores the documented 0RGB reproduction. `ff` keeps the
 earlier Wayland-only opaque-padding workaround. The drawn scene is identical in both
-modes; only the window title names the mode. `ff` is rejected with `--backend x11`
-rather than silently ignored.
+modes; only the window title names the padding mode and the transparent attribute. `ff`
+is rejected with `--backend x11` rather than silently ignored.
 
 ## Originals preserved
 
@@ -107,7 +110,8 @@ Any later capture check needs separate permission and must identify the correct 
 
 For each mode record pass / fail / pending:
 
-1. Window title shows `wayland-padding=zero` or `wayland-padding=ff` (mode identity only).
+1. Window title shows `wayland-padding=zero transparent=false` or
+   `wayland-padding=ff transparent=false` (mode identity only).
 2. Grid, two-tone background, blue/purple border, green top strip and the four text
    lines plus the text field are visible.
 3. The window is not uniform black/transparent, and there are no stale, partial or
@@ -146,18 +150,23 @@ observed workaround outside that contract and remains diagnostic only.
 
 ## Offline validation of this revision
 
-- `cargo test --locked --offline`: **9 passed**, including default/invalid padding
-  parsing, pre-event-loop rejection of X11 + `ff`, and RGB preservation in both modes.
-- `cargo build --locked --offline`, `cargo fmt --check`, `bash -n` and
-  `git diff --check`: passed.
+- `cargo test --locked --offline`: **10 passed**, including default/invalid padding
+  parsing, pre-event-loop rejection of X11 + `ff`, boolean `--transparent-window`
+  parsing (default off, enabled, invalid trailing value), and RGB preservation in
+  both padding modes.
+- `cargo build --locked --offline`, `cargo fmt --check`, `node --check`, the pure
+  `--self-check`, `bash -n` and `git diff --check`: passed. The self-check covers
+  `--run` acceptance/rejection, the two case tables, and exact title
+  equality/inequality.
 - Both launchers' help/no-args paths do not build; both refuse SSH launch attempts.
   These guards were checked with a sentinel `cargo` executable so no real launcher
   could run even if a guard regressed. Invalid mode is also refused without output.
 - Independent review found no remaining blockers.
 - No completed live run or capture of this revision. During review, an inadvertent
   launch-path attempt failed to load Wayland before creating an event loop/window.
-  Explicit SSH refusals were added afterward. Desktop visibility, actual protocol
-  order and the Nix live path remain **unverified**; this does not resolve the ticket.
+  Explicit SSH refusals were added afterward. Desktop visibility, the opaque-hint
+  case, actual protocol order and the Nix live path remain **unverified**; this does
+  not resolve the ticket.
 
 ## Guarded KDE fractional-scale comparison
 
@@ -173,6 +182,9 @@ node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs --self-check
 node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs --help
 ```
 
+The self-check is process-free and also covers argument acceptance/rejection and the
+default `zero`/`ff` versus `--compare-opaque-hint` case tables.
+
 Only after permission, locally at the desktop, with the intended fractional output
 active (example DP-8 at its existing 1.20 scale):
 
@@ -187,8 +199,26 @@ metadata and pixel checks. Use a persistent local location rather than `/tmp` if
 needed for later review. Logs and images can contain private typed text; do not
 commit or share them without checking them.
 
-The runner prebuilds before opening exactly two borderless eight-second windows,
-zero then ff. It refuses SSH/non-Wayland and the wrong initial output. An ephemeral,
+A separate window-attribute experiment keeps zero padding and toggles only winit's
+opaque-region hint. The final flag requires `--run`:
+
+```sh
+PROBE_NIX=1 node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs \
+  --run DP-8 "$HOME/lxl-presentation-opaque-hint" --compare-opaque-hint
+```
+
+This selects exactly two cases, `zero-default` and `zero-transparent`, both with
+`--wayland-padding zero`. Only the second case adds `--transparent-window`; the probe
+passes it to `WindowAttributes::with_transparent`. The exact guarded titles differ
+(`transparent=false` versus `transparent=true`) so the two cases cannot be confused,
+and the per-case logs differ only by that flag. `metadata.txt` and each `result.json`
+record the padding and transparent attributes; `comparison.txt` records which capture
+was first/second plus the intended comparison. The existing exact-title, PID, window
+identity, output, scale, change-notification and cleanup checks are unchanged.
+
+The runner prebuilds before opening exactly two borderless eight-second windows: zero
+then ff by default, or the two zero-padding opaque-hint cases. It refuses
+SSH/non-Wayland and the wrong initial output. An ephemeral,
 read-only KWin observer checks the exact mode-bearing title, executable PID,
 active state, window identity, output, scale and stable geometry. It requires the
 activation/geometry/caption/output notifications to be armed before capture.
@@ -202,7 +232,8 @@ capture.** The actual captured pixel dimensions must match the probe's presented
 buffer. KWin's logical geometry is compared separately with scale applied.
 Non-uniform pixels and the exact green drag-strip RGB are checked; a legitimate
 blank probe capture is retained as failure evidence, not discarded as a foreign
-window. The zero/ff pixel difference is reported without claiming a supported fix.
+window. The first/second capture difference is reported without claiming a supported
+fix.
 
 KWin scripting API: <https://develop.kde.org/docs/plasma/kwin/api/>. This runner uses
 `workspace.windowActivated` and `print()` markers in the local KWin journal; it
@@ -210,6 +241,14 @@ does not depend on the obsolete script-print D-Bus signal API. It never persists
 other windows' captions or unrelated journal messages. Journal availability and
 these API signals are desktop-dependent; a successful offline check cannot prove
 the live guard works.
+
+What the transparent attribute can and cannot show: winit 0.30.13 documents
+`WindowAttributes::with_transparent` as a hint; on Wayland it clears the opaque region
+(`set_opaque_region(None)`) instead of changing the buffer format. Softbuffer still
+allocates `Xrgb8888`, and the probe still writes a zero high byte in `zero` mode, so
+this case tests only whether removing the opaque-region hint changes what the
+compositor shows. It is not a supported fix, and without a completed live guarded
+capture and user observation no result is claimed for it.
 
 ## Pinned references
 
@@ -223,3 +262,5 @@ the live guard works.
   and <https://docs.rs/winit/0.30.13/winit/window/struct.Window.html#method.set_transparent>
 - winit 0.30.13 window source:
   <https://docs.rs/winit/0.30.13/src/winit/window.rs.html>
+- winit 0.30.13 Wayland transparency hint clears the opaque region:
+  <https://docs.rs/winit/0.30.13/src/winit/platform_impl/linux/wayland/window/state.rs.html>
