@@ -262,8 +262,9 @@ content. Spectacle captures without decoration, so the PNG corresponds to the cl
 area.
 Non-uniform pixels and the exact green drag-strip RGB are checked; a legitimate
 blank probe capture is retained as failure evidence, not discarded as a foreign
-window. The first/second capture difference is reported without claiming a supported
-fix.
+window. Pixel difference is reported only when the captured client extents match;
+unequal dimensions (common with decorations) explicitly skip AE comparison rather
+than imply pixel parity. Neither outcome claims a supported fix.
 
 KWin scripting API: <https://develop.kde.org/docs/plasma/kwin/api/>. This runner uses
 `workspace.windowActivated` and `print()` markers in the local KWin journal; it

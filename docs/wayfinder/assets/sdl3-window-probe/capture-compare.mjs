@@ -61,6 +61,8 @@ if (args.length === 1 && args[0] === '--self-check') {
     assert.ok(same({...s,armed:undefined},s));
     assert.ok(!same(s,{...s,geometry:[0,0,2543,2076]}));
     assert.ok(!same(s,{...s,clientGeometry:[0,30,800,520]}));
+    assert.ok(same('2543x2076','2543x2076'));
+    assert.ok(!same('2543x2076','2536x2028')); // Different client extents cannot prove pixel parity.
     // Exercise the real observer against mocks: missing signals must fail closed.
     const execute = new Function('workspace','print',source.replace('__CAPTURE_CONFIG__',JSON.stringify({phase:'watch',marker:'MARK',pid:123,title:'probe'})));
     const messages=[], signal={connect(){}};
@@ -243,8 +245,14 @@ async function run() {
         await sleep(400);
     }
     const [first, second] = cases;
-    const ae=spawnSync('magick',['compare','-metric','AE',join(dir,first.name,'window.png'),join(dir,second.name,'window.png'),'null:'],{encoding:'utf8',timeout:10000});
-    if(ae.error || ![0,1].includes(ae.status)) throw new Error('Image comparison failed');
+    const firstSize=JSON.parse(readFileSync(join(dir,first.name,'result.json'),'utf8')).capture;
+    const secondSize=JSON.parse(readFileSync(join(dir,second.name,'result.json'),'utf8')).capture;
+    let pixelAE='SKIPPED (different image dimensions)';
+    if(same(firstSize,secondSize)) {
+        const ae=spawnSync('magick',['compare','-metric','AE',join(dir,first.name,'window.png'),join(dir,second.name,'window.png'),'null:'],{encoding:'utf8',timeout:10000});
+        if(ae.error || ![0,1].includes(ae.status)) throw new Error('Image comparison failed');
+        pixelAE=ae.stderr.trim();
+    }
     const intent = cli.compare === 'opaque-hint'
         ? 'both zero padding; winit with_transparent(false) vs with_transparent(true) opaque-region hint change; not a supported remedy'
         : cli.compare === 'decorations'
@@ -253,8 +261,9 @@ async function run() {
     writeFileSync(join(dir,'comparison.txt'),[
         'first='+first.name+' padding='+first.padding+' transparent='+first.transparent+' borderless='+first.borderless,
         'second='+second.name+' padding='+second.padding+' transparent='+second.transparent+' borderless='+second.borderless,
-        'pixel_AE='+ae.stderr.trim(), 'intent='+intent].join('\n')+'\n',{mode:0o600});
-    console.log('Pixel comparison AE='+ae.stderr.trim()+'; artifacts: '+dir+' (private). '+intent+'.');
+        'first_size='+firstSize, 'second_size='+secondSize,
+        'pixel_AE='+pixelAE, 'intent='+intent].join('\n')+'\n',{mode:0o600});
+    console.log('Pixel comparison AE='+pixelAE+'; artifacts: '+dir+' (private). '+intent+'.');
 }
 try {await run();} catch(e) {
     if(createdDir) writeFileSync(join(dir,'failure.txt'),e.message+'\n',{mode:0o600});
