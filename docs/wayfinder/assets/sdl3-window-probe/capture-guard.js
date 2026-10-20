@@ -1,12 +1,19 @@
 // THROWAWAY read-only KWin observer; config is injected by capture-compare.mjs.
 var cfg = __CAPTURE_CONFIG__;
 function emit(kind, state) { print(cfg.marker + " " + JSON.stringify({kind: kind, state: state})); }
+function rect(r) {
+    if (!r || ![r.x, r.y, r.width, r.height].every(Number.isFinite) ||
+        r.width <= 0 || r.height <= 0) return null;
+    return [r.x, r.y, r.width, r.height];
+}
 function state() {
     var w = workspace.activeWindow;
     if (!w || w.pid !== cfg.pid || w.caption !== cfg.title) return {match: false};
-    var g = w.frameGeometry, out = w.output;
+    var g = w.frameGeometry, c = rect(w.clientGeometry), out = w.output;
+    if (!g || !c || !out) return {match: false};
     return {match: true, active: w.active, id: String(w.internalId), pid: w.pid,
-        output: out.name, scale: out.devicePixelRatio, geometry: [g.x, g.y, g.width, g.height]};
+        output: out.name, scale: out.devicePixelRatio, geometry: [g.x, g.y, g.width, g.height],
+        clientGeometry: c};
 }
 if (cfg.phase === "output") {
     emit("output", {output: workspace.activeScreen.name, scale: workspace.activeScreen.devicePixelRatio});
@@ -23,6 +30,7 @@ if (cfg.phase === "output") {
             w.frameGeometryChanged.connect(function () { emit("changed", {what: "geometry"}); });
             w.captionChanged.connect(function () { emit("changed", {what: "caption"}); });
             w.outputChanged.connect(function () { emit("changed", {what: "output"}); });
+            if (canConnect(w.clientGeometryChanged)) w.clientGeometryChanged.connect(function () { emit("changed", {what: "clientGeometry"}); });
             var s = state(); s.armed = true; emit("watch", s);
         }
     } else { emit(cfg.phase, state()); }

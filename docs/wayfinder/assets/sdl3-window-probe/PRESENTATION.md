@@ -9,12 +9,13 @@ softbuffer 0.4.8 + winit 0.30.13 while the high byte of every XRGB8888 pixel is 
 and does forcing that byte to `0xff` change what the user sees?
 
 In scope: one throwaway probe, one explicit `--wayland-padding zero|ff` toggle, an
-opt-in `--transparent-window` attribute for a separate capture case, and a comparison
-of two matched live observations. Out of scope: editor integration, IME or scale
-re-qualification, alpha/translucent rendering, screen capture in the no-capture
-launcher, compositor/driver attribution, and any product decision or supported remedy.
-The capture case below toggles only winit's window transparency hint; the probe keeps
-drawing opaque XRGB8888 content in both cases.
+opt-in `--transparent-window` attribute for a separate capture case, a borderless
+versus decorated capture case, and a comparison of two matched live observations.
+Out of scope: editor integration, IME or scale re-qualification, alpha/translucent
+rendering, screen capture in the no-capture launcher, compositor/driver attribution,
+and any product decision or supported remedy.
+The capture cases below change only a window attribute; the probe keeps drawing
+opaque XRGB8888 content in every case.
 
 `zero` is the default and restores the documented 0RGB reproduction. `ff` keeps the
 earlier Wayland-only opaque-padding workaround. The drawn scene is identical in both
@@ -156,8 +157,8 @@ observed workaround outside that contract and remains diagnostic only.
   both padding modes.
 - `cargo build --locked --offline`, `cargo fmt --check`, `node --check`, the pure
   `--self-check`, `bash -n` and `git diff --check`: passed. The self-check covers
-  `--run` acceptance/rejection, the two case tables, and exact title
-  equality/inequality.
+  `--run` acceptance/rejection, the case tables, exact title equality/inequality,
+  and guard rejection when `clientGeometry` is missing or not finite/positive.
 - Both launchers' help/no-args paths do not build; both refuse SSH launch attempts.
   These guards were checked with a sentinel `cargo` executable so no real launcher
   could run even if a guard regressed. Invalid mode is also refused without output.
@@ -183,7 +184,8 @@ node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs --help
 ```
 
 The self-check is process-free and also covers argument acceptance/rejection and the
-default `zero`/`ff` versus `--compare-opaque-hint` case tables.
+default `zero`/`ff`, `--compare-opaque-hint` and `--compare-decorations` case tables,
+plus guard rejection when `clientGeometry` is missing or invalid.
 
 Only after permission, locally at the desktop, with the intended fractional output
 active (example DP-8 at its existing 1.20 scale):
@@ -216,20 +218,48 @@ record the padding and transparent attributes; `comparison.txt` records which ca
 was first/second plus the intended comparison. The existing exact-title, PID, window
 identity, output, scale, change-notification and cleanup checks are unchanged.
 
-The runner prebuilds before opening exactly two borderless eight-second windows: zero
-then ff by default, or the two zero-padding opaque-hint cases. It refuses
+A decoration experiment keeps zero padding and `transparent=false` in both cases and
+toggles only winit's borderless attribute. The final flag requires `--run` and is
+mutually exclusive with `--compare-opaque-hint`:
+
+```sh
+PROBE_NIX=1 node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs \
+  --run DP-8 "$HOME/lxl-presentation-decorations" --compare-decorations
+```
+
+This selects exactly two cases, `zero-borderless` and `zero-decorated`, each with
+`--wayland-padding zero` and transparent disabled. Only the borderless case adds
+`--borderless`; the decorated case omits it so the compositor draws a frame around
+the same client content. Both cases keep the same exact guarded title, because the
+Rust title names only padding and transparency; PID distinguishes them. Each case
+still runs for eight seconds. `metadata.txt`, each `result.json` and `comparison.txt`
+record the `borderless` attribute. `zero-borderless` is the baseline for the original
+borderless zero-padding failure. Decorations are not an acceptable permanent feature
+loss or a supported fix; this only tests whether the failure persists when the
+compositor adds a frame.
+
+The runner prebuilds before opening exactly two eight-second windows: zero then ff by
+default, the two zero-padding opaque-hint cases, or the borderless/decorated cases
+(`--borderless` omitted only for the decorated one). It refuses
 SSH/non-Wayland and the wrong initial output. An ephemeral,
 read-only KWin observer checks the exact mode-bearing title, executable PID,
-active state, window identity, output, scale and stable geometry. It requires the
-activation/geometry/caption/output notifications to be armed before capture.
-Spectacle uses active-window, no-decoration, no-shadow, output-to-file flags; no
-clipboard flags, window movement or display-setting changes. Pre/post and a final
-journal snapshot reject identity changes; rejected captures are deleted. Temporary
-observers and child processes are cleaned up. An unavailable guard fails closed.
+active state, window identity, output, scale, stable frame geometry and a finite
+positive client-area rectangle (`window.clientGeometry`). It requires the
+activation/frame-geometry/caption/output notifications to be armed before capture.
+If `clientGeometry` is unavailable, the guard fails closed and never falls back to
+the frame rectangle. Spectacle uses active-window, no-decoration, no-shadow,
+output-to-file flags; no clipboard flags, window movement or display-setting changes.
+Pre/post and a final journal snapshot reject identity changes; rejected captures are
+deleted. Temporary observers and child processes are cleaned up. An unavailable
+guard fails closed.
 
 **These are guarded snapshots plus notifications, not an atomic pinned-window
 capture.** The actual captured pixel dimensions must match the probe's presented
-buffer. KWin's logical geometry is compared separately with scale applied.
+buffer. KWin's logical **client-area** geometry is scaled and compared with that
+buffer; the frame rectangle is still checked for stability and identity, but is not
+used for the pixel extent because a decorated frame is larger than the client
+content. Spectacle captures without decoration, so the PNG corresponds to the client
+area.
 Non-uniform pixels and the exact green drag-strip RGB are checked; a legitimate
 blank probe capture is retained as failure evidence, not discarded as a foreign
 window. The first/second capture difference is reported without claiming a supported

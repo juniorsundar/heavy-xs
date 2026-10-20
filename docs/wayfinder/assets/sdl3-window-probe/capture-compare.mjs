@@ -7,7 +7,7 @@ import {fileURLToPath} from 'node:url';
 import {createHash, randomBytes} from 'node:crypto';
 import assert from 'node:assert/strict';
 const here = dirname(fileURLToPath(import.meta.url)), root = resolve(here, '../../../..');
-const usage = 'Usage: node capture-compare.mjs --run OUTPUT NEW_OUTDIR [--compare-opaque-hint]\n       node capture-compare.mjs --self-check\nNo args/--help: no actions. Live: two eight-second borderless cases with private\nprotocol logs and guarded probe-only captures. Default cases zero/ff; the final\n--compare-opaque-hint flag selects zero without/with the window transparent hint.\nRequires KWin, journalctl, qdbus, Spectacle, ImageMagick, Cargo; PROBE_NIX=1 opts\ninto Nix. No SSH. See PRESENTATION.md.';
+const usage = 'Usage: node capture-compare.mjs --run OUTPUT NEW_OUTDIR [--compare-opaque-hint | --compare-decorations]\n       node capture-compare.mjs --self-check\nNo args/--help: no actions. Live: two eight-second cases with private protocol logs\nand guarded probe-only captures. Default cases zero/ff; --compare-opaque-hint\nselects zero without/with the transparent hint; --compare-decorations selects zero\nborderless/decorated (flags are mutually exclusive). Requires KWin, journalctl,\nqdbus, Spectacle, ImageMagick, Cargo; PROBE_NIX=1 opts into Nix. No SSH. See\nPRESENTATION.md.';
 const args = process.argv.slice(2);
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const source = readFileSync(join(here, 'capture-guard.js'), 'utf8');
@@ -15,14 +15,21 @@ function titleFor(padding, transparent) {
     return 'sdl3 window probe (throwaway) wayland-padding=' + padding + ' transparent=' + transparent;
 }
 function casesFor(compare) {
-    const rows = compare
-        ? [{name:'zero-default',padding:'zero',transparent:false},{name:'zero-transparent',padding:'zero',transparent:true}]
-        : [{name:'zero',padding:'zero',transparent:false},{name:'ff',padding:'ff',transparent:false}];
+    const rows = compare === 'opaque-hint'
+        ? [{name:'zero-default',padding:'zero',transparent:false,borderless:true},
+           {name:'zero-transparent',padding:'zero',transparent:true,borderless:true}]
+        : compare === 'decorations'
+        ? [{name:'zero-borderless',padding:'zero',transparent:false,borderless:true},
+           {name:'zero-decorated',padding:'zero',transparent:false,borderless:false}]
+        : [{name:'zero',padding:'zero',transparent:false,borderless:true},
+           {name:'ff',padding:'ff',transparent:false,borderless:true}];
     return rows.map(c => ({...c, title: titleFor(c.padding, c.transparent)}));
 }
+const compareFlag = {'--compare-opaque-hint':'opaque-hint','--compare-decorations':'decorations'};
 function parseCli(argv) {
-    const compare = argv[3] === '--compare-opaque-hint';
-    if (argv[0] !== '--run' || !argv[1] || !argv[2] || argv.length !== (compare ? 4 : 3)) return null;
+    if (argv[0] !== '--run' || !argv[1] || !argv[2] || (argv.length !== 3 && argv.length !== 4)) return null;
+    const compare = argv.length === 4 ? compareFlag[argv[3]] : null;
+    if (argv.length === 4 && typeof compare !== 'string') return null;
     return {output: argv[1], dir: argv[2], compare};
 }
 function decode(line, marker) {
@@ -33,46 +40,78 @@ function decode(line, marker) {
 function same(a, b) { return JSON.stringify(a) === JSON.stringify(b); }
 function matches(s, output) {
     return s?.match === true && s.active === true && s.output === output && s.scale > 1 &&
-        s.id && Number.isInteger(s.pid) && s.geometry?.length === 4 && s.geometry.every(Number.isFinite);
+        s.id && Number.isInteger(s.pid) && s.geometry?.length === 4 && s.geometry.every(Number.isFinite) &&
+        s.clientGeometry?.length === 4 && s.clientGeometry.every(Number.isFinite) &&
+        s.clientGeometry[2] > 0 && s.clientGeometry[3] > 0;
+}
+function matchesExtent(s, width, height) {
+    return Math.abs(s.clientGeometry[2]*s.scale-width) <= 2 && Math.abs(s.clientGeometry[3]*s.scale-height) <= 2;
 }
 if (!args.length || args[0] === '--help') { console.log(usage); process.exit(0); }
 if (args.length === 1 && args[0] === '--self-check') {
     assert.equal(decode('unrelated', 'MARK'), null);
     assert.deepEqual(decode('js: MARK {"kind":"pre","state":{"match":false}}', 'MARK'), {kind:'pre',state:{match:false}});
-    const s = {match:true,active:true,output:'DP-8',scale:1.2,id:'uuid',pid:123,geometry:[0,0,800,520]};
+    const s = {match:true,active:true,output:'DP-8',scale:1.2,id:'uuid',pid:123,geometry:[0,0,800,520],clientGeometry:[0,30,800,490]};
     assert.ok(matches(s,'DP-8')); assert.ok(!matches({...s,active:false},'DP-8'));
     assert.ok(!matches(s,'eDP-1')); assert.ok(!matches({...s,scale:1},'DP-8'));
+    assert.ok(!matches({...s,clientGeometry:[0,30,0,490]},'DP-8'));
+    assert.ok(!matches({...s,clientGeometry:[0,30,800,NaN]},'DP-8'));
+    assert.ok(!matches({...s,clientGeometry:undefined},'DP-8'));
     assert.ok(same(s,{...s})); assert.ok(!same(s,{...s,id:'different'}));
     assert.ok(same({...s,armed:undefined},s));
     assert.ok(!same(s,{...s,geometry:[0,0,2543,2076]}));
+    assert.ok(!same(s,{...s,clientGeometry:[0,30,800,520]}));
     // Exercise the real observer against mocks: missing signals must fail closed.
     const execute = new Function('workspace','print',source.replace('__CAPTURE_CONFIG__',JSON.stringify({phase:'watch',marker:'MARK',pid:123,title:'probe'})));
     const messages=[], signal={connect(){}};
-    const w={pid:123,caption:'probe',active:true,internalId:'uuid',output:{name:'DP-8',devicePixelRatio:1.2},frameGeometry:{x:0,y:0,width:800,height:520},frameGeometryChanged:signal,captionChanged:signal,outputChanged:signal};
+    const w={pid:123,caption:'probe',active:true,internalId:'uuid',output:{name:'DP-8',devicePixelRatio:1.2},frameGeometry:{x:0,y:0,width:800,height:520},clientGeometry:{x:0,y:30,width:800,height:490},frameGeometryChanged:signal,captionChanged:signal,outputChanged:signal};
     const workspace={activeWindow:w,windowActivated:signal};
     execute(workspace,line=>messages.push(decode(line,'MARK')));
-    assert.equal(messages.at(-1).state.armed,true);
+    const watched=messages.at(-1).state;
+    assert.equal(watched.armed,true);
+    assert.deepEqual(watched.geometry,[0,0,800,520]);
+    assert.deepEqual(watched.clientGeometry,[0,30,800,490]);
+    // A decorated frame adds height; the capture extent must use the client area.
+    assert.ok(matchesExtent(watched,960,588));
+    assert.ok(!matchesExtent(watched,960,624));
+    delete w.clientGeometry;
+    execute(workspace,line=>messages.push(decode(line,'MARK')));
+    assert.equal(messages.at(-1).kind,'error');
+    w.clientGeometry={x:0,y:30,width:0,height:490};
+    execute(workspace,line=>messages.push(decode(line,'MARK')));
+    assert.equal(messages.at(-1).kind,'error');
+    w.clientGeometry={x:0,y:30,width:800,height:490};
     delete w.outputChanged;
     execute(workspace,line=>messages.push(decode(line,'MARK')));
     assert.equal(messages.at(-1).kind,'error');
-    assert.deepEqual(parseCli(['--run','DP-8','/tmp/new']), {output:'DP-8',dir:'/tmp/new',compare:false});
+    assert.deepEqual(parseCli(['--run','DP-8','/tmp/new']), {output:'DP-8',dir:'/tmp/new',compare:null});
     assert.deepEqual(parseCli(['--run','DP-8','/tmp/new','--compare-opaque-hint']),
-        {output:'DP-8',dir:'/tmp/new',compare:true});
+        {output:'DP-8',dir:'/tmp/new',compare:'opaque-hint'});
+    assert.deepEqual(parseCli(['--run','DP-8','/tmp/new','--compare-decorations']),
+        {output:'DP-8',dir:'/tmp/new',compare:'decorations'});
     assert.equal(parseCli(['--compare-opaque-hint']), null);
     assert.equal(parseCli(['--run','DP-8']), null);
     assert.equal(parseCli(['--run','DP-8','/tmp/new','--compare-opaque-hint','extra']), null);
+    assert.equal(parseCli(['--run','DP-8','/tmp/new','--compare-opaque-hint','--compare-decorations']), null);
+    assert.equal(parseCli(['--run','DP-8','/tmp/new','--compare-decorations','--compare-opaque-hint']), null);
     assert.equal(parseCli(['--run','DP-8','/tmp/new','--other']), null);
-    const defaults=casesFor(false), hint=casesFor(true);
-    assert.deepEqual(defaults.map(c=>[c.name,c.padding,c.transparent]),
-        [['zero','zero',false],['ff','ff',false]]);
-    assert.deepEqual(hint.map(c=>[c.name,c.padding,c.transparent]),
-        [['zero-default','zero',false],['zero-transparent','zero',true]]);
+    assert.equal(parseCli(['--run','DP-8','/tmp/new','constructor']), null);
+    const defaults=casesFor(null), hint=casesFor('opaque-hint'), deco=casesFor('decorations');
+    assert.deepEqual(defaults.map(c=>[c.name,c.padding,c.transparent,c.borderless]),
+        [['zero','zero',false,true],['ff','ff',false,true]]);
+    assert.deepEqual(hint.map(c=>[c.name,c.padding,c.transparent,c.borderless]),
+        [['zero-default','zero',false,true],['zero-transparent','zero',true,true]]);
+    assert.deepEqual(deco.map(c=>[c.name,c.padding,c.transparent,c.borderless]),
+        [['zero-borderless','zero',false,true],['zero-decorated','zero',false,false]]);
     assert.ok(hint.every(c=>c.padding==='zero'));
+    assert.ok(deco.every(c=>c.padding==='zero' && c.transparent===false));
     assert.equal(defaults[0].title, titleFor('zero',false));
     assert.equal(hint[0].title, 'sdl3 window probe (throwaway) wayland-padding=zero transparent=false');
     assert.equal(hint[1].title, 'sdl3 window probe (throwaway) wayland-padding=zero transparent=true');
     assert.equal(hint[0].title, defaults[0].title);
     assert.notEqual(hint[0].title, hint[1].title);
+    assert.equal(deco[0].title, deco[1].title);
+    assert.equal(deco[0].title, titleFor('zero',false));
     console.log('PASS pure capture guard/parser self-check; no processes started'); process.exit(0);
 }
 const cli = parseCli(args);
@@ -133,7 +172,7 @@ async function run() {
         'commit='+cmd('git',['-C',root,'rev-parse','HEAD']),
         'lock_sha256='+createHash('sha256').update(readFileSync(join(here,'Cargo.lock'))).digest('hex'),
         'kwin='+cmd('kwin_wayland',['--version']), 'output='+output, 'date='+new Date().toISOString(),
-        'cases='+cases.map(c=>`${c.name} padding=${c.padding} transparent=${c.transparent}`).join('; '),
+        'cases='+cases.map(c=>`${c.name} padding=${c.padding} transparent=${c.transparent} borderless=${c.borderless}`).join('; '),
         'guard=snapshots plus change notifications; not an atomic pinned-window capture'
     ].join('\n')+'\n',{mode:0o600});
     const build=['cargo','build','--locked','--offline','--manifest-path',join(here,'Cargo.toml')];
@@ -153,7 +192,7 @@ async function run() {
     for (const item of cases) {
         const c=join(dir,item.name); mkdirSync(c,{mode:0o700}); currentPng=join(c,'window.png');currentValid=false;
         const log=join(c,'live.log'), a=openSync(log,'w',0o600), z=openSync(join(c,'wayland-debug.log'),'w',0o600);
-        probe=spawn('bash',[join(here,'run.sh'),'--backend','wayland','--borderless',
+        probe=spawn('bash',[join(here,'run.sh'),'--backend','wayland',...(item.borderless?['--borderless']:[]),
             '--wayland-padding',item.padding,...(item.transparent?['--transparent-window']:[]),'--smoke-seconds','8'],
             {env:{...process.env,WAYLAND_DEBUG:'client'},detached:true,stdio:['ignore',a,z]});
         closeSync(a);closeSync(z);
@@ -188,13 +227,14 @@ async function run() {
         const last=frames.at(-1), expected=last?.[1]+'x'+last?.[2];
         const dims=cmd('magick',['identify','-format','%wx%h',currentPng]);
         if(dims!==expected || Math.abs(Number(last?.[3])-pre.scale)>0.001) throw new Error('Capture does not match presented dimensions/scale');
-        // KWin frame geometry is logical; captured pixels are physical.
-        if(Math.abs(pre.geometry[2]*pre.scale-Number(last[1]))>2 || Math.abs(pre.geometry[3]*pre.scale-Number(last[2]))>2) throw new Error('Capture does not match guarded window extent');
+        // KWin geometry is logical; captured pixels are physical. A decorated frame
+        // is larger than the client area, so only the client extent may be compared.
+        if(!matchesExtent(pre, Number(last[1]), Number(last[2]))) throw new Error('Capture does not match guarded client area extent');
         currentValid=true;
         const colors=Number(cmd('magick',['identify','-format','%k',currentPng]));
         const strip=cmd('magick',[currentPng,'-crop',`1x1+${Math.floor(Number(last[1])/2)}+${Math.floor(20*pre.scale)}`,'-alpha','off','-depth','8','txt:-']);
         const visible=colors>=10 && /#244C3A/i.test(strip);
-        writeFileSync(join(c,'result.json'),JSON.stringify({name:item.name,padding:item.padding,transparent:item.transparent,
+        writeFileSync(join(c,'result.json'),JSON.stringify({name:item.name,padding:item.padding,transparent:item.transparent,borderless:item.borderless,
             ...pre,presented:expected,capture:dims,colors,visible},null,2)+'\n',{mode:0o600});
         unload(marker+'_watch');
         await waitFor(()=>status!==undefined,10000,'probe exit');
@@ -205,12 +245,14 @@ async function run() {
     const [first, second] = cases;
     const ae=spawnSync('magick',['compare','-metric','AE',join(dir,first.name,'window.png'),join(dir,second.name,'window.png'),'null:'],{encoding:'utf8',timeout:10000});
     if(ae.error || ![0,1].includes(ae.status)) throw new Error('Image comparison failed');
-    const intent = cli.compare
+    const intent = cli.compare === 'opaque-hint'
         ? 'both zero padding; winit with_transparent(false) vs with_transparent(true) opaque-region hint change; not a supported remedy'
+        : cli.compare === 'decorations'
+        ? 'both zero padding transparent false; borderless vs decorated; decorations are not an acceptable feature loss or supported fix'
         : 'same window without the transparent hint; XRGB8888 high byte zero vs ff';
     writeFileSync(join(dir,'comparison.txt'),[
-        'first='+first.name+' padding='+first.padding+' transparent='+first.transparent,
-        'second='+second.name+' padding='+second.padding+' transparent='+second.transparent,
+        'first='+first.name+' padding='+first.padding+' transparent='+first.transparent+' borderless='+first.borderless,
+        'second='+second.name+' padding='+second.padding+' transparent='+second.transparent+' borderless='+second.borderless,
         'pixel_AE='+ae.stderr.trim(), 'intent='+intent].join('\n')+'\n',{mode:0o600});
     console.log('Pixel comparison AE='+ae.stderr.trim()+'; artifacts: '+dir+' (private). '+intent+'.');
 }
