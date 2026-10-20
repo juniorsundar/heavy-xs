@@ -78,6 +78,7 @@ fn main() {
 #[rustfmt::skip]
 fn run() -> Result<i32, String> {
     let args = parse_args()?;
+    println!("probe: pid={}", std::process::id());
     let session = std::env::var("XDG_SESSION_TYPE").unwrap_or_else(|_| "unset".into());
     println!("probe: requested/forced backend={} borderless={} smoke={:?}", args.backend.name(), args.borderless, args.smoke);
     println!("probe: session XDG_SESSION_TYPE={session} WAYLAND_DISPLAY={} DISPLAY={}",

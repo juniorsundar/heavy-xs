@@ -159,6 +159,58 @@ observed workaround outside that contract and remains diagnostic only.
   Explicit SSH refusals were added afterward. Desktop visibility, actual protocol
   order and the Nix live path remain **unverified**; this does not resolve the ticket.
 
+## Guarded KDE fractional-scale comparison
+
+`capture-compare.mjs` is a separate, opt-in capture diagnostic. The earlier
+`presentation-check.sh` still takes no screenshots. Requirements: Node.js,
+`qdbus`, `journalctl` with access to KWin's user log, Spectacle, ImageMagick, and
+the Rust tools/libraries above. No new npm dependencies are needed.
+
+Offline checks (no windows, D-Bus calls, or captures):
+
+```sh
+node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs --self-check
+node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs --help
+```
+
+Only after permission, locally at the desktop, with the intended fractional output
+active (example DP-8 at its existing 1.20 scale):
+
+```sh
+PROBE_NIX=1 node docs/wayfinder/assets/sdl3-window-probe/capture-compare.mjs \
+  --run DP-8 "$HOME/lxl-presentation-fractional"
+```
+
+The directory must not exist; its parent must exist. It is created private (0700)
+and contains the two cases' protocol logs, probe-only PNGs, identity/output/scale
+metadata and pixel checks. Use a persistent local location rather than `/tmp` if
+needed for later review. Logs and images can contain private typed text; do not
+commit or share them without checking them.
+
+The runner prebuilds before opening exactly two borderless eight-second windows,
+zero then ff. It refuses SSH/non-Wayland and the wrong initial output. An ephemeral,
+read-only KWin observer checks the exact mode-bearing title, executable PID,
+active state, window identity, output, scale and stable geometry. It requires the
+activation/geometry/caption/output notifications to be armed before capture.
+Spectacle uses active-window, no-decoration, no-shadow, output-to-file flags; no
+clipboard flags, window movement or display-setting changes. Pre/post and a final
+journal snapshot reject identity changes; rejected captures are deleted. Temporary
+observers and child processes are cleaned up. An unavailable guard fails closed.
+
+**These are guarded snapshots plus notifications, not an atomic pinned-window
+capture.** The actual captured pixel dimensions must match the probe's presented
+buffer. KWin's logical geometry is compared separately with scale applied.
+Non-uniform pixels and the exact green drag-strip RGB are checked; a legitimate
+blank probe capture is retained as failure evidence, not discarded as a foreign
+window. The zero/ff pixel difference is reported without claiming a supported fix.
+
+KWin scripting API: <https://develop.kde.org/docs/plasma/kwin/api/>. This runner uses
+`workspace.windowActivated` and `print()` markers in the local KWin journal; it
+does not depend on the obsolete script-print D-Bus signal API. It never persists
+other windows' captions or unrelated journal messages. Journal availability and
+these API signals are desktop-dependent; a successful offline check cannot prove
+the live guard works.
+
 ## Pinned references
 
 - softbuffer 0.4.8 pixel data representation (high byte zero):
