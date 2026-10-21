@@ -66,7 +66,7 @@ Execute **in order**. Each step leaves a working default editor and has its own 
 
 **Stop:** missing reference identity, unsafe inherited transport, obsolete C-baseline claims, unexplained expectation changes or an unclassified failure presented as a pass.
 
-**Implementation status (2026-10-21, uncommitted):** implemented; see [Step 1 evidence](sdl3-step1-evidence.md). The process timing failure is reproduced and classified. One review is pending: the matched private-Xvfb differences in five suites need the user's disposition before Step 4 judges an Xvfb candidate.
+**Implementation status (2026-10-21):** implemented; see [Step 1 evidence](sdl3-step1-evidence.md). The process timing failure is reproduced and classified. The matched private-Xvfb differences were reviewed: one golden set, with window-manager keys as invariants, holds for both profiles.
 
 ### Step 2 — Independent non-window ports
 

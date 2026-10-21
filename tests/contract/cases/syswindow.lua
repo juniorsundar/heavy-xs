@@ -1,9 +1,9 @@
 -- W5 contract suite, part 3: window, cursor, text-input and message-box functions of
--- `system`. Needs a window, so it runs under SDL's offscreen driver like the others.
+-- `system`. Needs a window: it runs under the offscreen driver or a private Xvfb.
 --
--- What an offscreen window reports (focus, positions after a move, whether SDL honours
--- maximize) is the window manager's business, not ours. Where that varies, the suite
--- records that both implementations agree by calling them against the same window state.
+-- What a window reports (focus, positions after a move, whether maximize is honoured) is the
+-- window manager's business, not ours. Where that varies, the suite records an invariant that
+-- holds with or without one instead of a value.
 
 local function try(fn, ...)
   local r = table.pack(pcall(fn, ...))
@@ -21,6 +21,24 @@ local function pump()
   for _ = 1, 200 do if not system.poll_event() then break end end
 end
 
+-- X11 applies a resize on a later pump (offscreen at once): pump, bounded, until the reported
+-- size stops changing.
+local function settle(win)
+  local last
+  for _ = 1, 25 do
+    pump()
+    local now = table.concat({ system.get_window_size(win) }, ",")
+    if now == last then return end
+    last = now
+  end
+end
+
+-- The size is ours to honour; where the window lands is not (a bare X server leaves it centred).
+local function size_of(win)
+  local w, h, x, y = system.get_window_size(win)
+  return table.concat({ w, h, math.type(x), math.type(y) }, ",")
+end
+
 return function(rec)
   local win = renwindow.create("contract", 400, 300)
   pump()
@@ -34,12 +52,16 @@ return function(rec)
   rec("window_has_focus type", type(system.window_has_focus(win)))
   rec("window_has_focus arity", tostring(select("#", system.window_has_focus(win))))
 
-  -- Mode round trip: only the transitions SDL's offscreen driver actually performs matter,
-  -- and every call is followed by a real query, so a wrong flag mapping shows up.
+  -- Mode round trip: every call is followed by a real query, so a wrong flag mapping shows up.
+  -- Maximize and minimize need a window manager (offscreen ignores them, a bare X server keeps
+  -- them), so either answer is valid for those; anything else is a wrong mapping.
+  local wm_modes = { maximized = true, minimized = true }
   for _, m in ipairs { "normal", "maximized", "minimized", "fullscreen", "normal", "fullscreen", "maximized", "normal" } do
     local r = try(system.set_window_mode, win, m)
     pump()
-    rec("set_window_mode " .. m, r .. " -> " .. tostring(system.get_window_mode(win)))
+    local mode = tostring(system.get_window_mode(win))
+    if wm_modes[m] and (mode == m or mode == "normal") then mode = m .. "|normal" end
+    rec("set_window_mode " .. m, r .. " -> " .. mode)
   end
   rec("set_window_mode default", try(system.set_window_mode, win))
   pump()
@@ -55,21 +77,21 @@ return function(rec)
 
   -- Size and position ----------------------------------------------------------------------
   rec("set_window_size", try(system.set_window_size, win, 250, 180, 40, 50))
-  pump()
-  rec("size after set", table.concat({ system.get_window_size(win) }, ","))
+  settle(win)
+  rec("size after set", size_of(win))
   rec("pixel size after set", table.concat({ win:get_size() }, "x"))
   rec("set_window_size fractions", try(system.set_window_size, win, 301.9, 222.2, 10.5, 11.5))
-  pump()
-  rec("size after fractions", table.concat({ system.get_window_size(win) }, ","))
+  settle(win)
+  rec("size after fractions", size_of(win))
   rec("set_window_size string numbers", try(system.set_window_size, win, "260", "190", "20", "30"))
-  pump()
-  rec("size after string numbers", table.concat({ system.get_window_size(win) }, ","))
+  settle(win)
+  rec("size after string numbers", size_of(win))
   rec("set_window_size 3 args", try(system.set_window_size, win, 100, 100, 1))
   rec("set_window_size nil arg", try(system.set_window_size, win, 100, nil, 1, 1))
   rec("set_window_size bad window", try(system.set_window_size, {}, 1, 1, 1, 1))
   rec("set_window_size negative", try(system.set_window_size, win, -5, -5, -5, -5))
-  pump()
-  rec("size after negative", table.concat({ system.get_window_size(win) }, ","))
+  settle(win)
+  rec("size after negative", size_of(win))
   system.set_window_size(win, 400, 300, 50, 50)
   pump()
 
