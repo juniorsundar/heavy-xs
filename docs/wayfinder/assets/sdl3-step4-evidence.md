@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. The dependency/build checkpoint and font-file opening slice are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening and font-error transport slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -36,7 +36,7 @@ Local, noncanonical logs/provenance: `target/step4-deps/`, `target/step4-deps-*.
 
 ## Font-file opening slice
 
-Based on `a0743451`, removed the preliminary `SDL_IOFromFile`/`SDL_CloseIO` from `src/font.rs`. The existing libc open/fstat/mmap path now handles empty paths, open errors and directories with the same SDL wording. Native filename bytes still reach `open` unchanged. Descriptor cleanup and mapping lifetime are preserved; a failed fstat still takes the original unknown-format path rather than being reported as a directory. Renderer error transport remains SDL-backed until its later coupled change.
+Based on `a0743451`, removed the preliminary `SDL_IOFromFile`/`SDL_CloseIO` from `src/font.rs`. The existing libc open/fstat/mmap path now handles empty paths, open errors and directories with the same SDL wording. Native filename bytes still reach `open` unchanged. Descriptor cleanup and mapping lifetime are preserved; a failed fstat still takes the original unknown-format path rather than being reported as a directory. At this checkpoint renderer error transport was still SDL-backed; the following slice removes that carrier.
 
 Checks performed:
 
@@ -47,7 +47,23 @@ Checks performed:
 
 Local logs/provenance: `target/step4-font/`, `target/step4-font-xvfb.log`, `target/step4-font-offscreen.log`. No full contract, Nix rebuild or desktop test was repeated for this one-file slice.
 
-### Remaining work and limits
+## Font-error transport slice
+
+Based on `9d69f1de`, `src/renderer.rs` now returns owned `Result<*mut RenFont, String>` errors from font loading/copying instead of writing SDL's last-error state. All callers are in `src/renderer_api.rs` or the copy implementation; the two functions no longer need internal C exports. The Lua/native-plugin interface is unchanged. Load/copy failure prefixes and prior CString handling of interior NULs are retained. The Lua binding copies the message onto its stack and drops the owned CString before deliberately raising an error. Drawing still uses SDL surfaces.
+
+The bounded implementation delegation on `opencode-go/deepseek-v4.1-flash` completed successfully. This establishes that one request worked, not that the earlier intermittent provider failures cannot recur.
+
+Checks performed:
+
+- `env -u LD_LIBRARY_PATH cargo test --offline --locked --lib`: all 23 tests pass, including new direct load-error and copy-after-source-removal tests.
+- `scripts/rust-port/verify.sh renderer`, separately on private Xvfb and offscreen: unchanged renderer goldens pass, including font errors, successful copies and groups.
+- Repository caller search: no remaining callers with the old signatures; no `SDL_SetError`/`SDL_GetError` calls remain in the affected files.
+- `git diff --check`: pass.
+- Bounded read-only GLM review: no present correctness blocker; userdata receives its metatable only after successful load/copy, as before.
+
+Logs/provenance: `target/step4-font-errors/` and `target/step4-font-errors-*.log`. The existing invalid-pixel-size branch was preserved but not independently forced; the full contract collection, Nix build and desktop paths were not rerun for this slice.
+
+## Remaining work and limits
 
 The coupled main-thread platform owner, persistent draw target and coverage atlases, native event conversion/waits, clipboard, generation-fenced dialogs, process-signal integration, sandbox/environment preservation and fatal notification remain to implement and validate. The planner's proposed temporary SDL-surface bridge is rejected by the existing pixel-storage resolution. Signal ownership must move with the pump, not as an independently operating or duplicate signal producer.
 
