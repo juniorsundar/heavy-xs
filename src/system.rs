@@ -44,6 +44,23 @@ fn cstr(bytes: &[u8]) -> CString {
     CString::new(&bytes[..end]).unwrap()
 }
 
+/// The native path a `const char *` would name: the bytes up to an embedded NUL, unconverted.
+fn native_path(bytes: &[u8]) -> std::path::PathBuf {
+    use std::os::unix::ffi::OsStrExt;
+    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
+    std::ffi::OsStr::from_bytes(&bytes[..end]).into()
+}
+
+/// `strerror` text for an OS error, which is what SDL put in its messages. std displays it as
+/// "<text> (os error N)".
+fn os_error_text(err: &std::io::Error) -> String {
+    let text = err.to_string();
+    match err.raw_os_error() {
+        Some(code) => text.strip_suffix(&format!(" (os error {code})")).map_or(text.clone(), str::to_owned),
+        None => text,
+    }
+}
+
 fn bytes_of(s: &LuaString) -> Vec<u8> {
     s.as_bytes().to_vec()
 }
@@ -161,31 +178,22 @@ fn get_fs_type(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 
 // --------------------------------------------------- filesystem: directories
 
-/// `f_list_dir`: names in `SDL_EnumerateDirectory` order, or `nil, message`.
+/// `f_list_dir`: names in readdir order without `.` and `..`, or `nil, message` in
+/// `SDL_EnumerateDirectory`'s wording. A read error part way through ends the list quietly, as
+/// SDL's readdir loop did.
 fn list_dir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    use std::os::unix::ffi::OsStrExt;
     let path = check_string(lua, &args, 0, "list_dir")?;
-    let path = cstr(&bytes_of(&path));
-
-    unsafe extern "C" fn collect(
-        userdata: *mut c_void,
-        _dirname: *const c_char,
-        fname: *const c_char,
-    ) -> sdl::SDL_EnumerationResult {
-        let names = &mut *(userdata as *mut Vec<Vec<u8>>);
-        names.push(CStr::from_ptr(fname).to_bytes().to_vec());
-        sdl::SDL_EnumerationResult::CONTINUE
-    }
-
-    let mut names: Vec<Vec<u8>> = Vec::new();
-    let ok = unsafe {
-        sdl::SDL_EnumerateDirectory(path.as_ptr(), Some(collect), &mut names as *mut _ as *mut c_void)
+    let entries = match std::fs::read_dir(native_path(&bytes_of(&path))) {
+        Ok(entries) => entries,
+        Err(err) => {
+            let msg = format!("Can't open directory: {}", os_error_text(&err));
+            return Ok(multi(vec![Value::Nil, str_value(lua, msg.as_bytes())?]));
+        }
     };
-    if !ok {
-        return Ok(multi(vec![Value::Nil, str_value(lua, sdl_error().as_bytes())?]));
-    }
     let list = lua.create_table()?;
-    for (i, name) in names.iter().enumerate() {
-        list.raw_set(i + 1, lua.create_string(name)?)?;
+    for (i, entry) in entries.map_while(Result::ok).enumerate() {
+        list.raw_set(i + 1, lua.create_string(entry.file_name().as_bytes())?)?;
     }
     Ok(multi(vec![Value::Table(list)]))
 }
@@ -201,14 +209,25 @@ fn mkdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
     Ok(multi(vec![Value::Boolean(true)]))
 }
 
-/// `f_rmdir`: `SDL_RemovePath` (so it also removes files); `true`, or `false, message`.
+/// `f_rmdir`: what `SDL_RemovePath` did through C `remove`: unlink, and rmdir only if that says
+/// it is a directory. So it also removes files and symlinks (never their targets), and a path that
+/// is already gone counts as removed. `true`, or `false, message` in SDL's wording.
 fn rmdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    use std::io::ErrorKind;
     let path = check_string(lua, &args, 0, "rmdir")?;
-    let path = cstr(&bytes_of(&path));
-    if !unsafe { sdl::SDL_RemovePath(path.as_ptr()) } {
-        return Ok(multi(vec![Value::Boolean(false), str_value(lua, sdl_error().as_bytes())?]));
+    let path = native_path(&bytes_of(&path));
+    let removed = std::fs::remove_file(&path).or_else(|err| match err.kind() {
+        ErrorKind::IsADirectory => std::fs::remove_dir(&path),
+        _ => Err(err),
+    });
+    match removed {
+        Ok(()) => Ok(multi(vec![Value::Boolean(true)])),
+        Err(err) if err.kind() == ErrorKind::NotFound => Ok(multi(vec![Value::Boolean(true)])),
+        Err(err) => {
+            let msg = format!("Can't remove path: {}", os_error_text(&err));
+            Ok(multi(vec![Value::Boolean(false), str_value(lua, msg.as_bytes())?]))
+        }
     }
-    Ok(multi(vec![Value::Boolean(true)]))
 }
 
 /// `f_chdir`: raises on failure.
@@ -276,15 +295,27 @@ fn get_process_id(_: &Lua, _: Variadic<Value>) -> LuaResult<i64> {
     Ok(std::process::id() as i64)
 }
 
+/// Seconds on CLOCK_MONOTONIC_RAW, the clock and nanosecond counter SDL_GetPerformanceCounter
+/// used, so values keep their boot-relative origin: core's temp-file prefix is built from it and
+/// must differ between editors started at different times.
 fn get_time(_: &Lua, _: Variadic<Value>) -> LuaResult<f64> {
-    unsafe { Ok(sdl::SDL_GetPerformanceCounter() as f64 / sdl::SDL_GetPerformanceFrequency() as f64) }
+    use rustix::time::{clock_gettime, ClockId};
+    let now = clock_gettime(ClockId::MonotonicRaw);
+    let ticks = now.tv_sec as u64 * 1_000_000_000 + now.tv_nsec as u64;
+    Ok(ticks as f64 / 1_000_000_000.0)
 }
 
-/// `f_sleep`: `SDL_Delay(n * 1000)`, truncated to whole milliseconds as the C does.
+/// `f_sleep`: `SDL_Delay(n * 1000)`, truncated to whole milliseconds as the C does. SDL_Delay(0)
+/// still made a zero-length nanosleep (a timer-slack pause), which `thread::sleep` skips.
 fn sleep(_: &Lua, args: Variadic<Value>) -> LuaResult<()> {
     let n = check_number(&args, 0, "sleep")?;
     let n = if n < 0.0 { 0.0 } else { n };
-    unsafe { sdl::SDL_Delay((n * 1000.0) as u32) };
+    let ms = (n * 1000.0) as u32;
+    if ms == 0 {
+        let _ = rustix::thread::nanosleep(&rustix::time::Timespec { tv_sec: 0, tv_nsec: 0 });
+    } else {
+        std::thread::sleep(std::time::Duration::from_millis(ms as u64));
+    }
     Ok(())
 }
 
