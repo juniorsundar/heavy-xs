@@ -95,6 +95,12 @@
               git # build.rs embeds the commit in debug builds, optional
               lua5_4 # scripts/rust-port/gen-plugin-syms.lua
 
+              # Test tools only, never runtime dependencies: the private X display that
+              # scripts/rust-port/private-display.sh starts for PROFILE=xvfb runs.
+              xvfb
+              xauth
+              util-linux # mcookie
+
               # note: ibus is only dlopen()ed by SDL at runtime for input
               # methods; it is not needed at build time.
 

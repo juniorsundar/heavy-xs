@@ -1,9 +1,9 @@
-//! Test-only: lets the contract suite inject synthetic SDL events.
+//! Test-only: lets the contract suite inject synthetic SDL events and read back what was drawn.
 //!
-//! Compiled only with `-Dcore_features=test_hooks`; shipping builds have no
-//! injection surface (a plugin could otherwise forge input). The C baseline for
-//! the `sysevents` suite is recorded with the same feature, so both
-//! implementations receive identical events.
+//! Compiled only with the `test_hooks` cargo feature; shipping builds have no
+//! injection surface (a plugin could otherwise forge input), which
+//! `scripts/rust-port/normal-build-check.sh` checks. The event goldens are historical
+//! C recordings: that implementation is gone and nothing in this binary selects it.
 //!
 //! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
 //! `SDL_PushEvent` and returns whether SDL accepted it.
@@ -45,7 +45,7 @@ struct RenRectRaw {
 
 extern "C" {
     /// The dirty rects of the frame just ended. Implemented by rencache (Rust after W6; the C
-    /// version that recorded the baseline is gone).
+    /// version that recorded the golden is gone).
     fn rencache_debug_rects(rects: *mut *mut RenRectRaw) -> usize;
 }
 

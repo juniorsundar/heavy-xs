@@ -534,12 +534,6 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
     set!("path_compare", path_compare);
 
     // Raw lua_CFunctions: poll_event returns 0-6 values and drives C callbacks that push directly.
-    // With test hooks, LXL_TEST_C_EVENTS=1 keeps the C versions (events and window functions) so one binary can record the
-    // C baseline and verify the Rust port with the same injected events.
-    #[cfg(feature = "test_hooks")]
-    if std::env::var_os("LXL_TEST_C_EVENTS").is_some_and(|v| !v.is_empty()) {
-        return Ok(());
-    }
     unsafe {
         use crate::sysplugin as p;
         for (name, f) in [
@@ -576,8 +570,6 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
     Ok(())
 }
 
-/// Called from `api_load_libs` after the C `luaopen_system` has run and the
-/// table is registered as the global `system`.
 /// `luaopen_system`: returns the module table. Fails (like the C's `luaL_error`) if the
 /// `dialogfinished` event cannot be registered.
 pub fn luaopen_system(lua: &Lua) -> LuaResult<Table> {

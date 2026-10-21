@@ -1,77 +1,121 @@
 #!/usr/bin/env sh
-# Build with Cargo, stage, run the headless contract runtime, and diff against the recorded baseline.
-#   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: every suite with a baseline)
-#   RECORD=1 scripts/rust-port/verify.sh suite      (re)record the baseline for each suite
-# Environment: CARGO_ARGS (extra cargo flags, e.g. "--release" or "--features sdl_renderer"),
-# TARGET_DIR (cargo target dir; default target, use another one per configuration).
+# Builds the hook-enabled contract executable, stages it, runs each contract suite as a fresh
+# bounded process in a runner-owned environment, and diffs it against its recorded golden.
+#   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: every suite with a golden)
+# Environment:
+#   PROFILE       offscreen (default: the historical goldens' driver) | xvfb (private Xvfb, X11)
+#   CARGO_ARGS    extra cargo flags, e.g. "--release"
+#   TARGET_DIR    cargo target dir (default target/contract; the developer's target/debug is left alone)
+#   STAGE_DIR     staged install (default $TARGET_DIR/stage)
+#   BIN           run this prebuilt editor instead of building one; STAGE_DIR must already hold its
+#                 staged data (scripts/rust-port/sdl-reference.sh uses this for the pinned reference);
+#                 BIN_FEATURES names its cargo features for the provenance record
+#   EVIDENCE_DIR  keep each suite's output, its backend and a provenance record here
+#   RECORD=1      also copy each passing suite's output to $EVIDENCE_DIR/record for review. Goldens
+#                 are never replaced by this script; that is a reviewed, manual copy.
+#   SUITE_SIGINT  default (default) | ignore: the SIGINT disposition each suite process starts with
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-target=${TARGET_DIR:-$root/target}
-case " ${CARGO_ARGS:-} " in *" --release "*) profile=release ;; *) profile=debug ;; esac
-bin=$target/$profile/lite-xl
-stage=${STAGE_DIR:-$target/stage}/usr/local
-suites=${1:-$(ls "$root/scripts/rust-port/baseline" 2>/dev/null | sed "s/\.txt$//" | tr "\n" "," | sed "s/,$//")}
-
-# Suites that inject synthetic SDL events need the Rust `test_hooks` feature
-# (src/test_hooks.rs). It is enabled only for those runs, so a normal build never ships it.
-needs_hooks=0
-for s in $(echo "$suites" | tr , ' '); do
-  case $s in sysevents|syswindow|sysplugin|customevents|rencache|renderer|restart) needs_hooks=1 ;; esac
-done
-features=
-[ "$needs_hooks" = 1 ] && features="--features test_hooks"
+. "$root/scripts/rust-port/private-display.sh"
+profile=${PROFILE:-offscreen}
+target=${TARGET_DIR:-$root/target/contract}
+stage_root=${STAGE_DIR:-$target/stage}
+stage=$stage_root/usr/local
+suites=${1:-$(ls "$root/scripts/rust-port/baseline" | sed "s/\.txt$//" | tr "\n" "," | sed "s/,$//")}
+case $profile in offscreen) expect_backend=offscreen ;; xvfb) expect_backend=x11 ;;
+  *) echo "PROFILE must be offscreen or xvfb" >&2; exit 2 ;; esac
 
 # Cargo reads .cargo/config.toml (CFLAGS for the vendored Lua) from the current directory.
 cd "$root"
-# shellcheck disable=SC2086
-cargo build --manifest-path "$root/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} $features >&2
-
-# A release binary carries no "(git-xxxx)" suffix (build.rs), so its start.lua must not either.
-release=; [ "$profile" = release ] && release=1
-LITE_RELEASE=$release "$root/scripts/install-linux.sh" "$bin" "$target/stage" /usr/local >/dev/null
-# Install the harness next to the data dir so `require` finds it without
-# touching anything in data/. The editor selects it with LITE_XL_RUNTIME.
+if [ -z "${BIN:-}" ]; then
+  case " ${CARGO_ARGS:-} " in *" --release "*) build=release ;; *) build=debug ;; esac
+  bin=$target/$build/lite-xl
+  # Suites that inject events or read pixels need the `test_hooks` feature (src/test_hooks.rs).
+  # This executable is the contract one only; normal-build-check.sh proves a normal build has none.
+  # shellcheck disable=SC2086
+  env -u LD_LIBRARY_PATH cargo build --locked --manifest-path "$root/Cargo.toml" --target-dir "$target" ${CARGO_ARGS:-} \
+    --features test_hooks >&2
+  # A release binary carries no "(git-xxxx)" suffix (build.rs), so its start.lua must not either.
+  release=; [ "$build" = release ] && release=1
+  LITE_RELEASE=$release "$root/scripts/install-linux.sh" "$bin" "$stage_root" /usr/local >/dev/null
+  features=test_hooks
+else
+  bin=$BIN
+  [ -x "$bin" ] && [ -d "$stage/share/lite-xl" ] || { echo "BIN needs STAGE_DIR with a staged install" >&2; exit 2; }
+  features=${BIN_FEATURES:-unrecorded}
+fi
+# Install the harness next to the data dir so `require` finds it without touching anything in
+# data/. The editor selects it with LITE_XL_RUNTIME.
 share=$stage/share/lite-xl
 mkdir -p "$share/contract_cases"
 cp "$root/tests/contract/contract.lua" "$share/contract.lua"
 cp "$root"/tests/contract/cases/*.lua "$share/contract_cases/"
 
+work=$(mktemp -d)
+cleanup() { pd_profile_stop; rm -rf "$work"; }
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+pd_profile_start "$profile" "$work/display"
+
+evidence=${EVIDENCE_DIR:-}
+if [ -n "$evidence" ]; then
+  mkdir -p "$evidence"
+  sum() { sha256sum "$@" | cut -d' ' -f1; }
+  {
+    echo "runner $(git -C "$root" rev-parse HEAD)$(git -C "$root" diff --quiet HEAD -- scripts tests || echo ' +uncommitted test changes')"
+    echo "binary $bin sha256=$(sum "$bin") features=$features"
+    pd_run sh -c 'LD_TRACE_LOADED_OBJECTS=1 "$1"' sh "$bin" | sed -n 's/^\t*\(libSDL3[^ ]*\) => \([^ ]*\).*/sdl_linked \1 => \2/p'
+    pd_describe
+    echo "cases sha256=$(cat "$root"/tests/contract/contract.lua "$root"/tests/contract/cases/*.lua | sum)"
+    echo "plugin_fixtures sha256=$(find "$root/tests/contract/plugin" -type f -print0 | sort -z | xargs -0 cat | sum)"
+    echo "fonts sha256=$(find "$share/fonts" -type f -print0 | sort -z | xargs -0 cat | sum)"
+    echo "goldens sha256=$(cat "$root"/scripts/rust-port/baseline/*.txt | sum)"
+  } >"$evidence/provenance.txt"
+fi
+
+# SDL's "system" log category is enabled only to observe the video backend it really chose; these
+# exact lines are SDL's and are taken out again before the diff. Anything else SDL or a driver
+# prints stays in the output and must match (or be reviewed).
+sdl_lines="^(App name|App version|App ID|SDL revision): |^SDL chose (video|render) backend '[^']*'\$"
+
 status=0
 for s in $(echo "$suites" | tr , ' '); do
-  out=$(mktemp)
-  # A crash or non-zero exit must fail the run, not silently truncate the diff.
-  # RECORD=1 on an event suite records the C poll_event/wait_event (the same binary
-  # can run either; see src/system.rs).
-  c_events=
-  if [ "${RECORD:-}" = 1 ]; then case $s in sysevents|syswindow|sysplugin|customevents) c_events=1 ;; esac; fi
-  # Never let a suite open a real dialog on the developer's desktop: no session bus (the
-  # portal is reached over D-Bus) and no forced dialog driver, so SDL answers with an
-  # "error" event instead. This applies to every suite, not just the dialog one.
-  if DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent/lxl-contract-bus SDL_FILE_DIALOG_DRIVER= \
-      LXL_PLUGIN_SRC=$root/tests/contract/plugin LXL_PLUGIN_INC=$root/resources/include \
-      LXL_TEST_C_EVENTS=${c_events:-} CONTRACT_SUITES=$s SDL_VIDEODRIVER=${SDL_VIDEODRIVER:-offscreen} \
-      LITE_PREFIX=$stage LITE_XL_RUNTIME=contract \
-      timeout -k 2 60 "$bin" >"$out" 2>&1; then
+  raw=$work/$s.raw out=$work/$s.out
+  # A crash or non-zero exit must fail the run, not silently truncate the diff. SIGINT starts at
+  # its default: children inherit an ignored SIGINT through exec, and the process suite's
+  # "interrupt then dead" then fails (reproduced on the SDL reference; see sdl-reference.sh).
+  if pd_run SDL_LOGGING=system=debug \
+      LXL_PLUGIN_SRC="$root/tests/contract/plugin" LXL_PLUGIN_INC="$root/resources/include" \
+      CONTRACT_SUITES="$s" LITE_PREFIX="$stage" LITE_XL_RUNTIME=contract \
+      env --"${SUITE_SIGINT:-default}"-signal=INT timeout -k 2 60 "$bin" >"$raw" 2>&1; then
     rc=0
   else
     rc=$?
-    echo "exit status $rc" >>"$out"
+    echo "exit status $rc" >>"$raw"
+  fi
+  backend=$(sed -n "s/^SDL chose video backend '\(.*\)'\$/\1/p" "$raw" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  LC_ALL=C grep -a -v -E "$sdl_lines" "$raw" >"$out" || true
+  if [ -n "$evidence" ]; then
+    cp "$out" "$evidence/$s.txt"
+    echo "$s exit=$rc backend=${backend:-none}" >>"$evidence/backends.txt"
   fi
   base=$root/scripts/rust-port/baseline/$s.txt
-  if [ "${RECORD:-}" = 1 ]; then
-    # A suite that errored or crashed must never become a baseline.
-    if [ "$rc" != 0 ]; then
-      echo "REFUSING to record $s: exit $rc"; sed -n '$p' "$out"; status=1
-    else
-      cp "$out" "$base"; echo "recorded $base"
-    fi
+  # No video init at all is fine (nothing could leak); any other backend than the profile's is not.
+  if [ -n "$backend" ] && [ "$backend" != "$expect_backend" ]; then
+    echo "FAIL $s (video backend '$backend', expected '$expect_backend')"; status=1
   elif [ "$rc" != 0 ]; then
     echo "FAIL $s (exit $rc)"; sed -n '$p' "$out"; status=1
   elif diff -u "$base" "$out"; then
-    echo "OK   $s"
+    echo "OK   $s${backend:+ [$backend]}"
   else
-    echo "FAIL $s"; status=1
+    echo "FAIL $s${backend:+ [$backend]}"; status=1
   fi
-  rm -f "$out"
+  # A failed or crashed suite never reaches the review area, let alone a golden.
+  if [ "${RECORD:-}" = 1 ] && [ "$rc" = 0 ] && { [ -z "$backend" ] || [ "$backend" = "$expect_backend" ]; }; then
+    [ -n "$evidence" ] || { echo "RECORD=1 needs EVIDENCE_DIR" >&2; exit 2; }
+    mkdir -p "$evidence/record"
+    cp "$out" "$evidence/record/$s.txt"
+  fi
 done
+[ "${RECORD:-}" = 1 ] && echo "recorded outputs for review in $evidence/record (provenance.txt names the binary)"
 exit $status
