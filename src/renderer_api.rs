@@ -10,7 +10,7 @@
 //! the option string (the C passes the address of the enum to `%s`), and the group-table readers
 //! reject an empty/mutated group with a Lua error instead of nil-dereferencing.
 
-use std::ffi::{c_char, c_int, CStr};
+use std::ffi::{c_char, c_int, CStr, CString};
 use std::ptr;
 
 use mlua::ffi::{
@@ -24,7 +24,6 @@ use mlua::ffi::{
     lua_typename, LUA_REGISTRYINDEX, LUA_TLIGHTUSERDATA, LUA_TNIL, LUA_TNUMBER, LUA_TSTRING,
     LUA_TTABLE, LUA_TUSERDATA,
 };
-use sdl3_sys::everything as sdl;
 
 use crate::rencache::{
     rencache_begin_frame, rencache_draw_rect, rencache_draw_text, rencache_end_frame,
@@ -168,9 +167,16 @@ unsafe extern "C-unwind" fn f_font_load(l: *mut lua_State) -> c_int {
     }
 
     let font = lua_newuserdata(l, std::mem::size_of::<*mut RenFont>()) as *mut *mut RenFont;
-    *font = ren_font_load(filename, size, antialiasing, hinting, style as u8);
-    if (*font).is_null() {
-        return luaL_error(l, c"failed to load font: %s".as_ptr(), sdl::SDL_GetError());
+    match ren_font_load(filename, size, antialiasing, hinting, style as u8) {
+        Ok(loaded) => *font = loaded,
+        Err(msg) => {
+            // The owned message must not outlive the longjmp: copy it onto the Lua stack (which
+            // owns its bytes) and drop it before raising.
+            let msg = CString::new(msg).unwrap_or_default();
+            lua_pushstring(l, msg.as_ptr());
+            drop(msg);
+            return luaL_error(l, c"failed to load font: %s".as_ptr(), lua_tostring(l, -1));
+        }
     }
     luaL_setmetatable(l, FONT_TYPE.as_ptr());
     1
@@ -236,9 +242,15 @@ unsafe extern "C-unwind" fn f_font_copy(l: *mut lua_State) -> c_int {
     let mut i = 0;
     while i < FONT_FALLBACK_MAX && !fonts[i].is_null() {
         let font = lua_newuserdata(l, std::mem::size_of::<*mut RenFont>()) as *mut *mut RenFont;
-        *font = ren_font_copy(fonts[i], size, antialiasing, hinting, style);
-        if (*font).is_null() {
-            return luaL_error(l, c"failed to copy font: %s".as_ptr(), sdl::SDL_GetError());
+        match ren_font_copy(fonts[i], size, antialiasing, hinting, style) {
+            Ok(copied) => *font = copied,
+            Err(msg) => {
+                // As in `f_font_load`: copy onto the Lua stack and drop before the longjmp.
+                let msg = CString::new(msg).unwrap_or_default();
+                lua_pushstring(l, msg.as_ptr());
+                drop(msg);
+                return luaL_error(l, c"failed to copy font: %s".as_ptr(), lua_tostring(l, -1));
+            }
         }
         luaL_setmetatable(l, FONT_TYPE.as_ptr());
         if table {
