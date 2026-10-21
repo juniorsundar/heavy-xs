@@ -120,13 +120,25 @@ return function(rec)
     renderer.end_frame()
     return size
   end
+  -- X11 applies a resize on a later event pump (offscreen at once): wait, bounded, until the
+  -- window reports the requested size before drawing the next frame.
+  local function settle(w, h)
+    for _ = 1, 25 do
+      local cw, ch = system.get_window_size(win)
+      if cw == w and ch == h then return end
+      system.sleep(0.02)
+      while system.poll_event() do end
+    end
+  end
   rec("size steady", size_in_frame())
   system.set_window_size(win, 400, 300, 0, 0)
+  settle(400, 300)
   rec("size after resize", size_in_frame())
   rec("frame after resize", lxl_test.dirty_rects())
   frame(function() end)
   rec("frame after resize again", lxl_test.dirty_rects())
   system.set_window_size(win, 800, 480, 0, 0)
+  settle(800, 480)
   rec("size after growing back", size_in_frame())
   rec("frame after growing back", lxl_test.dirty_rects())
   frame(function() end)

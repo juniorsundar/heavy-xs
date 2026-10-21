@@ -2,7 +2,7 @@
 
 Evidence for [Step 1 — Reference and isolated test preparation](sdl3-migration-handoff.md#step-1--reference-and-isolated-test-preparation), collected on 2026-10-21 on Linux (NixOS), with no live desktop interaction. This step changes only tests and test tooling. The production editor still uses SDL, and nothing here certifies a replacement.
 
-**Status: implemented, uncommitted. One review is pending:** the matched private-Xvfb differences below need the user's disposition before Xvfb-profile expectations exist. Nothing has been normalized or re-recorded.
+**Status: implemented.** The matched private-Xvfb differences were reviewed on 2026-10-21 (below): one golden set now holds for both profiles.
 
 ## What changed
 
@@ -53,15 +53,21 @@ The inventory recorded one `process` failure, `interrupt then dead`. It **reprod
 
 Classification: a **runner-environment input, outside the platform layer**. It is not a candidate regression and not a waiver. The runner now sets the disposition explicitly. `SUITE_SIGINT=ignore` reproduces the failure, and `sdl-reference.sh` records it as a classified observation (`process-sigint-ignored.log`). Inheriting SIG_IGN into children is existing editor behaviour. It is left to the signal resolution's "previous disposition" checks in [Choose process-signal quit and wake integration](../issues/37-choose-process-signal-quit-integration.md#resolution), not changed here.
 
-## Pending review: matched SDL/Xvfb differences
+## Reviewed: matched SDL/Xvfb differences
 
-These differ from the historical (offscreen) goldens. They are identical for the reference and the candidate, so they come from the profile, not from the implementation. Per [Design SDL-free platform contract testing](../issues/36-design-sdl-free-contract-testing.md#resolution), each needs an explained, reviewed expectation. No blanket normalization is allowed. **No Xvfb expectations have been written.**
+These differed from the historical (offscreen) goldens. They were identical for the reference and the candidate, so they come from the profile, not from the implementation. Per [Design SDL-free platform contract testing](../issues/36-design-sdl-free-contract-testing.md#resolution), each needed an explained, reviewed expectation. No blanket normalization is allowed.
 
 1. **Mesa notice (rencache, renderer, sysevents, sysplugin, syswindow).** Mesa prints two stderr lines, `MESA: info: vulkan: No DRI3 support detected…` and `Note: you can probably enable DRI3…`, when SDL's X11 framebuffer path creates its Vulkan (software) renderer on Xvfb. This is driver output from the profile, not editor output. A candidate without SDL will not produce it.
 2. **rencache, asynchronous resize.** After `set_window_size`, X11 reports the old size (`800.0x480.0` vs `400.0x300.0`), and the resize and grow-back frames have no dirty rect. Offscreen applies the size synchronously.
 3. **syswindow, window manager-less X server.** On bare Xvfb, `maximized` and `minimized` persist where offscreen reports `normal`. Size and position changes lag (`400,300,…` vs `250,180,…`, and three more size lines).
 
-The decision for the user: accept profile-specific Xvfb expectations for these keys, reviewed per item, or keep offscreen as the only strict golden profile and treat Xvfb outputs as matched reference observations that later candidates are diffed against (`target/sdl3-reference/evidence/contract-xvfb`). Step 4 needs this answer before it can judge the winit/Xvfb candidate. Step 2 doesn't, because it keeps SDL windows and runs on offscreen.
+**Disposition (user, 2026-10-21): reviewed Xvfb expectations, with the timing and window-manager keys as invariants.** A diagnostic run of the reference on Xvfb showed sizes settle on the second pump, while positions settle back to the centred `440,250` and maximize/minimize persist: window-manager behaviour, not timing. So:
+
+1. The runner drops exactly those two Mesa lines, next to the SDL log lines it already drops.
+2. `rencache` waits, bounded, for the requested size before drawing. Its historical golden is unchanged and now holds on Xvfb.
+3. `syswindow` waits until the reported size stops changing, records sizes exactly and positions as integer types, and accepts the requested mode or `normal` for maximize/minimize only. Seven golden lines changed accordingly; real positions and maximize/minimize are live-desktop checks.
+
+With that, the reference produces byte-identical output on offscreen and Xvfb for all 18 suites, and the reference and the candidate pass every suite on both profiles. No separate Xvfb golden files exist.
 
 ## Not covered by this step
 
