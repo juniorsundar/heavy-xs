@@ -30,15 +30,11 @@ use crate::rencache::{
     rencache_begin_frame, rencache_draw_rect, rencache_draw_text, rencache_end_frame,
     rencache_set_clip_rect, rencache_show_debug, RenColor, RenTab, FONT_FALLBACK_MAX,
 };
-#[cfg(feature = "sdl_renderer")]
-use crate::renderer::update_font_scale;
 use crate::renderer::{
     ren_font_copy, ren_font_free, ren_font_get_path, ren_font_group_get_height,
     ren_font_group_get_size, ren_font_group_get_width, ren_font_group_set_size,
     ren_font_group_set_tab_size, ren_font_load, RenFont,
 };
-#[cfg(feature = "sdl_renderer")]
-use crate::renwindow::renwin_get_surface;
 use crate::renwindow::{
     ren_get_size, ren_get_target_window, ren_set_target_window, RenRect, RenWindow,
 };
@@ -212,8 +208,6 @@ unsafe fn font_retrieve(
             luaL_error(l, c"failed to use font group: table is empty".as_ptr());
         }
     }
-    #[cfg(feature = "sdl_renderer")]
-    update_font_scale(ren_get_target_window(), fonts.as_mut_ptr());
     is_table
 }
 
@@ -372,21 +366,7 @@ unsafe extern "C-unwind" fn f_font_set_size(l: *mut lua_State) -> c_int {
     let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
     font_retrieve(l, &mut fonts, 1);
     let size = luaL_checknumber(l, 2) as f32;
-    let scale: c_int;
-    #[cfg(feature = "sdl_renderer")]
-    {
-        let window = ren_get_target_window();
-        scale = if window.is_null() {
-            1
-        } else {
-            renwin_get_surface(window).scale
-        };
-    }
-    #[cfg(not(feature = "sdl_renderer"))]
-    {
-        scale = 1;
-    }
-    ren_font_group_set_size(fonts.as_mut_ptr(), size, scale);
+    ren_font_group_set_size(fonts.as_mut_ptr(), size);
     0
 }
 

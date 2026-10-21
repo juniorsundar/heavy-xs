@@ -44,6 +44,8 @@ pd_profile_start() {
     Xvfb ":$n" -auth "$auth" -nolisten tcp -noreset -screen 0 "${PD_SCREEN:-1280x800x24}" \
       -dpi 96 -displayfd 3 3>"$ready" >"$pd_dir/Xvfb.$n.log" 2>&1 &
     pid=$!
+    # Publish the owned PID before waiting, so an interrupt trap can stop it.
+    pd_pid=$pid
     i=0
     while [ $i -lt "${PD_READY_TENTHS:-100}" ]; do
       [ -s "$ready" ] && break
@@ -51,12 +53,11 @@ pd_profile_start() {
       sleep 0.1; i=$((i + 1))
     done
     if [ -s "$ready" ] && kill -0 "$pid" 2>/dev/null; then
-      pd_pid=$pid
       pd_display=:$n
       return 0
     fi
     # Not ready: stop the one we started (never anything else) and try the next number.
-    kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
+    pd_profile_stop
     n=$((n + 1)); tries=$((tries + 1))
   done
   pd_fail "no private Xvfb became ready (see $pd_dir/Xvfb.*.log)"
