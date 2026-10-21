@@ -77,6 +77,10 @@ fi
 # exact lines are SDL's and are taken out again before the diff. Anything else SDL or a driver
 # prints stays in the output and must match (or be reviewed).
 sdl_lines="^(App name|App version|App ID|SDL revision): |^SDL chose (video|render) backend '[^']*'\$"
+# Mesa's notice when SDL's X11 window framebuffer starts its Vulkan renderer on Xvfb: driver
+# output of the SDL reference, reviewed and dropped (docs/wayfinder/assets/sdl3-step1-evidence.md).
+sdl_lines="$sdl_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"
+sdl_lines="$sdl_lines|^Note: you can probably enable DRI3 in your Xorg config\$"
 
 status=0
 for s in $(echo "$suites" | tr , ' '); do

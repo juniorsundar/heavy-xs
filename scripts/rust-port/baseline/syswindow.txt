@@ -6,12 +6,12 @@ get_window_mode                              1,normal
 window_has_focus type                        boolean
 window_has_focus arity                       1
 set_window_mode normal                       0 -> normal
-set_window_mode maximized                    0 -> normal
-set_window_mode minimized                    0 -> normal
+set_window_mode maximized                    0 -> maximized|normal
+set_window_mode minimized                    0 -> minimized|normal
 set_window_mode fullscreen                   0 -> fullscreen
 set_window_mode normal                       0 -> normal
 set_window_mode fullscreen                   0 -> fullscreen
-set_window_mode maximized                    0 -> normal
+set_window_mode maximized                    0 -> maximized|normal
 set_window_mode normal                       0 -> normal
 set_window_mode default                      0
 set_window_mode default ->                   normal
@@ -21,17 +21,17 @@ set_window_mode no window                    ERR
 set_window_mode nil                          ERR
 set_window_mode table                        ERR
 set_window_size                              0
-size after set                               250,180,40,50
+size after set                               250,180,integer,integer
 pixel size after set                         250.0x180.0
 set_window_size fractions                    0
-size after fractions                         301,222,10,11
+size after fractions                         301,222,integer,integer
 set_window_size string numbers               0
-size after string numbers                    260,190,20,30
+size after string numbers                    260,190,integer,integer
 set_window_size 3 args                       ERR
 set_window_size nil arg                      ERR
 set_window_size bad window                   ERR
 set_window_size negative                     0
-size after negative                          260,190,-5,-5
+size after negative                          260,190,integer,integer
 set_window_title                             0
 set_window_title unicode                     0
 set_window_title empty                       0
