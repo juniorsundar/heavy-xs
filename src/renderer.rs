@@ -115,8 +115,6 @@ pub struct RenFont {
     line_px: c_int,
     charmap: CharMap,
     glyphs: GlyphMap,
-    #[cfg(feature = "sdl_renderer")]
-    scale: c_int,
     size: f32,
     space_advance: f32,
     baseline: u16,
@@ -475,8 +473,6 @@ unsafe fn font_clear_glyph_cache(font: &mut RenFont) {
 /// `font.size` and the font backend are set.
 unsafe fn font_set_face_metrics(font: &mut RenFont) -> c_int {
     let pixel_size = font.size;
-    #[cfg(feature = "sdl_renderer")]
-    let pixel_size = pixel_size * font.scale as f32;
     // Same truncation the caller applied to the logical size; heights stay in logical units.
     // `as i32 as u32` wraps negative sizes before the backend clamps them.
     let px = pixel_size as i32 as u32 as f32;
@@ -527,8 +523,6 @@ pub unsafe extern "C" fn ren_font_load(
         line_px: 0,
         charmap: CharMap::new(),
         glyphs: GlyphMap::new(),
-        #[cfg(feature = "sdl_renderer")]
-        scale: 1,
         size,
         space_advance: 0.0,
         baseline: 0,
@@ -624,23 +618,13 @@ pub unsafe extern "C" fn ren_font_group_get_size(fonts: *mut *mut RenFont) -> f3
 /// # Safety
 /// `fonts` is a NULL-terminated array of live fonts.
 #[no_mangle]
-pub unsafe extern "C" fn ren_font_group_set_size(
-    fonts: *mut *mut RenFont,
-    size: f32,
-    surface_scale: c_int,
-) {
-    #[cfg(not(feature = "sdl_renderer"))]
-    let _ = surface_scale;
+pub unsafe extern "C" fn ren_font_group_set_size(fonts: *mut *mut RenFont, size: f32) {
     let mut i = 0;
     while i < FONT_FALLBACK_MAX && !(*fonts.offset(i as isize)).is_null() {
         let font = &mut *(*fonts.offset(i as isize));
         font_clear_glyph_cache(font);
         font.size = size;
         font.tab_size = 2;
-        #[cfg(feature = "sdl_renderer")]
-        {
-            font.scale = surface_scale;
-        }
         font_set_face_metrics(font);
         i += 1;
     }
@@ -715,14 +699,7 @@ pub unsafe extern "C" fn ren_font_group_get_width(
     if !set_x_offset {
         *x_offset = 0;
     }
-    #[cfg(feature = "sdl_renderer")]
-    {
-        width / (**fonts).scale as f64
-    }
-    #[cfg(not(feature = "sdl_renderer"))]
-    {
-        width
-    }
+    width
 }
 
 // --------------------------------------------------------------- text drawing
@@ -999,7 +976,6 @@ pub unsafe extern "C" fn video_init() -> c_int {
         sdl::SDL_SetHint(c"SDL_BORDERLESS_WINDOWED_STYLE".as_ptr(), c"1".as_ptr());
         sdl::SDL_SetHint(c"SDL_BORDERLESS_RESIZABLE_STYLE".as_ptr(), c"1".as_ptr());
         sdl::SDL_SetHint(sdl::SDL_HINT_MOUSE_DOUBLE_CLICK_RADIUS, c"4".as_ptr());
-        sdl::SDL_SetHint(sdl::SDL_HINT_RENDER_DRIVER, c"software".as_ptr());
         REN_INITED.store(true, Ordering::SeqCst);
     }
     0
@@ -1021,28 +997,4 @@ pub unsafe extern "C" fn ren_init() -> c_int {
 pub unsafe extern "C" fn ren_free() {
     sdl::SDL_DestroySurface(DRAW_RECT_SURFACE);
     DRAW_RECT_SURFACE = ptr::null_mut();
-}
-
-/// `update_font_scale`: re-rasterise the group when the surface scale changed.
-///
-/// # Safety
-/// `window_renderer` is NULL or a live window; `fonts` is a NULL-terminated font array.
-#[cfg(feature = "sdl_renderer")]
-#[no_mangle]
-pub unsafe extern "C" fn update_font_scale(
-    window_renderer: *mut crate::renwindow::RenWindow,
-    fonts: *mut *mut RenFont,
-) {
-    if window_renderer.is_null() {
-        return;
-    }
-    let surface_scale = crate::renwindow::renwin_get_surface(window_renderer).scale;
-    let mut i = 0;
-    while i < FONT_FALLBACK_MAX && !(*fonts.offset(i as isize)).is_null() {
-        if (*(*fonts.offset(i as isize))).scale != surface_scale {
-            ren_font_group_set_size(fonts, (**fonts).size, surface_scale);
-            return;
-        }
-        i += 1;
-    }
 }

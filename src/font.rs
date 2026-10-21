@@ -144,7 +144,7 @@ impl Font {
     }
 
     /// Sets the size and hinting route; `metrics_size` is the logical size, `pixel_size` the
-    /// raster size (they differ only with the `sdl_renderer` surface scale).
+    /// raster size. They are equal now that the drawing surface is always at scale 1.
     pub fn configure(
         &mut self,
         metrics_size: f32,

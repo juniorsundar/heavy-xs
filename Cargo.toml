@@ -32,9 +32,6 @@ libloading = "=0.8.9"
 [features]
 # Test-only synthetic event injection (src/test_hooks.rs). Never enable in a shipping build.
 test_hooks = []
-# LITE_USE_SDL_RENDERER: the window draws into a texture through an SDL_Renderer instead of the
-# window surface.
-sdl_renderer = []
 
 [profile.release]
 panic = "abort"
