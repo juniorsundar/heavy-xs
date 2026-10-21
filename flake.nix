@@ -10,6 +10,16 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
+      # Providers loaded by winit/softbuffer/arboard, retained outside the dev shell.
+      platformDeps = pkgs: with pkgs; [
+        wayland
+        libxkbcommon
+        libx11
+        libxcb
+        libxcursor
+        libxi
+      ];
+
       # SDL3 and the libraries behind its pkg-config Requires.private list.
       sdlDeps = pkgs: with pkgs; [
         sdl3
@@ -45,20 +55,28 @@
       # anywhere a nix store exists (i.e. outside of the dev shell too).
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in rec {
-          # Cargo builds Lua and the Rust font backend (all from crates.io, pinned by
-          # Cargo.lock, so the sandboxed build needs no network) and links the system SDL3.
+          # Cargo builds Lua and the Rust backends from vendored, locked sources;
+          # SDL3 stays linked until the final packaging step.
           lite-xl = pkgs.rustPlatform.buildRustPackage rec {
             pname = "lite-xl";
             version = "2.1.7";
             src = self;
 
-            cargoLock.lockFile = ./Cargo.lock;
+            cargoLock = {
+              lockFile = ./Cargo.lock;
+              outputHashes."softbuffer-0.4.8" = "sha256-X8gdXyRoFeGo1RhYarenBmW+c11xgu9NuQVo/UmpOmw=";
+            };
             # The contract suites need a display driver and the staged data dir;
             # scripts/rust-port/verify.sh runs them outside the sandbox.
             doCheck = false;
 
             nativeBuildInputs = [ pkgs.pkg-config ];
-            buildInputs = sdlDeps pkgs;
+            buildInputs = pkgs.lib.unique (sdlDeps pkgs ++ platformDeps pkgs);
+
+            # Dlopen-only libraries would otherwise be removed by shrink-rpath.
+            postFixup = ''
+              patchelf --add-rpath "${pkgs.lib.makeLibraryPath (platformDeps pkgs)}" "$out/bin/lite-xl"
+            '';
 
             # Data files, desktop entry etc. live outside the crate: same script as the dev flow.
             installPhase = ''
@@ -87,7 +105,7 @@
       devShells = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in {
           default = pkgs.mkShell {
-            packages = sdlDeps pkgs ++ (with pkgs; [
+            packages = pkgs.lib.unique (sdlDeps pkgs ++ platformDeps pkgs) ++ (with pkgs; [
               cargo
               rustc
               pkg-config
@@ -100,6 +118,7 @@
               xvfb
               xauth
               util-linux # mcookie
+              dbus # private session bus for service contract checks
 
               # note: ibus is only dlopen()ed by SDL at runtime for input
               # methods; it is not needed at build time.
