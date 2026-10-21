@@ -140,10 +140,6 @@ fn check_alloc<T>(ptr: *mut T) -> *mut T {
     ptr
 }
 
-unsafe fn set_error(msg: &'static CStr) {
-    sdl::SDL_SetError(c"%s".as_ptr(), msg.as_ptr());
-}
-
 // --------------------------------------------------------------- font helpers
 
 fn font_is_subpixel(font: &RenFont) -> bool {
@@ -497,26 +493,18 @@ unsafe fn font_set_face_metrics(font: &mut RenFont) -> c_int {
 
 // --------------------------------------------------------------- font lifecycle
 
-/// `ren_font_load`.
+/// `ren_font_load`. The error is owned by the caller; it used to travel via `SDL_SetError`.
 ///
 /// # Safety
 /// `path` is a NUL-terminated font path (not NULL).
-#[no_mangle]
-pub unsafe extern "C" fn ren_font_load(
+pub unsafe fn ren_font_load(
     path: *const c_char,
     size: f32,
     antialiasing: c_int,
     hinting: c_int,
     style: u8,
-) -> *mut RenFont {
-    let face = match Font::load(CStr::from_ptr(path)) {
-        Ok(face) => face,
-        Err(msg) => {
-            let msg = CString::new(msg).unwrap_or_default();
-            sdl::SDL_SetError(c"%s".as_ptr(), msg.as_ptr());
-            return ptr::null_mut();
-        }
-    };
+) -> Result<*mut RenFont, String> {
+    let face = Font::load(CStr::from_ptr(path))?;
 
     let mut font = Box::new(RenFont {
         face,
@@ -535,27 +523,24 @@ pub unsafe extern "C" fn ren_font_load(
         path: CStr::from_ptr(path).to_owned(),
     });
 
-    let err = font_set_face_metrics(&mut font);
-    if err != 0 {
+    if font_set_face_metrics(&mut font) != 0 {
         // The backend hides the hinting-failure detail behind FreeType's pixel-size error.
-        set_error(c"invalid pixel size");
-        return ptr::null_mut();
+        return Err("invalid pixel size".to_string());
     }
-    Box::into_raw(font)
+    Ok(Box::into_raw(font))
 }
 
 /// `ren_font_copy`; `-1` means "keep the original".
 ///
 /// # Safety
 /// `font` is a live font from [`ren_font_load`].
-#[no_mangle]
-pub unsafe extern "C" fn ren_font_copy(
+pub unsafe fn ren_font_copy(
     font: *mut RenFont,
     size: f32,
     antialiasing: c_int,
     hinting: c_int,
     style: c_int,
-) -> *mut RenFont {
+) -> Result<*mut RenFont, String> {
     let font = &*font;
     let antialiasing = if antialiasing == -1 {
         font.antialiasing
@@ -997,4 +982,34 @@ pub unsafe extern "C" fn ren_init() -> c_int {
 pub unsafe extern "C" fn ren_free() {
     sdl::SDL_DestroySurface(DRAW_RECT_SURFACE);
     DRAW_RECT_SURFACE = ptr::null_mut();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn font_load_error_is_an_owned_string() {
+        let path = c"/nonexistent/font.ttf";
+        let err = unsafe { ren_font_load(path.as_ptr(), 16.0, FONT_ANTIALIASING_SUBPIXEL, 1, 0) }
+            .expect_err("a missing font must fail");
+        assert!(err.contains("/nonexistent/font.ttf"), "{err}");
+    }
+
+    #[test]
+    fn font_copy_forwards_the_load_error() {
+        let tmp = std::env::temp_dir().join(format!("lite-xl-copy-test-{}.ttf", std::process::id()));
+        std::fs::copy(
+            std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/fonts/JetBrainsMono-Regular.ttf"),
+            &tmp,
+        ).expect("stage the fixture");
+        let path = CString::new(tmp.to_str().unwrap()).unwrap();
+        let font = unsafe { ren_font_load(path.as_ptr(), 16.0, FONT_ANTIALIASING_SUBPIXEL, 1, 0) }
+            .expect("the staged fixture must load");
+        std::fs::remove_file(&tmp).expect("drop the staged fixture");
+        // The copy re-loads by path, so the vanished file surfaces through `ren_font_copy`.
+        let err = unsafe { ren_font_copy(font, 16.0, -1, -1, -1) }.expect_err("a vanished font must fail");
+        assert!(err.contains(tmp.to_str().unwrap()), "{err}");
+        unsafe { ren_font_free(font) };
+    }
 }
