@@ -95,6 +95,8 @@ Retire, do not port, the texture/SDL_Renderer alternative. Default software-surf
 
 **Stop:** accidental change to the default renderer, broken supported build settings or rewritten expected images.
 
+**Implementation status (2026-10-21):** implemented; see [Step 3 evidence](sdl3-step3-evidence.md). The feature is removed and the default renderer is unchanged: outputs and the render backend are identical to the reference.
+
 ### Step 4 — Complete native platform, storage and service cutover
 
 This is **one separately shippable cutover**. Its internal work is coupled; do not deliver a platform skeleton, a second SDL/window adapter or a listener wired to a loop that does not exist. Pixel storage moves here rather than through an unselected transitional SDL-surface compatibility shim.
