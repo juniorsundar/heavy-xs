@@ -19,6 +19,7 @@ use mlua::ffi::{
     luaL_checkudata, luaL_error, luaL_len, luaL_optlstring, luaL_setmetatable, LUA_TNIL, LUA_TTABLE,
 };
 use sdl3_sys::everything as sdl;
+use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
 
 use crate::custom_events::{push_custom_event, CustomEvent};
 use crate::plugin_syms::SYMBOLS;
@@ -45,23 +46,83 @@ pub unsafe extern "C" fn api_require(symbol: *const c_char) -> *mut c_void {
 type XlEntry = unsafe extern "C-unwind" fn(*mut lua_State, unsafe extern "C" fn(*const c_char) -> *mut c_void) -> c_int;
 type PlainEntry = unsafe extern "C-unwind" fn(*mut lua_State) -> c_int;
 
-/// `f_library_gc`: the `NativePlugin` metatable's `__gc`.
+/// `f_library_gc`: the `NativePlugin` metatable's `__gc`. The table's `handle` owns one
+/// reference to the library; a missing handle is ignored, as `SDL_UnloadObject(NULL)` was.
 pub unsafe extern "C-unwind" fn library_gc(l: *mut lua_State) -> c_int {
     lua_getfield(l, 1, c"handle".as_ptr());
-    let handle = lua_touserdata(l, -1) as *mut sdl::SDL_SharedObject;
-    sdl::SDL_UnloadObject(handle);
+    let handle = lua_touserdata(l, -1);
+    if !handle.is_null() {
+        drop(Library::from_raw(handle));
+    }
     0
+}
+
+/// `dlerror`'s exact bytes, which libloading keeps private but debug-prints with
+/// `escape_ascii`; undone here so a non-UTF-8 path survives in the message as it did through SDL.
+fn dlerror_bytes(err: &libloading::Error) -> Vec<u8> {
+    let unescape = |quoted: &str| -> Option<Vec<u8>> {
+        let mut out = Vec::new();
+        let mut chars = quoted.strip_prefix('"')?.strip_suffix('"')?.bytes();
+        while let Some(b) = chars.next() {
+            if b != b'\\' {
+                out.push(b);
+                continue;
+            }
+            out.push(match chars.next()? {
+                b't' => b'\t',
+                b'r' => b'\r',
+                b'n' => b'\n',
+                b'x' => {
+                    let hex = [chars.next()?, chars.next()?];
+                    u8::from_str_radix(std::str::from_utf8(&hex).ok()?, 16).ok()?
+                }
+                other => other,
+            });
+        }
+        Some(out)
+    };
+    match err {
+        libloading::Error::DlOpen { desc } => {
+            unescape(&format!("{desc:?}")).unwrap_or_else(|| err.to_string().into_bytes())
+        }
+        _ => err.to_string().into_bytes(),
+    }
+}
+
+/// `SDL_LoadFunction`: `dlsym`, then again with a leading underscore; a NULL address counts as
+/// missing.
+unsafe fn load_function(handle: *mut c_void, name: &[u8]) -> *mut c_void {
+    // Borrowed, not owned: the plugin's table keeps the reference.
+    let library = std::mem::ManuallyDrop::new(Library::from_raw(handle));
+    for candidate in [name.to_vec(), [b"_", name].concat()] {
+        if let Ok(symbol) = library.get::<*mut c_void>(&candidate) {
+            if !symbol.is_null() {
+                return *symbol;
+            }
+        }
+    }
+    std::ptr::null_mut()
 }
 
 /// `f_load_native_plugin`.
 pub unsafe extern "C-unwind" fn load_native_plugin(l: *mut lua_State) -> c_int {
+    use std::os::unix::ffi::OsStrExt;
     let name = luaL_checkstring(l, 1);
     let path = luaL_checkstring(l, 2);
-    let library = sdl::SDL_LoadObject(path);
-    if library.is_null() {
-        lua_pushstring(l, sdl::SDL_GetError());
-        mlua::ffi::lua_error(l)
-    }
+    // SDL_LoadObject's flags: every symbol bound now, none made visible to later libraries.
+    let opened = Library::open(Some(std::ffi::OsStr::from_bytes(CStr::from_ptr(path).to_bytes())), RTLD_NOW | RTLD_LOCAL);
+    let library = match opened {
+        Ok(library) => library.into_raw(),
+        Err(err) => {
+            // SDL_LoadObject's wording. Nothing owned may outlive this block: lua_error longjmps.
+            {
+                let message = [b"Failed loading ", CStr::from_ptr(path).to_bytes(), b": ", &dlerror_bytes(&err)].concat();
+                lua_pushlstring(l, message.as_ptr() as *const c_char, message.len());
+            }
+            drop(err);
+            mlua::ffi::lua_error(l)
+        }
+    };
 
     // package.native_plugins[name] = setmetatable({ handle = library }, NativePlugin)
     lua_getglobal(l, c"package".as_ptr());
@@ -80,28 +141,25 @@ pub unsafe extern "C-unwind" fn load_native_plugin(l: *mut lua_State) -> c_int {
         None => full,
     };
     // The C formats into a 512-byte buffer and truncates; a name that long does not exist.
-    let xl_name = CString::new([b"luaopen_lite_xl_", base].concat()).unwrap();
-    let xl_entry = sdl::SDL_LoadFunction(library, xl_name.as_ptr());
+    let xl_entry = load_function(library, &[b"luaopen_lite_xl_", base].concat());
 
-    let result = if let Some(entry) = xl_entry {
-        let entry: XlEntry = std::mem::transmute(entry);
+    let result = if !xl_entry.is_null() {
+        let entry: XlEntry = std::mem::transmute(xl_entry);
         entry(l, api_require)
     } else {
         let plain_name = CString::new([b"luaopen_", base].concat()).unwrap();
-        match sdl::SDL_LoadFunction(library, plain_name.as_ptr()) {
-            Some(entry) => {
-                let entry: PlainEntry = std::mem::transmute(entry);
-                entry(l)
-            }
-            None => {
-                return luaL_error(
-                    l,
-                    c"Unable to load %s: Can't find %s(lua_State *L, void *XL)".as_ptr(),
-                    name,
-                    plain_name.as_ptr(),
-                )
-            }
+        let plain_entry = load_function(library, plain_name.as_bytes());
+        if plain_entry.is_null() {
+            return luaL_error(
+                l,
+                c"Unable to load %s: Can't find %s(lua_State *L, void *XL)".as_ptr(),
+                name,
+                plain_name.as_ptr(),
+            );
         }
+        drop(plain_name);
+        let entry: PlainEntry = std::mem::transmute(plain_entry);
+        entry(l)
     };
 
     if result == 0 {
