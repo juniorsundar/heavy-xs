@@ -9,8 +9,6 @@ use std::ffi::CStr;
 
 use std::ptr;
 
-use sdl3_sys::everything as sdl;
-
 use skrifa::instance::{LocationRef, Size};
 use skrifa::outline::{
     DrawSettings, Engine, HintingInstance, HintingOptions, OutlinePen, SmoothMode, Target,
@@ -42,21 +40,22 @@ struct FontData {
 
 impl FontData {
     fn open(path: &CStr) -> Result<Self, String> {
-        // SDL validates and opens first so error messages keep SDL's wording (as on FreeType).
-        let io = unsafe { sdl::SDL_IOFromFile(path.as_ptr(), c"rb".as_ptr()) };
-        if io.is_null() {
-            return Err(unsafe { CStr::from_ptr(sdl::SDL_GetError()) }
-                .to_string_lossy()
-                .into_owned());
+        // Errors keep SDL_IOFromFile's wording, so callers see the same messages as before.
+        if path.is_empty() {
+            return Err("Parameter 'file' is invalid".to_string());
         }
-        unsafe { sdl::SDL_CloseIO(io) };
         unsafe {
             let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
             if fd < 0 {
-                return Err(std::io::Error::last_os_error().to_string());
+                let error = CStr::from_ptr(libc::strerror(*libc::__errno_location()));
+                return Err(format!("Couldn't open {}: {}", path.to_string_lossy(), error.to_string_lossy()));
             }
             let mut st: libc::stat = std::mem::zeroed();
             let len = if libc::fstat(fd, &mut st) == 0 {
+                if (st.st_mode & libc::S_IFMT) == libc::S_IFDIR {
+                    libc::close(fd);
+                    return Err(format!("{} is a directory", path.to_string_lossy()));
+                }
                 st.st_size as usize
             } else {
                 0
@@ -385,5 +384,64 @@ impl OutlinePen for Pen {
     }
     fn close(&mut self) {
         self.cmds.push(Command::Close);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+    use std::os::unix::ffi::OsStrExt;
+
+    fn temp_path(name: &str) -> std::path::PathBuf {
+        let mut p = std::env::temp_dir();
+        p.push(format!("lite-xl-font-test-{}-{}", std::process::id(), name));
+        p
+    }
+
+    fn err_of(r: Result<FontData, String>) -> String {
+        match r {
+            Ok(_) => panic!("expected error"),
+            Err(e) => e,
+        }
+    }
+
+    #[test]
+    fn empty_path() {
+        assert_eq!(err_of(FontData::open(c"")), "Parameter 'file' is invalid");
+    }
+
+    #[test]
+    fn missing_path() {
+        assert_eq!(
+            err_of(FontData::open(c"/nonexistent/font.ttf")),
+            "Couldn't open /nonexistent/font.ttf: No such file or directory"
+        );
+    }
+
+    #[test]
+    fn directory_path() {
+        let dir = temp_path("dir");
+        std::fs::create_dir_all(&dir).unwrap();
+        let c = std::ffi::CString::new(dir.as_os_str().as_encoded_bytes()).unwrap();
+        assert_eq!(
+            err_of(FontData::open(&c)),
+            format!("{} is a directory", dir.display())
+        );
+        std::fs::remove_dir(&dir).unwrap();
+    }
+
+    #[test]
+    fn mapping_survives_unlink() {
+        let path = temp_path("data").with_extension(std::ffi::OsStr::from_bytes(b"\xff"));
+        std::fs::File::create(&path).unwrap().write_all(b"fontdata").unwrap();
+        let c = std::ffi::CString::new(path.as_os_str().as_encoded_bytes()).unwrap();
+        let data = match FontData::open(&c) {
+            Ok(d) => d,
+            Err(e) => panic!("open failed: {}", e),
+        };
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(data.bytes(), b"fontdata");
+        drop(data);
     }
 }
