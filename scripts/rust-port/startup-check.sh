@@ -1,19 +1,27 @@
 #!/usr/bin/env sh
 # Checks what src/app.rs owns and the module suites cannot reach: the globals handed to
 # start.lua, the restart loop (Lua state recreated, window kept), exit codes and error.txt.
-# Runs the staged binary left behind by verify.sh against throwaway runtimes.
+# Runs the staged binary left behind by verify.sh (or BIN with its STAGE_DIR) against throwaway
+# runtimes, each a fresh process in a runner-owned environment (private-display.sh).
+#   STARTUP_PROFILE  dummy (default: SDL's dummy driver) | xvfb (private Xvfb) for restart and quit;
+#                    the startup-failure case always runs with no display at all
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
-target=${TARGET_DIR:-$root/target}
+. "$root/scripts/rust-port/private-display.sh"
+target=${TARGET_DIR:-$root/target/contract}
 case " ${CARGO_ARGS:-} " in *" --release "*) profile=release ;; *) profile=debug ;; esac
-bin=$target/$profile/lite-xl
+bin=${BIN:-$target/$profile/lite-xl}
 stage=${STAGE_DIR:-$target/stage}/usr/local
 share=$stage/share/lite-xl
 [ -x "$bin" ] && [ -d "$share" ] || { echo "run scripts/rust-port/verify.sh first"; exit 1; }
 
 work=$(mktemp -d)
 # The runtimes below live in the staged install; remove them even on interrupt.
-trap 'rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua"' EXIT INT TERM
+cleanup() { pd_profile_stop; rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua"; }
+trap cleanup EXIT
+trap 'exit 130' INT TERM
+pd_profile_start "${STARTUP_PROFILE:-dummy}" "$work/display"
+pd_describe
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "OK   $1"; else echo "FAIL $1: expected [$3] got [$2]"; fail=1; fi; }
 
@@ -44,8 +52,7 @@ LUA
 # and exiting with a live window under "offscreen" segfaults in SDL_Quit. Upstream's C build does
 # the same (checked at 234fa099, 10/10), so it is not part of this port.
 out=$work/restart.log
-( cd "$work" && DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent SDL_VIDEODRIVER=dummy \
-  LITE_PREFIX=$stage LITE_XL_RUNTIME=startup_restart timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" extra-arg >"$out" 2>&1 ) && rc=0 || rc=$?
+( cd "$work" && pd_run LITE_PREFIX="$stage" LITE_XL_RUNTIME=startup_restart timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" extra-arg >"$out" 2>&1 ) && rc=0 || rc=$?
 check "restart: exit code" "$rc" 0
 check "restart: two runs" "$(grep -c '^STARTUP run' "$out")" 2
 check "restart: first run not RESTARTED" "$(grep -c '^STARTUP run false args 2 extra-arg platform Linux arch ok exe lite-xl datadir true' "$out")" 1
@@ -58,8 +65,8 @@ cat > "$share/startup_broken.lua" <<'LUA'
 error("deliberate startup failure")
 LUA
 out=$work/broken.log
-( cd "$work" && env -u DISPLAY -u WAYLAND_DISPLAY -u XDG_RUNTIME_DIR DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent \
-  SDL_VIDEODRIVER=offscreen LITE_PREFIX=$stage LITE_XL_RUNTIME=startup_broken timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" >"$out" 2>&1 ) && rc=0 || rc=$?
+# pd_run without the xvfb display: the same isolation, offscreen driver, nothing to show a dialog on.
+( cd "$work" && pd_profile=offscreen && pd_run LITE_PREFIX="$stage" LITE_XL_RUNTIME=startup_broken timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" >"$out" 2>&1 ) && rc=0 || rc=$?
 check "failure: exit code" "$rc" 1
 check "failure: error.txt names the error" "$(grep -c 'deliberate startup failure' "$work/error.txt" 2>/dev/null || echo 0)" 1
 check "failure: stdout has traceback" "$(grep -c 'stack traceback' "$out")" 1
@@ -87,8 +94,8 @@ LUA
 out=$work/quit.log
 # A non-interactive shell starts background jobs with SIGINT ignored, and the editor would inherit
 # that (it then only ends at the timeout's SIGTERM); --default-signal gives it a terminal's Ctrl-C.
-( cd "$work/quitproj" && exec env --default-signal=INT DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent SDL_VIDEODRIVER=dummy \
-  LITE_USERDIR="$work/quituser" LITE_PREFIX=$stage "$bin" "$work/quitproj/a.lua" >"$out" 2>&1 ) &
+( cd "$work/quitproj" && pd_exec=1 && pd_run env --default-signal=INT \
+  LITE_USERDIR="$work/quituser" LITE_PREFIX="$stage" "$bin" "$work/quitproj/a.lua" >"$out" 2>&1 ) &
 pid=$!
 i=0; while [ $i -lt 100 ] && ! grep -q '^QUIT ready' "$out" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
 kill -INT "$pid"
