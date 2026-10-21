@@ -1,8 +1,8 @@
 -- W5 contract suite, part 2: system.poll_event / system.wait_event.
 --
 -- Needs the `test_hooks` cargo feature (`lxl_test.push_event`); verify.sh turns it on.
--- The same binary can run either implementation: with LXL_TEST_C_EVENTS=1 the C
--- poll_event/wait_event stay in place, which is how the baseline is recorded.
+-- The golden was recorded from the C poll_event/wait_event with the same injected events; that
+-- implementation is gone, so it is historical evidence, not something this binary can select.
 
 local function try(fn, ...)
   local r = table.pack(pcall(fn, ...))
@@ -193,16 +193,11 @@ return function(rec)
   -- events that have a NULL-safe path are recorded.
   push { type = "drop_file", text = "/x" }
   rec("filedropped, no window", poll())
-  -- WINDOW_RESIZED for an unknown window is deliberately NOT here: the C calls
-  -- ren_resize_window(NULL) and segfaults (see docs/rust-port/PLAN.md, W5). The Rust
-  -- port skips it; only the Rust-only check below can run it.
-  if (os.getenv("LXL_TEST_C_EVENTS") or "") == "" then
-    push { type = "window", etype = lxl_test.EVENT_WINDOW_RESIZED, data1 = 5, data2 = 6 }
-    -- Recorded as a comparison, not a value, so the baseline is the same for both.
-    rec("resized, no window survives", tostring(try(system.poll_event) == "0"))
-  else
-    rec("resized, no window survives", "true")
-  end
+  -- WINDOW_RESIZED for an unknown window: the C called ren_resize_window(NULL) and segfaulted
+  -- (see docs/rust-port/PLAN.md, W5), so its golden holds a fixed "true" here. The port skips
+  -- the event; recorded as a comparison, not a value.
+  push { type = "window", etype = lxl_test.EVENT_WINDOW_RESIZED, data1 = 5, data2 = 6 }
+  rec("resized, no window survives", tostring(try(system.poll_event) == "0"))
 
   -- wait_event -----------------------------------------------------------------
   drain()

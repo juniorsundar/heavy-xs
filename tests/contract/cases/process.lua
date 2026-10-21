@@ -1,7 +1,7 @@
 -- W3 contract suite: the `process` module (src/api/process.c) through the
 -- data/core/process.lua wrapper, which is what plugins actually use.
 --
--- Baseline is recorded from the C build with `RECORD=1`. Cases that involve
+-- The golden is a historical recording from the C build. Cases that involve
 -- timing or the kill-list worker poll with generous timeouts and record only a
 -- boolean, so the output stays stable run to run.
 
