@@ -1,0 +1,39 @@
+## sysfs
+list missing                                 2:nil,Can't open directory: No such file or directory
+list file                                    2:nil,Can't open directory: Not a directory
+list empty string                            2:nil,Can't open directory: No such file or directory
+list unreadable                              2:nil,Can't open directory: Permission denied
+list trailing slash                          1:{.hidden|a|b|sub}
+list through file                            2:nil,Can't open directory: Not a directory
+list dangling link                           2:nil,Can't open directory: No such file or directory
+list link loop                               2:nil,Can't open directory: Too many levels of symbolic links
+list file link                               2:nil,Can't open directory: Not a directory
+list dir link                                1:{.hidden|a|b|sub}
+list name too long                           2:nil,Can't open directory: File name too long
+list NUL truncates                           1:{.hidden|a|b|sub}
+list number arg                              2:nil,Can't open directory: No such file or directory
+list order is readdir order                  true
+list native name                             1:fffe2d802e62696e
+rmdir native name                            1:true
+native name gone                             false
+rmdir non-empty                              2:false,Can't remove path: Directory not empty
+rmdir missing                                1:true
+rmdir missing parent                         1:true
+rmdir through file                           2:false,Can't remove path: Not a directory
+rmdir empty string                           1:true
+rmdir dot                                    2:false,Can't remove path: Invalid argument
+rmdir name too long                          2:false,Can't remove path: File name too long
+rmdir number arg                             1:true
+rmdir in read-only dir                       2:false,Can't remove path: Permission denied
+rmdir unreadable empty dir                   1:true
+rmdir dir link                               1:true
+dir link gone, target kept                   false|true
+rmdir dangling link                          1:true
+dangling link gone                           false
+rmdir file link                              1:true
+file link gone, target kept                  false|true
+rmdir fifo                                   1:true
+rmdir trailing slash dir                     1:true
+rmdir trailing slash file                    2:false,Can't remove path: Not a directory
+rmdir NUL truncates                          1:true
+NUL target gone                              false

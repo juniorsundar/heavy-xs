@@ -10,7 +10,7 @@
 //! target window, `ren_get_size`, `ren_update_rects`), because all of it reads the struct's
 //! fields. The Lua binding is `renwindow_api.rs`.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 use std::sync::Mutex;
 
 use sdl3_sys::everything as sdl;
@@ -110,11 +110,7 @@ pub unsafe extern "C" fn ren_destroy(ren: *mut RenWindow) {
         }
     });
     free_surface(ren);
-    if !(*ren).command_buf.is_null() {
-        sdl::SDL_free((*ren).command_buf as *mut c_void);
-        (*ren).command_buf = std::ptr::null_mut();
-        (*ren).command_buf_size = 0;
-    }
+    free_command_buffer(ren);
     drop(Box::from_raw(ren));
 }
 
@@ -408,7 +404,7 @@ unsafe fn update_rects(ren: *mut RenWindow, rects: *mut RenRect, count: c_int) {
             let sr = sdl::SDL_Rect { x, y, w, h };
             let pixels = ((*surface).pixels as *mut u8)
                 .offset((y * (*surface).pitch + x * sdl::SDL_BYTESPERPIXEL((*surface).format) as i32) as isize);
-            sdl::SDL_UpdateTexture((*ren).texture, &sr, pixels as *const c_void, (*surface).pitch);
+            sdl::SDL_UpdateTexture((*ren).texture, &sr, pixels as *const std::ffi::c_void, (*surface).pitch);
         }
         sdl::SDL_RenderTexture((*ren).renderer, (*ren).texture, std::ptr::null(), std::ptr::null());
         sdl::SDL_RenderPresent((*ren).renderer);
@@ -449,17 +445,107 @@ pub(crate) fn sdl_error() -> String {
     }
 }
 
+/// The command buffer's alignment: `max_align_t`'s, which rencache pads every command to and
+/// which the C got from `realloc`.
+const COMMAND_BUF_ALIGN: usize = 16;
+
 /// `expand_command_buffer` from `rencache.c`: grow the frame's command buffer to `new_size`
-/// bytes. Returns false when `SDL_realloc` fails.
+/// bytes, keeping its contents. Returns false when the allocation fails (the old buffer stays).
 ///
 /// # Safety
 /// `ren` is a live `RenWindow`.
 pub(crate) unsafe fn expand_command_buffer(ren: *mut RenWindow, new_size: usize) -> bool {
-    let new_buf = sdl::SDL_realloc((*ren).command_buf as *mut c_void, new_size);
+    let Ok(new_layout) = std::alloc::Layout::from_size_align(new_size, COMMAND_BUF_ALIGN) else {
+        return false;
+    };
+    let new_buf = if (*ren).command_buf.is_null() {
+        std::alloc::alloc(new_layout)
+    } else {
+        let old = std::alloc::Layout::from_size_align_unchecked((*ren).command_buf_size, COMMAND_BUF_ALIGN);
+        std::alloc::realloc((*ren).command_buf, old, new_size)
+    };
     if new_buf.is_null() {
         return false;
     }
     (*ren).command_buf_size = new_size;
-    (*ren).command_buf = new_buf as *mut u8;
+    (*ren).command_buf = new_buf;
     true
+}
+
+/// Frees what `expand_command_buffer` allocated; `command_buf_size` is always its layout size.
+///
+/// # Safety
+/// `ren` is a live `RenWindow`.
+unsafe fn free_command_buffer(ren: *mut RenWindow) {
+    if !(*ren).command_buf.is_null() {
+        let layout = std::alloc::Layout::from_size_align_unchecked((*ren).command_buf_size, COMMAND_BUF_ALIGN);
+        std::alloc::dealloc((*ren).command_buf, layout);
+        (*ren).command_buf = std::ptr::null_mut();
+        (*ren).command_buf_size = 0;
+    }
+}
+
+#[cfg(test)]
+mod command_buffer {
+    use super::*;
+
+    fn bare_window() -> RenWindow {
+        RenWindow {
+            window: std::ptr::null_mut(),
+            command_buf: std::ptr::null_mut(),
+            command_buf_idx: 0,
+            command_buf_size: 0,
+            scale_x: 1.0,
+            scale_y: 1.0,
+            #[cfg(feature = "sdl_renderer")]
+            renderer: std::ptr::null_mut(),
+            #[cfg(feature = "sdl_renderer")]
+            texture: std::ptr::null_mut(),
+            #[cfg(feature = "sdl_renderer")]
+            rensurface: RenSurface { surface: std::ptr::null_mut(), scale: 1 },
+        }
+    }
+
+    /// rencache's growth from empty (512 KiB, then x1.2) well past a typical frame: every step
+    /// keeps the bytes written so far and the alignment, and the buffer is freed once.
+    #[test]
+    fn grows_keeps_contents_and_frees() {
+        let mut ren = bare_window();
+        let ren: *mut RenWindow = &mut ren;
+        unsafe {
+            let mut size = 0usize;
+            let mut written = 0usize;
+            while size < 64 << 20 {
+                size = if size == 0 { 1024 * 512 } else { (size as f64 * 1.2) as usize };
+                assert!(expand_command_buffer(ren, size));
+                assert_eq!((*ren).command_buf_size, size);
+                assert_eq!((*ren).command_buf as usize % COMMAND_BUF_ALIGN, 0);
+                for i in 0..written {
+                    assert_eq!(*(*ren).command_buf.add(i), (i % 251) as u8, "byte {i} after growing to {size}");
+                }
+                for i in written..size {
+                    *(*ren).command_buf.add(i) = (i % 251) as u8;
+                }
+                written = size;
+            }
+            free_command_buffer(ren);
+            assert!((*ren).command_buf.is_null());
+            assert_eq!((*ren).command_buf_size, 0);
+            free_command_buffer(ren); // a second teardown is a no-op, not a double free
+        }
+    }
+
+    #[test]
+    fn impossible_size_fails_and_keeps_the_buffer() {
+        let mut ren = bare_window();
+        let ren: *mut RenWindow = &mut ren;
+        unsafe {
+            assert!(expand_command_buffer(ren, 1024));
+            *(*ren).command_buf = 7;
+            assert!(!expand_command_buffer(ren, usize::MAX - 8));
+            assert_eq!((*ren).command_buf_size, 1024);
+            assert_eq!(*(*ren).command_buf, 7);
+            free_command_buffer(ren);
+        }
+    }
 }

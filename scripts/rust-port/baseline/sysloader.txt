@@ -1,0 +1,22 @@
+## sysloader
+missing file                                 false|Failed loading <ROOT>/missing.so: <ROOT>/missing.so: cannot open shared object file: No such file or directory
+not an ELF file                              false|Failed loading <ROOT>/notelf.so: <ROOT>/notelf.so: file too short
+directory                                    false|Failed loading <ROOT>: <ROOT>: cannot read file data: Is a directory
+empty path                                   false|Unable to load empty: Can't find luaopen_empty(lua_State *L, void *XL)
+undefined symbol                             false|Failed loading <ROOT>/undefplug.so: <ROOT>/undefplug.so: undefined symbol: lxl_contract_symbol_that_does_not_exist
+undefined symbol not registered              nil
+no entrypoint                                false|Unable to load emptyplug: Can't find luaopen_emptyplug(lua_State *L, void *XL)
+no entrypoint still registered               table
+underscore entrypoint                        true|<ROOT>/underplug.so
+NUL in path truncates                        true|<ROOT>/plainplug.so\x00junk
+number path                                  false|Failed loading 5: 5: cannot open shared object file: No such file or directory
+missing non-UTF-8 path, message bytes        false|Failed loading <ROOT>/<ff><fe>.so: <ROOT>/<ff><fe>.so: cannot open shared object file: No such file or directory
+provider                                     true|<ROOT>/provplug.so
+consumer sees provider (scope)               false|Failed loading <ROOT>/consplug.so: <ROOT>/consplug.so: undefined symbol: lxl_contract_provided
+unmapped after its owner is collected        true
+load a                                       true|<ROOT>/plainplug.so
+load b, same file                            true|<ROOT>/plainplug.so
+still mapped while b owns it                 true
+unmapped after both are collected            true
+reload after unload                          true|<ROOT>/plainplug.so
+handle is light userdata                     userdata

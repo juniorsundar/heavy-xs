@@ -83,6 +83,8 @@ Execute **in order**. Each step leaves a working default editor and has its own 
 
 **Stop:** loader lifetime/ABI regression, changed deterministic output/error handling, allocator mismatch or unexplained drawing difference.
 
+**Implementation status (2026-10-21):** implemented; see [Step 2 evidence](sdl3-step2-evidence.md). By the user's decision, `get_time` reads CLOCK_MONOTONIC_RAW through `rustix` instead of a process-start `std` anchor. This keeps SDL's boot-relative values, which core's temp-file prefix relies on.
+
 ### Step 3 — Retire the alternate SDL renderer build
 
 **Touch:** `Cargo.toml`'s `sdl_renderer` feature, its cfg branches in `src/renwindow.rs`, `src/renderer.rs`, `src/renderer_api.rs`, and stale source comments (including `src/font.rs`) and script/build documentation advertising it. Keep `test_hooks` non-default.
