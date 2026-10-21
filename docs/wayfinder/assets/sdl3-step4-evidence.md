@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Only the dependency/build checkpoint is complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. The dependency/build checkpoint and font-file opening slice are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -33,6 +33,19 @@ The isolated C load probe used precisely the installed ELF's RPATH and no enviro
 Built artifact: `/nix/store/aiws994dry2x3rnxkc6zdr6ch8bdn6q5-lite-xl-2.1.7/bin/lite-xl`, SHA-256 `435c3dc23db818e558a99a042cec108dffea4182e8551e5f44b975d7512548db`. Hook-enabled contract binary SHA-256 `4f6a51ecfae4444a8af0386c38c90322791fb1bc5d1fc5281d34c28320270429`. These identify this uncommitted-checkpoint build, not a later rebuilt binary after a commit changes build metadata.
 
 Local, noncanonical logs/provenance: `target/step4-deps/`, `target/step4-deps-*.log`, `target/step4-nix-build.log`, `target/step4-softbuffer-hash.log`. The installed closure contains no Xvfb/xauth/compiler test tools. It still contains SDL's transitive `dbus-1.16.2-lib`; that is distinct from adding private-bus test executables to runtime dependencies.
+
+## Font-file opening slice
+
+Based on `a0743451`, removed the preliminary `SDL_IOFromFile`/`SDL_CloseIO` from `src/font.rs`. The existing libc open/fstat/mmap path now handles empty paths, open errors and directories with the same SDL wording. Native filename bytes still reach `open` unchanged. Descriptor cleanup and mapping lifetime are preserved; a failed fstat still takes the original unknown-format path rather than being reported as a directory. Renderer error transport remains SDL-backed until its later coupled change.
+
+Checks performed:
+
+- `env -u LD_LIBRARY_PATH cargo test --offline --locked --lib font::`: four tests pass (empty/missing/directory errors and a mapping readable after unlinking a non-UTF-8 filename).
+- `scripts/rust-port/verify.sh renderer`, separately with `PROFILE=xvfb` and `PROFILE=offscreen`: both match unchanged historical goldens, including all recorded font-load errors.
+- `git diff --check`: pass.
+- Bounded read-only `zai/glm-5.3-flash` review: no blockers. The exact strerror assertion uses the current C-locale text, like the historical golden; other locales were not tested.
+
+Local logs/provenance: `target/step4-font/`, `target/step4-font-xvfb.log`, `target/step4-font-offscreen.log`. No full contract, Nix rebuild or desktop test was repeated for this one-file slice.
 
 ### Remaining work and limits
 
