@@ -9,16 +9,15 @@
 //! the shared owned-input queue after decoding the historical numeric event fixtures.
 //! Native capture is validated separately; this is not OS-input evidence.
 
-use std::ffi::{c_int, c_void, CString};
+use std::ffi::{c_int, c_void};
 
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
-use sdl3_sys::everything as sdl;
 
 use crate::custom_events::{
     get_custom_event_callback_by_name, get_custom_event_name, push_custom_event, register_custom_event,
     CustomEvent, CustomEventCallback, FIRST_TYPE,
 };
-use crate::platform::{Custom, Payload};
+use crate::platform::{Custom, FingerKind, Input, Payload};
 use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
 
 extern "C" {
@@ -167,127 +166,147 @@ fn num(t: &Table, key: &str) -> LuaResult<f64> {
     })
 }
 
-/// The SDL window id of a `renwindow` userdata (it holds a `RenWindow **`).
-fn window_id(t: &Table) -> LuaResult<sdl::SDL_WindowID> {
+/// The window id of a `renwindow` userdata (it holds a `RenWindow **`), or 0 without one.
+fn window_id(t: &Table) -> LuaResult<u32> {
     match t.raw_get::<Value>("window")? {
         Value::UserData(ud) => {
             let ud: AnyUserData = ud;
             let slot = ud.to_pointer() as *const *mut c_void;
             let window = unsafe { *slot };
-            Ok(sdl::SDL_WindowID(unsafe { ren_get_window_id(window) }))
+            Ok(unsafe { ren_get_window_id(window) })
         }
-        _ => Ok(sdl::SDL_WindowID(0)),
+        _ => Ok(0),
+    }
+}
+
+/// The historical fixtures' numeric event types: SDL 3's values, which the recorded goldens and
+/// `lxl_test.EVENT_*` constants still use. Only the types a fixture can name are listed.
+mod etype {
+    pub const QUIT: u32 = 0x100;
+    pub const TERMINATING: u32 = 0x101;
+    pub const WILL_ENTER_BACKGROUND: u32 = 0x103;
+    pub const DID_ENTER_BACKGROUND: u32 = 0x104;
+    pub const WILL_ENTER_FOREGROUND: u32 = 0x105;
+    pub const DID_ENTER_FOREGROUND: u32 = 0x106;
+    pub const WINDOW_SHOWN: u32 = 0x202;
+    pub const WINDOW_EXPOSED: u32 = 0x204;
+    pub const WINDOW_RESIZED: u32 = 0x206;
+    pub const WINDOW_PIXEL_SIZE_CHANGED: u32 = 0x207;
+    pub const WINDOW_MINIMIZED: u32 = 0x209;
+    pub const WINDOW_MAXIMIZED: u32 = 0x20A;
+    pub const WINDOW_RESTORED: u32 = 0x20B;
+    pub const WINDOW_MOUSE_LEAVE: u32 = 0x20D;
+    pub const WINDOW_FOCUS_GAINED: u32 = 0x20E;
+    pub const WINDOW_FOCUS_LOST: u32 = 0x20F;
+    pub const WINDOW_DISPLAY_SCALE_CHANGED: u32 = 0x214;
+}
+
+/// SDL's NumLock bit in the fixtures' `mod` field.
+const KMOD_NUM: u16 = 0x1000;
+
+/// A window, lifecycle or other event named by its numeric type. Window events carry the window
+/// and data1/data2; user-range types become an unregistered custom event with no data.
+fn numbered(ty: u32, window: u32, data1: i32, data2: i32) -> Input {
+    match ty {
+        etype::QUIT => Input::Quit,
+        etype::WINDOW_RESIZED => Input::Resized { window, w: data1, h: data2 },
+        etype::WINDOW_DISPLAY_SCALE_CHANGED | etype::WINDOW_PIXEL_SIZE_CHANGED => Input::Rescaled { window },
+        etype::WINDOW_EXPOSED => Input::Exposed,
+        etype::WINDOW_MINIMIZED => Input::Minimized,
+        etype::WINDOW_MAXIMIZED => Input::Maximized,
+        etype::WINDOW_RESTORED => Input::Restored,
+        etype::WINDOW_MOUSE_LEAVE => Input::MouseLeft,
+        etype::WINDOW_FOCUS_LOST => Input::FocusLost,
+        etype::WINDOW_FOCUS_GAINED => Input::FocusGained,
+        etype::WILL_ENTER_FOREGROUND => Input::EnteringForeground,
+        etype::DID_ENTER_FOREGROUND => Input::EnteredForeground,
+        etype::WILL_ENTER_BACKGROUND => Input::EnteringBackground,
+        etype::DID_ENTER_BACKGROUND => Input::EnteredBackground,
+        _ if ty >= FIRST_TYPE => Input::Custom(Custom { event_type: ty, code: 0, data1: 0, payload: None }),
+        _ => Input::Other,
     }
 }
 
 fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
-    use sdl::SDL_EventType as T;
-
     let kind: String = spec.raw_get("type")?;
-    let mut e: sdl::SDL_Event = unsafe { std::mem::zeroed() };
     let text = spec.raw_get::<Option<mlua::LuaString>>("text")?.map(|s| s.as_bytes().to_vec()).unwrap_or_default();
-    let text = CString::new(text.split(|&b| b == 0).next().unwrap_or_default()).unwrap();
-    let wid = window_id(&spec)?;
-    // The decoder copies borrowed fixture text before this callback returns.
-    let owned_text = text.as_ptr();
+    // Fixture text was a C string: it ends at the first NUL.
+    let text = text.split(|&b| b == 0).next().unwrap_or_default().to_vec();
+    let window = window_id(&spec)?;
 
-    unsafe {
-        match kind.as_str() {
-            "quit" => e.r#type = T::QUIT.0,
-            "key_down" | "key_up" => {
-                e.key.r#type = if kind == "key_down" { T::KEY_DOWN } else { T::KEY_UP };
-                e.key.scancode = sdl::SDL_Scancode(num(&spec, "scancode")? as i32);
-                e.key.key = sdl::SDL_Keycode(num(&spec, "key")? as u32);
-                e.key.r#mod = sdl::SDL_Keymod(num(&spec, "mod")? as u16);
-                e.key.down = kind == "key_down";
+    let input = match kind.as_str() {
+        "quit" => Input::Quit,
+        "key_down" | "key_up" => Input::Key {
+            down: kind == "key_down",
+            scancode: num(&spec, "scancode")? as i32,
+            key: num(&spec, "key")? as u32,
+            numlock: num(&spec, "mod")? as u16 & KMOD_NUM != 0,
+        },
+        "text_input" => Input::TextInput(text),
+        "text_editing" => Input::TextEditing {
+            text,
+            start: num(&spec, "start")? as i32,
+            length: num(&spec, "length")? as i32,
+        },
+        "mouse_down" | "mouse_up" => Input::MouseButton {
+            window,
+            down: kind == "mouse_down",
+            button: num(&spec, "button")? as u8,
+            x: num(&spec, "x")? as f32,
+            y: num(&spec, "y")? as f32,
+            clicks: num(&spec, "clicks")? as u8,
+        },
+        "mouse_motion" => Input::MouseMotion {
+            window,
+            x: num(&spec, "x")? as f32,
+            y: num(&spec, "y")? as f32,
+            xrel: num(&spec, "xrel")? as f32,
+            yrel: num(&spec, "yrel")? as f32,
+        },
+        "mouse_wheel" => Input::MouseWheel { x: num(&spec, "x")? as f32, y: num(&spec, "y")? as f32 },
+        "finger_down" | "finger_up" | "finger_motion" => Input::Finger {
+            window,
+            kind: match kind.as_str() {
+                "finger_down" => FingerKind::Down,
+                "finger_up" => FingerKind::Up,
+                _ => FingerKind::Motion,
+            },
+            x: num(&spec, "x")? as f32,
+            y: num(&spec, "y")? as f32,
+            dx: num(&spec, "dx")? as f32,
+            dy: num(&spec, "dy")? as f32,
+            finger: num(&spec, "finger")? as u64,
+        },
+        "drop_file" => Input::FileDropped { window, path: text },
+        "window" => {
+            // The historical producer rejected window notifications without a registered window.
+            if window == 0 {
+                return Ok(true);
             }
-            "text_input" => {
-                e.text.r#type = T::TEXT_INPUT;
-                e.text.text = owned_text;
-            }
-            "text_editing" => {
-                e.edit.r#type = T::TEXT_EDITING;
-                e.edit.text = owned_text;
-                e.edit.start = num(&spec, "start")? as i32;
-                e.edit.length = num(&spec, "length")? as i32;
-            }
-            "mouse_down" | "mouse_up" => {
-                e.button.r#type = if kind == "mouse_down" { T::MOUSE_BUTTON_DOWN } else { T::MOUSE_BUTTON_UP };
-                e.button.windowID = wid;
-                e.button.button = num(&spec, "button")? as u8;
-                e.button.clicks = num(&spec, "clicks")? as u8;
-                e.button.down = kind == "mouse_down";
-                e.button.x = num(&spec, "x")? as f32;
-                e.button.y = num(&spec, "y")? as f32;
-            }
-            "mouse_motion" => {
-                e.motion.r#type = T::MOUSE_MOTION;
-                e.motion.windowID = wid;
-                e.motion.x = num(&spec, "x")? as f32;
-                e.motion.y = num(&spec, "y")? as f32;
-                e.motion.xrel = num(&spec, "xrel")? as f32;
-                e.motion.yrel = num(&spec, "yrel")? as f32;
-            }
-            "mouse_wheel" => {
-                e.wheel.r#type = T::MOUSE_WHEEL;
-                e.wheel.windowID = wid;
-                e.wheel.x = num(&spec, "x")? as f32;
-                e.wheel.y = num(&spec, "y")? as f32;
-            }
-            "finger_down" | "finger_up" | "finger_motion" => {
-                e.tfinger.r#type = match kind.as_str() {
-                    "finger_down" => T::FINGER_DOWN,
-                    "finger_up" => T::FINGER_UP,
-                    _ => T::FINGER_MOTION,
-                };
-                e.tfinger.windowID = wid;
-                e.tfinger.fingerID = sdl::SDL_FingerID(num(&spec, "finger")? as u64);
-                e.tfinger.x = num(&spec, "x")? as f32;
-                e.tfinger.y = num(&spec, "y")? as f32;
-                e.tfinger.dx = num(&spec, "dx")? as f32;
-                e.tfinger.dy = num(&spec, "dy")? as f32;
-            }
-            "drop_file" => {
-                e.drop.r#type = T::DROP_FILE;
-                e.drop.windowID = wid;
-                e.drop.data = owned_text;
-            }
-            "window" => {
-                // Any SDL_EVENT_WINDOW_* by its numeric type, with data1/data2.
-                e.window.r#type = T(num(&spec, "etype")? as u32);
-                e.window.windowID = wid;
-                e.window.data1 = num(&spec, "data1")? as i32;
-                e.window.data2 = num(&spec, "data2")? as i32;
-            }
-            "app" => {
-                // Foreground / background lifecycle events, by numeric type.
-                e.common.r#type = num(&spec, "etype")? as u32;
-            }
-            "other" => e.common.r#type = num(&spec, "etype")? as u32,
-            "dialog_finished" => {
-                // A forged `dialogfinished` event: what dialog_callback pushes when a dialog
-                // ends, with the same owned payload.
-                let code = num(&spec, "code")? as i32;
-                let paths: Vec<mlua::LuaString> =
-                    spec.raw_get::<Option<Vec<mlua::LuaString>>>("paths")?.unwrap_or_default();
-                let message = text.as_bytes().to_vec();
-                let payload = if code == 1 && paths.is_empty() && message.is_empty() {
-                    None // DIALOG_CANCEL carries no data
-                } else if code == 0 {
-                    Some(Payload::Paths(paths.iter().map(|p| p.as_bytes().to_vec()).collect()))
-                } else {
-                    Some(Payload::Message(message)) // DIALOG_ERROR message
-                };
-                let event = CustomEvent { code, data1: num(&spec, "id")? as usize, payload };
-                return Ok(push_custom_event(b"dialogfinished", event).is_ok());
-            }
-            other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
+            let (data1, data2) = (num(&spec, "data1")? as i32, num(&spec, "data2")? as i32);
+            numbered(num(&spec, "etype")? as u32, window, data1, data2)
         }
-        let input = crate::sysevents::injected_input(&e);
-        // SDL's producer rejected window notifications without a registered window.
-        let pushed = if kind == "window" && wid.0 == 0 { true } else { crate::platform::post(input) };
-        Ok(pushed)
-    }
+        // Foreground / background lifecycle events and anything else, by numeric type.
+        "app" | "other" => numbered(num(&spec, "etype")? as u32, 0, 0, 0),
+        "dialog_finished" => {
+            // A forged `dialogfinished` event: what dialog_callback pushes when a dialog
+            // ends, with the same owned payload.
+            let code = num(&spec, "code")? as i32;
+            let paths: Vec<mlua::LuaString> =
+                spec.raw_get::<Option<Vec<mlua::LuaString>>>("paths")?.unwrap_or_default();
+            let payload = if code == 1 && paths.is_empty() && text.is_empty() {
+                None // DIALOG_CANCEL carries no data
+            } else if code == 0 {
+                Some(Payload::Paths(paths.iter().map(|p| p.as_bytes().to_vec()).collect()))
+            } else {
+                Some(Payload::Message(text)) // DIALOG_ERROR message
+            };
+            let event = CustomEvent { code, data1: num(&spec, "id")? as usize, payload };
+            return Ok(push_custom_event(b"dialogfinished", event).is_ok());
+        }
+        other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
+    };
+    Ok(crate::platform::post(input))
 }
 
 /// Installs the global `lxl_test` table.
@@ -303,25 +322,25 @@ pub fn install(lua: &Lua) -> LuaResult<()> {
     hooks.raw_set("custom_name", lua.create_function(custom_name)?)?;
     hooks.raw_set("custom_has_callback", lua.create_function(custom_has_callback)?)?;
     for (name, ty) in [
-        ("EVENT_WINDOW_SHOWN", sdl::SDL_EventType::WINDOW_SHOWN),
-        ("EVENT_WINDOW_EXPOSED", sdl::SDL_EventType::WINDOW_EXPOSED),
-        ("EVENT_WINDOW_RESIZED", sdl::SDL_EventType::WINDOW_RESIZED),
-        ("EVENT_WINDOW_MINIMIZED", sdl::SDL_EventType::WINDOW_MINIMIZED),
-        ("EVENT_WINDOW_MAXIMIZED", sdl::SDL_EventType::WINDOW_MAXIMIZED),
-        ("EVENT_WINDOW_RESTORED", sdl::SDL_EventType::WINDOW_RESTORED),
-        ("EVENT_WINDOW_MOUSE_LEAVE", sdl::SDL_EventType::WINDOW_MOUSE_LEAVE),
-        ("EVENT_WINDOW_FOCUS_GAINED", sdl::SDL_EventType::WINDOW_FOCUS_GAINED),
-        ("EVENT_WINDOW_FOCUS_LOST", sdl::SDL_EventType::WINDOW_FOCUS_LOST),
-        ("EVENT_WINDOW_PIXEL_SIZE_CHANGED", sdl::SDL_EventType::WINDOW_PIXEL_SIZE_CHANGED),
-        ("EVENT_WINDOW_DISPLAY_SCALE_CHANGED", sdl::SDL_EventType::WINDOW_DISPLAY_SCALE_CHANGED),
-        ("EVENT_WILL_ENTER_BACKGROUND", sdl::SDL_EventType::WILL_ENTER_BACKGROUND),
-        ("EVENT_DID_ENTER_BACKGROUND", sdl::SDL_EventType::DID_ENTER_BACKGROUND),
-        ("EVENT_WILL_ENTER_FOREGROUND", sdl::SDL_EventType::WILL_ENTER_FOREGROUND),
-        ("EVENT_DID_ENTER_FOREGROUND", sdl::SDL_EventType::DID_ENTER_FOREGROUND),
-        ("EVENT_USER", sdl::SDL_EventType::USER),
-        ("EVENT_TERMINATING", sdl::SDL_EventType::TERMINATING),
+        ("EVENT_WINDOW_SHOWN", etype::WINDOW_SHOWN),
+        ("EVENT_WINDOW_EXPOSED", etype::WINDOW_EXPOSED),
+        ("EVENT_WINDOW_RESIZED", etype::WINDOW_RESIZED),
+        ("EVENT_WINDOW_MINIMIZED", etype::WINDOW_MINIMIZED),
+        ("EVENT_WINDOW_MAXIMIZED", etype::WINDOW_MAXIMIZED),
+        ("EVENT_WINDOW_RESTORED", etype::WINDOW_RESTORED),
+        ("EVENT_WINDOW_MOUSE_LEAVE", etype::WINDOW_MOUSE_LEAVE),
+        ("EVENT_WINDOW_FOCUS_GAINED", etype::WINDOW_FOCUS_GAINED),
+        ("EVENT_WINDOW_FOCUS_LOST", etype::WINDOW_FOCUS_LOST),
+        ("EVENT_WINDOW_PIXEL_SIZE_CHANGED", etype::WINDOW_PIXEL_SIZE_CHANGED),
+        ("EVENT_WINDOW_DISPLAY_SCALE_CHANGED", etype::WINDOW_DISPLAY_SCALE_CHANGED),
+        ("EVENT_WILL_ENTER_BACKGROUND", etype::WILL_ENTER_BACKGROUND),
+        ("EVENT_DID_ENTER_BACKGROUND", etype::DID_ENTER_BACKGROUND),
+        ("EVENT_WILL_ENTER_FOREGROUND", etype::WILL_ENTER_FOREGROUND),
+        ("EVENT_DID_ENTER_FOREGROUND", etype::DID_ENTER_FOREGROUND),
+        ("EVENT_USER", FIRST_TYPE),
+        ("EVENT_TERMINATING", etype::TERMINATING),
     ] {
-        hooks.raw_set(name, ty.0 as i64)?;
+        hooks.raw_set(name, ty as i64)?;
     }
     lua.globals().set("lxl_test", hooks)
 }
