@@ -17,7 +17,7 @@ The implementation reference remains **`c80459bc0f464df68b8d8cdff553cd8288519a67
 
 ## Reviewed differences and invariants
 
-Document these six reviewed differences in configuration/interface documentation and test expectations, following their owning resolutions:
+Document these seven reviewed differences in configuration/interface documentation and test expectations, following their owning resolutions:
 
 1. Whole-window opacity is an intentional no-op with existing argument handling and `true` return; remove functional-opacity configuration/UI if present. Do not recover it. Internal drawing alpha remains required.
 2. Portal dialogs control the Cancel label; custom Accept text, filters, parent modality and accept/cancel/error distinctions remain.
@@ -26,6 +26,8 @@ Document these six reviewed differences in configuration/interface documentation
 5. Letter keys are named by their plain letter (`a`-`z`), not SDL's shifted-in-current-layout character (user decision during Step 4; e.g. the Turkish dotless-i key no longer reads `İ`).
 
 6. Keypad digit/decimal names follow each native event's **effective digit/navigation mapping**, not an independently queried NumLock lock bit (user decision during Step 4). Winit 0.30.13 does not expose locked modifiers, and its unmodified key always uses XKB level zero. Infer the keypad level from the effective character/navigation key; do not cache a guessed initial NumLock state or toggle it on keypress. Standard PC keypad layouts retain the existing names; unusual XKB keypad types/variants can differ from SDL's lock-bit-based rule. Physical keypad identity and left/right modifier names remain required. This does not approve a library fork or new lock-state dependency.
+
+7. Native `wait_event` readiness means **actual pending input** (including a pending process quit), not SDL's backend poll-cycle sentinel. The user accepted `false` after the queue has been drained where SDL could still report `true`. String-timeout/extra-argument tests must use real queued input rather than that sentinel; retain non-consuming readiness, timeout/coercion rules, one monotonic deadline and false-on-error behavior. Internal proxy wakes alone are not input.
 
 Also carry the explicitly reviewed early-runtime timing and app-side borderless-zone mechanism. Neither permits losing hit-region/coordinate quirks, title controls, normal quit confirmation or other Lua behavior. Freeze the [complete observable inventory](platform-contract-inventory.md): 41 system functions, four window functions and 26 event shapes, not merely the cases currently covered by tests. Linux remains the supported target; restoring other platforms is out of scope.
 

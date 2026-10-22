@@ -105,6 +105,10 @@ pub fn register_custom_event(name: &[u8], callback: CustomEventCallback) -> Resu
 /// `push_custom_event`: may be called from any thread. On failure the event (and its payload)
 /// is dropped here.
 pub fn push_custom_event(name: &[u8], event: CustomEvent) -> Result<(), String> {
+    push_custom_event_at(name, event, None)
+}
+
+pub fn push_custom_event_at(name: &[u8], event: CustomEvent, generation: Option<u64>) -> Result<(), String> {
     if name.is_empty() || name[0] == b'#' {
         return Err("Invalid event name".into());
     }
@@ -116,10 +120,14 @@ pub fn push_custom_event(name: &[u8], event: CustomEvent) -> Result<(), String> 
         .map(|entry| entry.event_type)
         .ok_or_else(|| format!("Unknown custom event {}", String::from_utf8_lossy(name)))?;
     let custom = Custom { event_type, code: event.code, data1: event.data1, payload: event.payload };
-    if crate::sysevents::post_custom(custom) {
+    let posted = match generation {
+        Some(generation) => crate::platform::post_for_generation(generation, crate::platform::Input::Custom(custom)),
+        None => crate::sysevents::post_custom(custom),
+    };
+    if posted {
         Ok(())
     } else {
-        Err(crate::sysevents::sdl_error())
+        Err("Custom event delivery is closed".into())
     }
 }
 

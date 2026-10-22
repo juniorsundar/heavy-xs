@@ -3,35 +3,26 @@
 //! The userdata holds one `RenWindow *`. One window may be marked persistent so it survives
 //! the Lua state being recreated on restart (`core.restart_request`): `__gc` skips destroying
 //! it and `_restore` hands it to the new state.
+//!
+//! The native owner creates the winit window; this module only asks for it and wraps the
+//! returned registry id in a `RenWindow`.
 
-use std::ffi::{c_int, CStr};
+use std::ffi::{c_char, c_int, CStr};
 use std::ptr;
 
 use mlua::ffi::{
     luaL_checkstring, luaL_checkudata, luaL_error, luaL_newmetatable, luaL_optnumber,
-    luaL_setmetatable, lua_CFunction, lua_State, lua_newuserdata, lua_pushnil, lua_pushnumber,
-    lua_pushvalue, lua_setfield,
+    luaL_setmetatable, lua_CFunction, lua_State, lua_newuserdata, lua_pushlstring, lua_pushnil,
+    lua_pushnumber, lua_pushvalue, lua_setfield, lua_tostring,
 };
-use sdl3_sys::everything as sdl;
 
-use crate::renderer::video_init;
+use crate::native;
 use crate::renwindow::{ren_create, ren_destroy, ren_get_size, RenWindow};
 
 const RENWINDOW_TYPE: &CStr = c"RenWindow";
 
 /// Only touched from the Lua/main thread.
 static mut PERSISTENT_WINDOW: *mut RenWindow = ptr::null_mut();
-
-/// 64x64 RGBA, extracted from `resources/icons/icon.inl` by build.rs.
-static ICON_RGBA: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/icon.rgba"));
-
-unsafe fn init_window_icon(window: *mut sdl::SDL_Window) {
-    let format =
-        sdl::SDL_GetPixelFormatForMasks(32, 0x0000_00ff, 0x0000_ff00, 0x00ff_0000, 0xff00_0000);
-    let surface = sdl::SDL_CreateSurfaceFrom(64, 64, format, ICON_RGBA.as_ptr() as *mut _, 64 * 4);
-    sdl::SDL_SetWindowIcon(window, surface);
-    sdl::SDL_DestroySurface(surface);
-}
 
 unsafe fn check_window(l: *mut lua_State) -> *mut RenWindow {
     *(luaL_checkudata(l, 1, RENWINDOW_TYPE.as_ptr()) as *mut *mut RenWindow)
@@ -44,52 +35,32 @@ unsafe fn push_window(l: *mut lua_State, window: *mut RenWindow) {
 }
 
 unsafe extern "C-unwind" fn f_renwin_create(l: *mut lua_State) -> c_int {
+    // luaL_checkstring is first-NUL: the native title takes the same bytes as SDL did.
     let title = luaL_checkstring(l, 1);
-    let mut width = luaL_optnumber(l, 2, 0.0) as f32;
-    let mut height = luaL_optnumber(l, 3, 0.0) as f32;
+    let width = luaL_optnumber(l, 2, 0.0) as f32;
+    let height = luaL_optnumber(l, 3, 0.0) as f32;
+    let title = CStr::from_ptr(title).to_string_lossy();
 
-    if video_init() != 0 {
-        return luaL_error(
-            l,
-            c"Error creating lite-xl window: %s".as_ptr(),
-            sdl::SDL_GetError(),
-        );
-    }
-
-    if width < 1.0 || height < 1.0 {
-        let mode = sdl::SDL_GetCurrentDisplayMode(sdl::SDL_GetPrimaryDisplay());
-        // The C dereferences this unchecked; a missing display mode is an error here.
-        if mode.is_null() {
-            return luaL_error(
+    let created = native::create(&title, width, height);
+    drop(title);
+    match created {
+        Ok(id) => {
+            push_window(l, ren_create(id));
+            1
+        }
+        Err(message) => {
+            // luaL_error longjmps, which would skip `message`'s destructor: park the text on
+            // the Lua stack first, then drop the Rust allocation before throwing.
+            let (ptr, len) = (message.as_ptr() as *const c_char, message.len());
+            lua_pushlstring(l, ptr, len);
+            drop(message);
+            luaL_error(
                 l,
                 c"Error creating lite-xl window: %s".as_ptr(),
-                sdl::SDL_GetError(),
-            );
-        }
-        if width < 1.0 {
-            width = (*mode).w as f32 * 0.8;
-        }
-        if height < 1.0 {
-            height = (*mode).h as f32 * 0.8;
+                lua_tostring(l, -1),
+            )
         }
     }
-
-    let window = sdl::SDL_CreateWindow(
-        title,
-        width as c_int,
-        height as c_int,
-        sdl::SDL_WINDOW_RESIZABLE | sdl::SDL_WINDOW_HIGH_PIXEL_DENSITY | sdl::SDL_WINDOW_HIDDEN,
-    );
-    if window.is_null() {
-        return luaL_error(
-            l,
-            c"Error creating lite-xl window: %s".as_ptr(),
-            sdl::SDL_GetError(),
-        );
-    }
-    init_window_icon(window);
-    push_window(l, ren_create(window));
-    1
 }
 
 unsafe extern "C-unwind" fn f_renwin_gc(l: *mut lua_State) -> c_int {

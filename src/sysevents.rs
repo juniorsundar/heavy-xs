@@ -1,85 +1,37 @@
-//! `system.poll_event` and `system.wait_event`, ported from `src/api/system.c`.
-//!
-//! Lua only ever sees owned [`Input`] records. `next_input` is the native producer: it takes one
-//! SDL event and converts it into a record, after which no SDL memory is referenced. Records are
-//! taken from SDL one per poll, so SDL keeps its queue and its poll-cycle and wait semantics;
-//! the owned queue only holds what coalescing pulled forward. Custom events pushed from other
-//! threads travel through SDL's queue as a plain integer token naming a Rust-owned record in
-//! `PENDING`, so they keep their order relative to native events and still wake `SDL_WaitEvent`.
-//!
-//! Both are raw `lua_CFunction`s rather than mlua callbacks: `poll_event` returns 0 to 6 values
-//! depending on the event, and custom-event callbacks push straight onto the Lua stack. Nothing
-//! here holds a Rust destructor across a call that can raise a Lua error.
-//!
-//! Deviations from the C, all on paths where it dereferences NULL or overflows:
-//!   * a mouse or touch event for a window that is no longer registered is dropped, where the C
-//!     reads `window_renderer->scale_x` through NULL;
-//!   * key names are built as Rust strings (see `keynames.rs`).
-
-use std::collections::HashMap;
+//! Lua event packing from the shared owned-input queue. Native callbacks never enter Lua.
 use std::ffi::{c_char, c_int, c_void, CStr};
-use std::sync::Mutex;
-
+use std::time::Duration;
 use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushlstring, lua_pushnumber,
     lua_pushstring, luaL_checknumber,
 };
+#[cfg(feature = "test_hooks")]
 use sdl3_sys::everything as sdl;
-
-use crate::custom_events::{get_custom_event_callback_by_type, FIRST_TYPE};
+use crate::custom_events::get_custom_event_callback_by_type;
+#[cfg(feature = "test_hooks")]
+use crate::custom_events::FIRST_TYPE;
 use crate::platform::{self, Custom, FingerKind, Input};
 
 extern "C" {
-    fn ren_find_window_from_id(id: sdl::SDL_WindowID) -> *mut c_void;
+    fn ren_find_window_from_id(id: u32) -> *mut c_void;
     fn ren_resize_window(window: *mut c_void);
     fn ren_get_scale_x(window: *mut c_void) -> f32;
     fn ren_get_scale_y(window: *mut c_void) -> f32;
-    fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
+    fn ren_get_window_id(window: *mut c_void) -> u32;
     fn ren_refresh_after_foreground();
     fn rencache_invalidate();
 }
 
-// ------------------------------------------------------------- custom-event transport
+pub fn post_custom(custom: Custom) -> bool { platform::post(Input::Custom(custom)) }
 
-/// Custom records waiting in SDL's queue, by token. A token is removed exactly once: by
-/// `convert` when SDL hands it back, or by `post_custom` when SDL refused it.
-static PENDING: Mutex<Option<(u64, HashMap<u64, Custom>)>> = Mutex::new(None);
-
-/// Queues a custom record from any thread. False (record dropped) when SDL's queue refused it.
-pub fn post_custom(custom: Custom) -> bool {
-    let event_type = custom.event_type;
-    let token = {
-        let mut guard = PENDING.lock().unwrap();
-        let (next, map) = guard.get_or_insert_with(|| (1, HashMap::new()));
-        let token = *next;
-        *next += 1;
-        map.insert(token, custom);
-        token
-    };
-    let mut e: sdl::SDL_Event = unsafe { std::mem::zeroed() };
-    e.user.r#type = event_type;
-    e.user.data1 = token as usize as *mut c_void;
-    if unsafe { sdl::SDL_PushEvent(&mut e) } {
-        return true;
-    }
-    take_pending(token);
-    false
+unsafe fn native_error(l: *mut lua_State, error: String) -> c_int {
+    lua_pushlstring(l, error.as_ptr() as *const c_char, error.len());
+    drop(error);
+    mlua::ffi::lua_error(l)
 }
 
-fn take_pending(token: u64) -> Option<Custom> {
-    PENDING.lock().unwrap().as_mut()?.1.remove(&token)
-}
-
-pub fn sdl_error() -> String {
-    let message = sdl::SDL_GetError();
-    if message.is_null() {
-        return String::new();
-    }
-    unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned()
-}
-
-// --------------------------------------------------------------- the SDL producer
-
+// Historical numeric injection fixtures are decoded only in hook-enabled builds. No SDL pump.
+#[cfg(feature = "test_hooks")]
 fn bytes(text: *const c_char) -> Vec<u8> {
     if text.is_null() {
         return Vec::new();
@@ -88,7 +40,8 @@ fn bytes(text: *const c_char) -> Vec<u8> {
 }
 
 /// One SDL event as an owned record.
-unsafe fn convert(e: &sdl::SDL_Event) -> Input {
+#[cfg(feature = "test_hooks")]
+pub(crate) unsafe fn injected_input(e: &sdl::SDL_Event) -> Input {
     use sdl::SDL_EventType as T;
     let kind = T(e.r#type);
     match kind {
@@ -153,46 +106,15 @@ unsafe fn convert(e: &sdl::SDL_Event) -> Input {
         T::WILL_ENTER_BACKGROUND => Input::EnteringBackground,
         T::DID_ENTER_BACKGROUND => Input::EnteredBackground,
         _ if e.r#type >= FIRST_TYPE => {
-            // Ours carry a token; anything else in the user range (a forged or foreign event)
-            // is an empty custom record of that type, as SDL delivered it.
-            let token = e.user.data1 as usize as u64;
-            take_pending(token).filter(|c| c.event_type == e.r#type).unwrap_or(Custom {
-                event_type: e.r#type,
-                code: e.user.code,
-                data1: e.user.data1 as usize,
-                payload: None,
+            Input::Custom(Custom {
+                event_type: e.r#type, code: e.user.code,
+                data1: e.user.data1 as usize, payload: None,
             })
-            .into()
         }
         _ => Input::Other,
     }
 }
 
-impl From<Custom> for Input {
-    fn from(custom: Custom) -> Self {
-        Input::Custom(custom)
-    }
-}
-
-/// The next record: one already pulled forward, else one SDL event (SDL frees its strings).
-fn next_input() -> Option<Input> {
-    platform::pop().or_else(|| unsafe {
-        let mut e: sdl::SDL_Event = std::mem::zeroed();
-        sdl::SDL_PollEvent(&mut e).then(|| convert(&e))
-    })
-}
-
-/// Pulls every SDL event of `kind` forward into the owned queue in order, leaving the rest in
-/// SDL's queue (`SDL_PumpEvents` then `SDL_PeepEvents`).
-fn pull_forward(kind: sdl::SDL_EventType) {
-    unsafe {
-        sdl::SDL_PumpEvents();
-        let mut e: sdl::SDL_Event = std::mem::zeroed();
-        while sdl::SDL_PeepEvents(&mut e, 1, sdl::SDL_EventAction::GETEVENT, kind.0, kind.0) > 0 {
-            platform::push(convert(&e));
-        }
-    }
-}
 
 // --------------------------------------------------------------- the Lua side
 
@@ -226,14 +148,18 @@ macro_rules! event {
 }
 
 unsafe fn window_of(id: u32) -> *mut c_void {
-    ren_find_window_from_id(sdl::SDL_WindowID(id))
+    ren_find_window_from_id(id)
 }
 
 /// `f_poll_event`.
 pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
+    if crate::native::initialized() {
+        if let Err(error) = crate::native::pump(Some(Duration::ZERO)) { return native_error(l, error); }
+    }
+    if let Some(error) = platform::take_error() { return native_error(l, error); }
     // `top:` in the C: events that produce nothing loop to the next one.
     loop {
-        let Some(mut input) = next_input() else {
+        let Some(mut input) = platform::pop() else {
             return 0;
         };
 
@@ -267,14 +193,12 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
 
             Input::FocusGained => {
                 // Alt-tabbing can queue several `tab` key presses; discard them.
-                sdl::SDL_FlushEvent(sdl::SDL_EventType::KEY_DOWN.0);
                 platform::remove_all(|i| matches!(i, Input::Key { down: true, .. }));
             }
 
             Input::FileDropped { window, ref path } => {
                 let window = window_of(window);
-                let (mut mx, mut my) = (0f32, 0f32);
-                sdl::SDL_GetMouseState(&mut mx, &mut my);
+                let (mx, my) = if window.is_null() { (0.0, 0.0) } else { crate::native::pointer(ren_get_window_id(window)) };
                 // A drag into the dock can arrive before a window exists.
                 let (sx, sy) = if window.is_null() {
                     (0.0, 0.0)
@@ -308,9 +232,6 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             ),
 
             Input::MouseButton { window, down, button, x, y, clicks } => {
-                if button == 1 {
-                    sdl::SDL_CaptureMouse(down);
-                }
                 let window = window_of(window);
                 if window.is_null() {
                     continue;
@@ -338,7 +259,6 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
 
             Input::MouseMotion { .. } => {
                 // Coalesce queued motion: keep the last position, sum the deltas.
-                pull_forward(sdl::SDL_EventType::MOUSE_MOTION);
                 platform::coalesce(&mut input);
                 let Input::MouseMotion { window, x, y, xrel, yrel } = input else { unreachable!() };
                 let window = window_of(window);
@@ -366,7 +286,6 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
 
             Input::Finger { kind, .. } => {
                 if kind == FingerKind::Motion {
-                    pull_forward(sdl::SDL_EventType::FINGER_MOTION);
                     platform::coalesce(&mut input);
                 }
                 let Input::Finger { window, x, y, dx, dy, finger, .. } = input else { unreachable!() };
@@ -374,8 +293,7 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
                 if window.is_null() {
                     continue;
                 }
-                let (mut w, mut h) = (0, 0);
-                sdl::SDL_GetWindowSize(ren_get_sdl_window(window), &mut w, &mut h);
+                let (w, h) = crate::native::logical_size(ren_get_window_id(window));
                 let (w, h) = (w as f32, h as f32);
                 match kind {
                     FingerKind::Down | FingerKind::Up => {
@@ -434,13 +352,11 @@ pub unsafe extern "C-unwind" fn wait_event(l: *mut lua_State) -> c_int {
     } else {
         None
     };
-    // Only coalescing pulls records forward, and it consumes them at once, so this is SDL's
-    // own readiness.
-    let ready = !platform::is_empty()
-        || match timeout {
-            Some(ms) => sdl::SDL_WaitEventTimeout(std::ptr::null_mut(), ms),
-            None => sdl::SDL_WaitEvent(std::ptr::null_mut()),
-        };
+    let ready = match platform::wait(timeout.map(|ms| Duration::from_millis(ms.max(0) as u64))) {
+        Ok(ready) => ready,
+        Err(error) => return native_error(l, error),
+    };
+    if let Some(error) = platform::take_error() { return native_error(l, error); }
     lua_pushboolean(l, ready as c_int);
     1
 }

@@ -3,7 +3,7 @@
 # bounded process in a runner-owned environment, and diffs it against its recorded golden.
 #   scripts/rust-port/verify.sh [suite,suite,...]   verify (default: every suite with a golden)
 # Environment:
-#   PROFILE       offscreen (default: the historical goldens' driver) | xvfb (private Xvfb, X11)
+#   PROFILE       xvfb (default; native windows require the runner-owned private X11 display)
 #   CARGO_ARGS    extra cargo flags, e.g. "--release"
 #   TARGET_DIR    cargo target dir (default target/contract; the developer's target/debug is left alone)
 #   STAGE_DIR     staged install (default $TARGET_DIR/stage)
@@ -19,13 +19,13 @@
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/scripts/rust-port/private-display.sh"
-profile=${PROFILE:-offscreen}
+profile=${PROFILE:-xvfb}
 target=${TARGET_DIR:-$root/target/contract}
 stage_root=${STAGE_DIR:-$target/stage}
 stage=$stage_root/usr/local
 suites=${1:-$(ls "$root/scripts/rust-port/baseline" | sed "s/\.txt$//" | tr "\n" "," | sed "s/,$//")}
-case $profile in offscreen) expect_backend=offscreen ;; xvfb) expect_backend=x11 ;;
-  *) echo "PROFILE must be offscreen or xvfb" >&2; exit 2 ;; esac
+case $profile in xvfb) expect_backend=x11 ;;
+  *) echo "PROFILE must be xvfb for the native platform" >&2; exit 2 ;; esac
 
 # Cargo reads .cargo/config.toml (CFLAGS for the vendored Lua) from the current directory.
 cd "$root"
@@ -83,6 +83,7 @@ sdl_lines="^(App name|App version|App ID|SDL revision): |^SDL chose (video|rende
 # output of the SDL reference, reviewed and dropped (docs/wayfinder/assets/sdl3-step1-evidence.md).
 sdl_lines="$sdl_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"
 sdl_lines="$sdl_lines|^Note: you can probably enable DRI3 in your Xorg config\$"
+sdl_lines="$sdl_lines|^Lite XL native backend '[^' ]*'\$"
 
 # Preserve the system suite's historical unavailable-clipboard observations. Actual clipboard
 # and primary-selection round trips are asserted separately by clipboard-check.sh on private Xvfb.
@@ -109,7 +110,7 @@ for s in $(echo "$suites" | tr , ' '); do
     rc=$?
     echo "exit status $rc" >>"$raw"
   fi
-  backend=$(sed -n "s/^SDL chose video backend '\(.*\)'\$/\1/p" "$raw" | sort -u | tr '\n' ' ' | sed 's/ $//')
+  backend=$(sed -n -e "s/^SDL chose video backend '\(.*\)'\$/\1/p" -e "s/^Lite XL native backend '\(.*\)'\$/\1/p" "$raw" | sort -u | tr '\n' ' ' | sed 's/ $//')
   LC_ALL=C grep -a -v -E "$sdl_lines" "$raw" >"$out" || true
   if [ -n "$evidence" ]; then
     cp "$out" "$evidence/$s.txt"
