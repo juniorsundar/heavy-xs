@@ -108,12 +108,6 @@ pub fn run() -> ExitCode {
         }
         libc::atexit(quit);
 
-        if crate::renderer::ren_init() != 0 {
-            eprintln!(
-                "Error initializing renderer: {}",
-                CStr::from_ptr(sdl::SDL_GetError()).to_string_lossy()
-            );
-        }
         if !crate::custom_events::init_custom_events() {
             eprintln!(
                 "Error initializing custom events: {}",
@@ -170,7 +164,6 @@ pub fn run() -> ExitCode {
 
         // The event loop is over, so the custom events can go.
         crate::custom_events::free_custom_events();
-        crate::renderer::ren_free();
     }
     ExitCode::SUCCESS
 }

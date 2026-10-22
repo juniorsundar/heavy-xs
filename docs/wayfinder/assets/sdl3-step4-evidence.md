@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport and glyph-atlas storage slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage and translucent-rectangle blend slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -74,6 +74,12 @@ Checks performed:
 - `git diff --check`: pass. Bounded read-only GLM review: no findings.
 
 Logs: `target/step4-atlas/`, `target/step4-atlas-*.log`. Full contracts, Nix and desktop paths not rerun for this slice.
+
+## Translucent-rectangle blend slice
+
+Based on `f464884d`, translucent `ren_draw_rect` no longer stretches a 1x1 SDL `RGBA32` surface. Stretching one colour yields that colour, so it now blends each clipped destination pixel directly with SDL 3.4.18's `ALPHA_BLEND_CHANNEL` arithmetic (`SDL_blit.h:497`, including its `Uint16` truncation), and destination alpha as `(255, dA, sA)` when the format has an alpha mask. `ren_init`/`ren_free` and the global surface are removed with their `src/app.rs` calls. Opaque fills and the destination window surface remain SDL until the draw-target cutover.
+
+Checks: 23 unit tests pass; `renderer` and `rencache` goldens (translucent hashes at alpha 1, 30-210, 128 and 254) pass on private Xvfb and offscreen; bounded GLM review found no actionable issues. Logs: `target/step4-rect/`, `target/step4-rect-*.log`.
 
 ## Remaining work and limits
 
