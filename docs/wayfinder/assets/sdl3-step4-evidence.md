@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name and owned-input-queue slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name, owned-input-queue and sandbox/environment slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -102,6 +102,12 @@ Based on `e19ef020`, staged by user decision: `poll_event`/`wait_event` now hand
 Custom events are registered, numbered (from `0x8000`, never reused, kept across Lua restart) and dispatched in Rust; callbacks take an owned record. Pushes from worker threads still travel through SDL's queue as an integer token naming a Rust-owned record, which keeps ordering relative to native events and wakes `SDL_WaitEvent`. Dialog results and forged test events carry owned payloads: no `SDL_malloc`/`SDL_strdup`/`SDL_free` of event payloads remains. `init_custom_events` can no longer fail, so its startup error path is gone. Shortcut, documented in `platform.rs`: SDL token transport and producer remain until the native pump replaces them; tokens still queued in SDL at exit are freed with the process. The plugin API exposes no SDL, so nothing outside the editor can mint colliding SDL event types.
 
 Checks: 28 unit tests pass (queue order/flush/coalescing and registry numbering/refusals/restart added); all 18 contract suites pass on private Xvfb and offscreen with unchanged goldens; `startup-check.sh` 12/12 on dummy and private Xvfb; `normal-build-check.sh` 4/4; normal and hook builds warning-free; bounded GLM review found no blockers. Logs: `target/step4-queue/`, `target/step4-queue-*.log`.
+
+## Sandbox, environment and platform slice
+
+Based on `733568fb`: `get_sandbox`, `setenv` and the `PLATFORM` global no longer call SDL. `PLATFORM` is the literal `"Linux"` (Linux is the only supported target). `app::run` calls `system::snapshot_environment` where `SDL_Init` used to snapshot the environment: it records only whether `SNAP`, `SNAP_NAME` and `SNAP_REVISION` are present (empty counts, as `SDL_getenv` saw them). `setenv` keeps SDL's rules (empty or `=`-containing names are refused, C-string truncation, always overwrite), sets that snapshot flag first and then calls libc `setenv`, so an external change is invisible to the snapshot exactly as before. `get_sandbox` classifies at its first call with SDL 3.4's Linux priority (`/.flatpak-info`, then all three SNAP variables, then `/run/host/container-manager`, else `none`) and caches the answer for the life of the process, across Lua restarts. No window, portal or Tokio is involved.
+
+Checks: 30 unit tests pass, including priority and snapshot/setter semantics. `startup-check.sh` gained real-process cases: `none` cached across a restart, SNAP set at launch with empty `SNAP` counting, and a `setenv` after the first answer not changing it; 15/15 on private Xvfb and on dummy. All 18 contract suites pass on both profiles with unchanged goldens (the `sandbox`/`setenv` rows included); `normal-build-check.sh` 4/4; bounded GLM review found no blockers. Not tested: a real Flatpak or container-manager filesystem marker (classification of those two inputs is unit-tested only). Logs: `target/step4-env-*.log`.
 
 ## Remaining work and limits
 

@@ -17,7 +17,7 @@ share=$stage/share/lite-xl
 
 work=$(mktemp -d)
 # The runtimes below live in the staged install; remove them even on interrupt.
-cleanup() { pd_profile_stop; rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua"; }
+cleanup() { pd_profile_stop; rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua" "$share/startup_sandbox.lua"; }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 pd_profile_start "${STARTUP_PROFILE:-dummy}" "$work/display"
@@ -58,6 +58,36 @@ check "restart: two runs" "$(grep -c '^STARTUP run' "$out")" 2
 check "restart: first run not RESTARTED" "$(grep -c '^STARTUP run false args 2 extra-arg platform Linux arch ok exe lite-xl datadir true' "$out")" 1
 check "restart: second run RESTARTED" "$(grep -c '^STARTUP run true ' "$out")" 1
 check "restart: window survives" "$(grep -c '^STARTUP restored yes 200' "$out")" 1
+
+# --- sandbox classification: get_sandbox reads the environment as it was at process start (SDL's
+# snapshot), updated only by system.setenv, and caches its first answer across a Lua restart.
+cat > "$share/startup_sandbox.lua" <<'LUA'
+local M = {}
+local function say(...) io.stderr:write("SANDBOX ", table.concat({...}, " "), "\n") end
+function M.init()
+  if not RESTARTED then
+    say("first", system.get_sandbox())
+    system.setenv("SNAP_REVISION", "1") -- completes the set, but the answer is already cached
+    M.restart_request = true
+  else
+    say("again", system.get_sandbox())
+    M.restart_request = false
+  end
+end
+function M.run() end
+function M.on_error(e) say("error", tostring(e)) end
+return M
+LUA
+sandbox_run() { # name, env assignments...
+  local name=$1; shift
+  ( cd "$work" && pd_profile=dummy && pd_run LITE_PREFIX="$stage" LITE_XL_RUNTIME=startup_sandbox "$@" timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" >"$work/sandbox_$name.log" 2>&1 ) || true
+}
+sandbox_run none
+check "sandbox: none, cached across restart" "$(grep '^SANDBOX' "$work/sandbox_none.log" | tr '\n' ' ')" "SANDBOX first none SANDBOX again none "
+sandbox_run snap SNAP= SNAP_NAME=n SNAP_REVISION=1
+check "sandbox: snap needs all three (empty counts)" "$(grep '^SANDBOX first' "$work/sandbox_snap.log")" "SANDBOX first snap"
+sandbox_run partial SNAP=1 SNAP_NAME=n
+check "sandbox: setenv after start is too late once cached" "$(grep '^SANDBOX' "$work/sandbox_partial.log" | tr '\n' ' ')" "SANDBOX first none SANDBOX again none "
 
 # --- startup failure: a runtime that cannot load must exit 1 and leave error.txt. The fatal
 # error dialog is attempted, so the process gets no display or bus that could show a real one.

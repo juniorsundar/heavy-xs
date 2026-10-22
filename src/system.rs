@@ -11,6 +11,7 @@
 //! Deviations from the C are noted next to the code and listed in docs/rust-port/PLAN.md.
 
 use std::ffi::{c_char, c_void, CStr, CString};
+use std::os::unix::ffi::OsStrExt;
 
 use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
 use sdl3_sys::everything as sdl;
@@ -325,22 +326,109 @@ fn exec(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
     Ok(())
 }
 
-/// `f_setenv`: always overwrites.
+// SDL kept its own snapshot of the environment (built when SDL initialised, before Lua) and
+// `get_sandbox` read the SNAP variables from it, not from the live environment; `setenv` updated
+// both. The three presence flags are all the classification needs.
+const SNAP_VARS: [&[u8]; 3] = [b"SNAP", b"SNAP_NAME", b"SNAP_REVISION"];
+static SNAP_SNAPSHOT: std::sync::Mutex<[bool; 3]> = std::sync::Mutex::new([false; 3]);
+
+/// Captures the snapshot at the point SDL used to: process start, before any Lua.
+pub fn snapshot_environment() {
+    let mut snapshot = SNAP_SNAPSHOT.lock().unwrap();
+    for (present, name) in snapshot.iter_mut().zip(SNAP_VARS) {
+        // SDL_getenv saw a variable whatever its value, empty included.
+        *present = std::env::var_os(std::ffi::OsStr::from_bytes(name)).is_some();
+    }
+}
+
+/// `f_setenv`: always overwrites. Validation, NUL truncation and the result are libc's and
+/// SDL's: an empty name, a name containing `=` or a failing libc call is `false`.
 fn setenv(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
     let key = cstr(&bytes_of(&check_string(lua, &args, 0, "setenv")?));
     let value = cstr(&bytes_of(&check_string(lua, &args, 1, "setenv")?));
-    Ok(unsafe { sdl::SDL_setenv_unsafe(key.as_ptr(), value.as_ptr(), 1) } == 0)
+    let name = key.as_bytes();
+    if name.is_empty() || name.contains(&b'=') {
+        return Ok(false);
+    }
+    // SDL updated its snapshot before the OS, so a refused libc call still showed here.
+    if let Some(i) = SNAP_VARS.iter().position(|v| *v == name) {
+        SNAP_SNAPSHOT.lock().unwrap()[i] = true;
+    }
+    Ok(unsafe { libc::setenv(key.as_ptr(), value.as_ptr(), 1) } == 0)
 }
 
+/// SDL 3.4's Linux sandbox priority, over already-gathered facts.
+fn classify_sandbox(flatpak_info: bool, snap: [bool; 3], container_manager: bool) -> &'static str {
+    if flatpak_info {
+        "flatpak"
+    } else if snap.iter().all(|present| *present) {
+        "snap"
+    } else if container_manager {
+        "unknown"
+    } else {
+        "none"
+    }
+}
+
+fn accessible(path: &CStr) -> bool {
+    unsafe { libc::access(path.as_ptr(), libc::F_OK) == 0 }
+}
+
+/// `get_sandbox`: classified at the first call, then cached for the life of the process (so it
+/// survives a Lua restart), independent of any window or portal. Needs `snapshot_environment`
+/// to have run at startup (`app::run` does), or the SNAP variables read as absent.
 fn get_sandbox(_: &Lua, _: Variadic<Value>) -> LuaResult<&'static str> {
-    Ok(match unsafe { sdl::SDL_GetSandbox() } {
-        sdl::SDL_Sandbox::NONE => "none",
-        sdl::SDL_Sandbox::UNKNOWN_CONTAINER => "unknown",
-        sdl::SDL_Sandbox::FLATPAK => "flatpak",
-        sdl::SDL_Sandbox::SNAP => "snap",
-        sdl::SDL_Sandbox::MACOS => "macos",
-        _ => "unknown",
-    })
+    static SANDBOX: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
+    Ok(SANDBOX.get_or_init(|| {
+        let snap = *SNAP_SNAPSHOT.lock().unwrap();
+        classify_sandbox(accessible(c"/.flatpak-info"), snap, accessible(c"/run/host/container-manager"))
+    }))
+}
+
+#[cfg(test)]
+mod sandbox_tests {
+    use super::*;
+
+    #[test]
+    fn sandbox_priority_matches_sdl() {
+        let none = [false; 3];
+        let all = [true; 3];
+        assert_eq!(classify_sandbox(true, all, true), "flatpak");
+        assert_eq!(classify_sandbox(false, all, true), "snap");
+        // All three variables are needed: they are set for unrelated reasons too.
+        assert_eq!(classify_sandbox(false, [true, true, false], false), "none");
+        assert_eq!(classify_sandbox(false, [true, true, false], true), "unknown");
+        assert_eq!(classify_sandbox(false, none, true), "unknown");
+        assert_eq!(classify_sandbox(false, none, false), "none");
+    }
+
+    #[test]
+    fn snapshot_is_taken_once_and_setenv_updates_it() {
+        // Process-global state: this is the only test that touches the SNAP variables.
+        for name in SNAP_VARS {
+            std::env::remove_var(std::ffi::OsStr::from_bytes(name));
+        }
+        std::env::set_var("SNAP", ""); // present but empty counts, as SDL_getenv saw it
+        std::env::set_var("SNAP_NAME", "x");
+        snapshot_environment();
+        assert_eq!(*SNAP_SNAPSHOT.lock().unwrap(), [true, true, false]);
+        // A change made outside the public setter is invisible to the snapshot.
+        std::env::set_var("SNAP_REVISION", "1");
+        assert_eq!(*SNAP_SNAPSHOT.lock().unwrap(), [true, true, false]);
+        // The public setter updates both, and refuses what SDL refused.
+        let lua = Lua::new();
+        let call = |k: &str, v: &str| setenv(&lua, Variadic::from_iter([
+            Value::String(lua.create_string(k).unwrap()),
+            Value::String(lua.create_string(v).unwrap()),
+        ])).unwrap();
+        assert!(call("SNAP_REVISION", "2"));
+        assert_eq!(*SNAP_SNAPSHOT.lock().unwrap(), [true, true, true]);
+        assert!(!call("", "v"));
+        assert!(!call("A=B", "v"));
+        for name in SNAP_VARS {
+            std::env::remove_var(std::ffi::OsStr::from_bytes(name));
+        }
+    }
 }
 
 // ----------------------------------------------------------------- clipboard
