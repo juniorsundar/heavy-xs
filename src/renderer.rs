@@ -78,10 +78,19 @@ impl CharMap {
     }
 }
 
-/// One atlas surface: the SDL surface plus its current `"metric"` property (the C stores the
+/// Coverage bytes of one atlas surface: 3 per pixel (subpixel RGB) or 1 (grayscale), rows
+/// `pitch` bytes apart, zero-filled.
+struct Coverage {
+    pixels: Vec<u8>,
+    pitch: c_int,
+    h: c_int,
+}
+
+/// One atlas surface: its coverage plus its current `"metric"` property (the C stores the
 /// same pointer in an SDL property; a Rust `Option` keeps the semantics without the FFI).
+/// Boxed so pointers handed out stay valid while the atlas grows.
 struct AtlasSurface {
-    surface: *mut sdl::SDL_Surface,
+    surface: Box<Coverage>,
     metric: Option<*mut GlyphMetric>,
 }
 
@@ -132,14 +141,6 @@ pub struct RenFont {
 /// The 1x1 surface `ren_draw_rect` blits for translucent rectangles.
 static mut DRAW_RECT_SURFACE: *mut sdl::SDL_Surface = ptr::null_mut();
 
-fn check_alloc<T>(ptr: *mut T) -> *mut T {
-    if ptr.is_null() {
-        eprintln!("renderer: memory allocation failed");
-        std::process::exit(1);
-    }
-    ptr
-}
-
 // --------------------------------------------------------------- font helpers
 
 fn font_is_subpixel(font: &RenFont) -> bool {
@@ -154,11 +155,11 @@ fn font_bitmap_count(font: &RenFont) -> usize {
     }
 }
 
-fn glyphformat_to_pixelformat(format: usize) -> sdl::SDL_PixelFormat {
-    match format {
-        EGLYPH_FORMAT_SUBPIXEL => sdl::SDL_PixelFormat::RGB24,
-        EGLYPH_FORMAT_GRAYSCALE => sdl::SDL_PixelFormat::INDEX8,
-        _ => sdl::SDL_PixelFormat::UNKNOWN,
+fn glyphformat_bytes_per_pixel(format: usize) -> c_int {
+    if format == EGLYPH_FORMAT_SUBPIXEL {
+        3
+    } else {
+        1
     }
 }
 
@@ -237,7 +238,7 @@ unsafe fn font_allocate_glyph_surface(
     glyph_format: usize,
     bitmap_rows: c_int,
     metric: *mut GlyphMetric,
-) -> *mut sdl::SDL_Surface {
+) -> *mut Coverage {
     let mut atlas_idx: c_int = -1;
     for (i, atlas) in font.glyphs.atlas[glyph_format].iter().enumerate() {
         if atlas.width >= (*metric).x1 {
@@ -267,7 +268,7 @@ unsafe fn font_allocate_glyph_surface(
             let last = atlas.surfaces[i as usize]
                 .metric
                 .expect("atlas surface metric");
-            let new_min_waste = (*atlas.surfaces[i as usize].surface).h - (*last).y1 as c_int;
+            let new_min_waste = atlas.surfaces[i as usize].surface.h - (*last).y1 as c_int;
             if new_min_waste >= (*metric).y1 as c_int && new_min_waste < min_waste {
                 surface_idx = i;
                 min_waste = new_min_waste;
@@ -283,18 +284,18 @@ unsafe fn font_allocate_glyph_surface(
             if h <= FONT_HEIGHT_OVERFLOW_PX {
                 h += font.size as c_int;
             }
-            let format = glyphformat_to_pixelformat(glyph_format);
-            let surface = check_alloc(sdl::SDL_CreateSurface(
-                atlas.width as c_int,
-                GLYPHS_PER_ATLAS * h,
-                format,
-            ));
+            let pitch = atlas.width as c_int * glyphformat_bytes_per_pixel(glyph_format);
+            let h = GLYPHS_PER_ATLAS * h;
             atlas.surfaces.push(AtlasSurface {
-                surface,
+                surface: Box::new(Coverage {
+                    pixels: vec![0; pitch as usize * h as usize],
+                    pitch,
+                    h,
+                }),
                 metric: None,
             });
-            font.glyphs.bytesize += std::mem::size_of::<*mut sdl::SDL_Surface>()
-                + std::mem::size_of::<sdl::SDL_Surface>()
+            font.glyphs.bytesize += std::mem::size_of::<AtlasSurface>()
+                + std::mem::size_of::<Coverage>()
                 + atlas.width as usize * GLYPHS_PER_ATLAS as usize * h as usize * glyph_format;
             surface_idx = atlas.surfaces.len() as c_int - 1;
         }
@@ -306,7 +307,7 @@ unsafe fn font_allocate_glyph_surface(
             (*metric).y1 = (*metric).y1.wrapping_add((*last).y1);
         }
         entry.metric = Some(metric);
-        entry.surface
+        &mut *entry.surface
     }
 }
 
@@ -352,14 +353,14 @@ unsafe fn font_load_glyph_bitmap(
     font: &mut RenFont,
     glyph_id: u32,
     bitmap_idx: usize,
-) -> *mut sdl::SDL_Surface {
+) -> *mut Coverage {
     let metric = font_load_glyph_metric(font, glyph_id, bitmap_idx);
     if metric.is_null() {
         return ptr::null_mut();
     }
     if (*metric).flags & EGLYPH_BITMAP != 0 {
-        return font.glyphs.atlas[(*metric).format as usize][(*metric).atlas_idx as usize].surfaces
-            [(*metric).surface_idx as usize]
+        return &mut *font.glyphs.atlas[(*metric).format as usize][(*metric).atlas_idx as usize]
+            .surfaces[(*metric).surface_idx as usize]
             .surface;
     }
 
@@ -383,15 +384,12 @@ unsafe fn font_load_glyph_bitmap(
     (*metric).flags |= EGLYPH_BITMAP;
     (*metric).format = format as u8;
     let surface = font_allocate_glyph_surface(font, format, image.rows as c_int, metric);
-    let pixels = (*surface).pixels as *mut u8;
-    let row_bytes = image.width as usize * if image.subpixel { 3 } else { 1 };
+    let coverage = &mut *surface;
+    let row_bytes = image.width as usize * glyphformat_bytes_per_pixel(format) as usize;
     for line in 0..image.rows as usize {
-        let target = (*surface).pitch as usize * (line + (*metric).y0 as usize);
-        ptr::copy_nonoverlapping(
-            image.data.as_ptr().add(line * row_bytes),
-            pixels.add(target),
-            row_bytes,
-        );
+        let target = coverage.pitch as usize * (line + (*metric).y0 as usize);
+        coverage.pixels[target..target + row_bytes]
+            .copy_from_slice(&image.data[line * row_bytes..(line + 1) * row_bytes]);
     }
     surface
 }
@@ -404,7 +402,7 @@ unsafe fn font_group_get_glyph(
     fonts: *mut *mut RenFont,
     codepoint: u32,
     mut subpixel_idx: c_int,
-    surface: *mut *mut sdl::SDL_Surface,
+    surface: *mut *mut Coverage,
     metric: *mut *mut GlyphMetric,
 ) -> *mut RenFont {
     if subpixel_idx < 0 {
@@ -446,11 +444,6 @@ unsafe fn font_group_get_glyph(
 
 unsafe fn font_clear_glyph_cache(font: &mut RenFont) {
     for glyph_format_idx in 0..EGLYPH_FORMAT_SIZE {
-        for atlas in font.glyphs.atlas[glyph_format_idx].iter() {
-            for entry in atlas.surfaces.iter() {
-                sdl::SDL_DestroySurface(entry.surface);
-            }
-        }
         font.glyphs.atlas[glyph_format_idx].clear();
     }
     for subpixel_idx in 0..font_bitmap_count(font) {
@@ -728,7 +721,7 @@ pub unsafe extern "C" fn ren_draw_text(
     while p < end {
         let mut codepoint: u32 = 0;
         p = utf8_to_codepoint(p, end, &mut codepoint);
-        let mut font_surface: *mut sdl::SDL_Surface = ptr::null_mut();
+        let mut font_surface: *mut Coverage = ptr::null_mut();
         let mut metric: *mut GlyphMetric = ptr::null_mut();
         let subpixel_idx = (pen_x % 1.0 * SUBPIXEL_BITMAPS_CACHED as f64) as c_int;
         let font = font_group_get_glyph(
@@ -766,9 +759,9 @@ pub unsafe extern "C" fn ren_draw_text(
             && end_x >= clip.x
             && start_x < clip_end_x
         {
-            let source_pixels = (*font_surface).pixels as *mut u8;
+            let source_pixels = (*font_surface).pixels.as_ptr();
             let format = sdl::SDL_GetPixelFormatDetails((*surface).format);
-            let font_format = sdl::SDL_GetPixelFormatDetails((*font_surface).format);
+            let font_bytes_per_pixel = glyphformat_bytes_per_pixel((*metric).format as usize);
             let subpixel = (*metric).format as usize == EGLYPH_FORMAT_SUBPIXEL;
 
             for line in (*metric).y0..(*metric).y1 {
@@ -798,8 +791,7 @@ pub unsafe extern "C" fn ren_draw_text(
                         as isize,
                 ) as *mut u32;
                 let mut source_pixel = source_pixels.offset(
-                    (line as c_int * (*font_surface).pitch
-                        + glyph_start * (*font_format).bytes_per_pixel as c_int)
+                    (line as c_int * (*font_surface).pitch + glyph_start * font_bytes_per_pixel)
                         as isize,
                 );
 
