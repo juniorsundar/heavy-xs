@@ -130,6 +130,12 @@ fn ensure() -> Result<(), String> {
     })
 }
 
+#[cfg(test)]
+pub(crate) fn untouched() -> bool { OWNER.with(|cell| matches!(*cell.borrow(), Slot::Empty)) }
+
+#[cfg(test)]
+static INPUT_WAKES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+
 pub fn initialized() -> bool {
     OWNER.with(|cell| matches!(*cell.borrow(), Slot::Ready(_)))
 }
@@ -354,7 +360,10 @@ impl ApplicationHandler<Wake> for Owner {
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) { self.create_pending(event_loop); }
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: Wake) {
         match event {
-            Wake::Input => {},
+            Wake::Input => {
+                #[cfg(test)]
+                INPUT_WAKES.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            },
             Wake::ReleaseParent(token) => { self.parents.remove(&token); },
             #[cfg(test)]
             Wake::Panic => panic!("test native callback unwind"),
@@ -424,6 +433,60 @@ mod tests {
         assert!(parent.window().window_handle().is_ok());
         drop(parent); // the main owner retains resources until process exit, without another pump
     }
+
+    fn proxy_race(after_store: bool, signal: libc::c_int) {
+        use std::sync::{Arc, Barrier, atomic::Ordering};
+        assert_eq!(std::env::var("LXL_PRIVATE_DISPLAY_TEST").as_deref(), Ok("1"), "run via dialog-check.sh");
+        assert!(untouched() && platform::accepts(platform::generation()) && !platform::ready());
+        unsafe { libc::signal(libc::SIGINT, libc::SIG_DFL); libc::signal(libc::SIGTERM, libc::SIG_DFL); }
+        crate::services::init_signals().unwrap();
+        let gate = Arc::new(Barrier::new(2));
+        *platform::PUBLISH_GATE.lock().unwrap() = Some((after_store, gate.clone()));
+        let producer = std::thread::spawn(move || {
+            gate.wait();
+            assert_eq!(unsafe { libc::raise(signal) }, 0);
+            let deadline = std::time::Instant::now() + Duration::from_secs(2);
+            while crate::services::QUITS_DELIVERED.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            // Release even on failure so the main thread can report it rather than deadlock.
+            let delivered = crate::services::QUITS_DELIVERED.load(Ordering::SeqCst);
+            gate.wait();
+            assert_eq!(delivered, 1);
+        });
+        ensure().unwrap();
+        producer.join().unwrap();
+        *platform::PUBLISH_GATE.lock().unwrap() = None;
+        assert!(platform::ready() && platform::ready());
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        while INPUT_WAKES.load(Ordering::SeqCst) == 0 && std::time::Instant::now() < deadline {
+            pump(Some(Duration::from_millis(10))).unwrap();
+        }
+        assert!(INPUT_WAKES.load(Ordering::SeqCst) > 0, "no real proxy wake reached the native callback");
+        platform::retire_generation();
+        assert!(platform::ready());
+        assert_eq!(platform::pop(), Some(Input::Quit));
+        assert_eq!(platform::pop(), None);
+        assert!(!platform::wait(Some(Duration::from_millis(20))).unwrap());
+        crate::services::close();
+        platform::close();
+    }
+
+    #[test]
+    #[ignore = "isolated proxy race; dialog-check.sh supplies a private display"]
+    fn sigint_before_proxy_publication() { proxy_race(false, libc::SIGINT); }
+
+    #[test]
+    #[ignore = "isolated proxy race; dialog-check.sh supplies a private display"]
+    fn sigterm_before_proxy_publication() { proxy_race(false, libc::SIGTERM); }
+
+    #[test]
+    #[ignore = "isolated proxy race; dialog-check.sh supplies a private display"]
+    fn sigint_after_proxy_publication() { proxy_race(true, libc::SIGINT); }
+
+    #[test]
+    #[ignore = "isolated proxy race; dialog-check.sh supplies a private display"]
+    fn sigterm_after_proxy_publication() { proxy_race(true, libc::SIGTERM); }
 
     #[test]
     fn resize_zones_keep_editor_quirks() {

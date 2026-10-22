@@ -35,7 +35,17 @@ fixture=$(jq -r 'select(.reason == "compiler-artifact" and .target.name == "lite
 if ! pd_run env LXL_PRIVATE_DISPLAY_TEST=1 timeout -k 1 10 "$fixture" --exact native::tests::pump_unwind_keeps_parent_alive --ignored >"$work/unwind.log" 2>&1; then
   tail -n 30 "$work/unwind.log"; exit 1
 fi
+grep -q "test result: ok. 1 passed;" "$work/unwind.log"
 echo "OK   callback unwind: parent and display ownership restored"
+for phase in before after; do
+  for signal in int term; do
+    if ! pd_run env LXL_PRIVATE_DISPLAY_TEST=1 timeout -k 1 10 "$fixture" --exact "native::tests::sig${signal}_${phase}_proxy_publication" --ignored >"$work/proxy-$phase-$signal.log" 2>&1; then
+      tail -n 30 "$work/proxy-$phase-$signal.log"; exit 1
+    fi
+    grep -q "test result: ok. 1 passed;" "$work/proxy-$phase-$signal.log"
+    echo "OK   proxy SIG$signal $phase: real signal/callback wake, one quit across retirement, no phantom readiness"
+  done
+done
 # shellcheck disable=SC2046
 cc -Wall -Wextra -Werror "$root/tests/contract/native-input.c" -o "$work/parent-check" $(pkg-config --cflags --libs x11 xtst)
 # No service directories: the fake bus cannot activate a real portal/helper.
