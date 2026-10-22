@@ -1,6 +1,6 @@
 //! Process-lived services: the shared Tokio runtime and SIGINT/SIGTERM quit requests.
 //!
-//! Startup inspects the previous dispositions before SDL or Lua. Only default-disposition
+//! Startup inspects the previous dispositions before Lua or any native display. Only default-disposition
 //! signals are captured; ignored and pre-existing custom handlers are left alone, as is
 //! SIGPIPE. Signal tasks only publish owned Rust state through `platform`; they never enter
 //! Lua or terminate the process.
@@ -17,7 +17,7 @@ static CLOSING: AtomicBool = AtomicBool::new(false);
 
 /// Inspects SIGINT/SIGTERM and registers listeners for the default-disposition ones.
 ///
-/// Must run before SDL event initialization and before Lua. If any listener is needed this
+/// Must run before native display initialization and before Lua. If any listener is needed this
 /// also initializes the shared runtime, so a later [`runtime`] call reuses it. A setup failure
 /// is returned to the caller, which reports it and exits nonzero before starting Lua.
 pub fn init_signals() -> Result<(), String> {
@@ -167,6 +167,30 @@ mod tests {
         }
         close();
         crate::platform::close();
+    }
+
+    #[test]
+    fn fatal_runtime_failure_keeps_diagnostics() {
+        let output = std::process::Command::new("timeout")
+            .args(["-k", "1", "10"])
+            .arg(std::env::current_exe().unwrap())
+            .args(["--exact", "services::tests::fatal_runtime_child", "--ignored", "--nocapture"])
+            .env("LXL_FATAL_RUNTIME_TEST", "1")
+            .env("DBUS_SESSION_BUS_ADDRESS", "unix:path=/nonexistent-lite-xl-test-bus")
+            .env_remove("DISPLAY").env_remove("WAYLAND_DISPLAY").env_remove("WAYLAND_SOCKET")
+            .env_remove("XDG_RUNTIME_DIR").env_remove("XAUTHORITY")
+            .output().unwrap();
+        assert!(output.status.success(), "{:?}: {}", output.status, String::from_utf8_lossy(&output.stdout));
+        assert_eq!(output.stderr, b"Fatal runtime: original diagnostic\n");
+    }
+
+    #[test]
+    #[ignore = "isolated cached-runtime failure; invoked by fatal_runtime_failure_keeps_diagnostics"]
+    fn fatal_runtime_child() {
+        assert_eq!(std::env::var("LXL_FATAL_RUNTIME_TEST").as_deref(), Ok("1"));
+        assert!(RUNTIME.set(Err("scripted runtime initialization failure".into())).is_ok());
+        crate::fatal::report(b"Fatal runtime".to_vec(), b"original diagnostic".to_vec());
+        assert_eq!(runtime().unwrap_err(), "scripted runtime initialization failure");
     }
 
     #[test]

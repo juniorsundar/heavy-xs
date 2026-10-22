@@ -9,11 +9,6 @@ use mlua::ffi::{
     lua_createtable, lua_pcall, lua_pushboolean, lua_pushlstring, lua_pushstring, lua_rawseti,
     lua_setglobal, lua_toboolean,
 };
-use sdl3_sys::everything as sdl;
-
-const VERSION: &CStr = unsafe {
-    CStr::from_bytes_with_nul_unchecked(concat!(env!("LITE_PROJECT_VERSION_STR"), "\0").as_bytes())
-};
 const ARCH_TUPLE: &CStr = unsafe {
     CStr::from_bytes_with_nul_unchecked(concat!(env!("LITE_ARCH_TUPLE"), "\0").as_bytes())
 };
@@ -97,30 +92,16 @@ unsafe extern "C-unwind" fn close_platform(_: *mut lua_State) -> c_int {
 pub fn run() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
-        // Where SDL_Init used to snapshot the environment: before Lua, before any setenv.
+        // Capture the startup environment before Lua or any system.setenv.
         crate::system::snapshot_environment();
         if let Err(error) = crate::services::init_signals() {
             eprintln!("Error initializing process services: {error}");
             return ExitCode::FAILURE;
         }
 
-        sdl::SDL_SetAppMetadata(
-            c"Lite XL".as_ptr(),
-            VERSION.as_ptr(),
-            c"com.lite_xl.LiteXL".as_ptr(),
-        );
-        if !sdl::SDL_Init(sdl::SDL_INIT_EVENTS) {
-            eprint!(
-                "Error initializing sdl: {}",
-                CStr::from_ptr(sdl::SDL_GetError()).to_string_lossy()
-            );
-            std::process::exit(1);
-        }
-        sdl::SDL_SetEventEnabled(sdl::SDL_EVENT_DROP_FILE.into(), true);
         extern "C" fn quit() {
             crate::platform::close();
             crate::services::close();
-            unsafe { sdl::SDL_Quit() }
         }
         libc::atexit(quit);
 
@@ -152,9 +133,6 @@ pub fn run() -> ExitCode {
             lua_setglobal(l, c"RESTARTED".as_ptr());
             lua_pushlstring(l, exe.as_ptr() as *const _, exe.len());
             lua_setglobal(l, c"EXEFILE".as_ptr());
-
-            sdl::SDL_SetEventEnabled(sdl::SDL_EVENT_TEXT_INPUT.into(), true);
-            sdl::SDL_SetEventEnabled(sdl::SDL_EVENT_TEXT_EDITING.into(), true);
 
             if luaL_loadstring(l, INIT_LITE_CODE.as_ptr()) != 0 {
                 eprintln!("internal error when starting the application");

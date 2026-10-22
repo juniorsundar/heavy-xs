@@ -205,7 +205,10 @@ function system.clear_ime(window) end
 function system.raise_window(window) end
 
 ---
----Opens a message box to display an error message.
+---Writes the report to stderr and attempts a critical, nonmodal desktop notification.
+---Notification IPC is best effort and bounded by one two-second deadline; acceptance
+---does not guarantee presentation or retention after exit. No window is required.
+---Non-UTF-8 report bytes remain on stderr but are not sent over D-Bus.
 ---
 ---@param title string
 ---@param message string
