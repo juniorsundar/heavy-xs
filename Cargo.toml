@@ -29,13 +29,21 @@ rustix = { version = "=1.1.5", default-features = false, features = ["time", "th
 # Native plugins: dlopen/dlsym behind an owned handle (system.load_native_plugin).
 libloading = "=0.8.9"
 # Native platform cutover (SDL remains linked until the final packaging step).
-winit = { version = "=0.30.13", features = ["wayland", "x11"] }
-softbuffer = { git = "https://github.com/rust-windowing/softbuffer", rev = "9a7c9caf4ac29a8ae361d68c9a5babb97e36dc70", default-features = false, features = ["wayland", "wayland-dlopen", "x11", "x11-dlopen"] }
-arboard = { version = "=3.7.0", default-features = false, features = ["wayland-data-control"] }
-ashpd = { version = "=0.13.13", features = ["file_chooser", "raw_handle", "wayland"] }
+# X11 (native or XWayland) by default; the `wayland` feature adds the native Wayland backend.
+winit = { version = "=0.30.13", default-features = false, features = ["rwh_06", "x11"] }
+softbuffer = { git = "https://github.com/rust-windowing/softbuffer", rev = "9a7c9caf4ac29a8ae361d68c9a5babb97e36dc70", default-features = false, features = ["x11", "x11-dlopen"] }
+arboard = { version = "=3.7.0", default-features = false }
+ashpd = { version = "=0.13.13", features = ["file_chooser", "raw_handle"] }
 tokio = { version = "=1.53.3", features = ["rt", "rt-multi-thread", "net", "time", "signal", "sync"] }
 
 [features]
+# Native Wayland windows, presentation, clipboard and dialog parenting. Known gaps against SDL:
+# no file drop and no window icon on native Wayland (winit 0.30.13 implements neither there).
+wayland = [
+    "winit/wayland", "winit/wayland-dlopen", "winit/wayland-csd-adwaita",
+    "softbuffer/wayland", "softbuffer/wayland-dlopen",
+    "arboard/wayland-data-control", "ashpd/wayland",
+]
 # Test-only synthetic event injection (src/test_hooks.rs). Never enable in a shipping build.
 test_hooks = []
 

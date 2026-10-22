@@ -11,6 +11,7 @@ use winit::dpi::{LogicalSize, PhysicalPosition, PhysicalSize};
 use winit::event::{ElementState, MouseButton, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop};
 use winit::platform::pump_events::{EventLoopExtPumpEvents, PumpStatus};
+#[cfg(feature = "wayland")]
 use winit::platform::wayland::EventLoopExtWayland;
 use winit::window::{CursorIcon, Icon, ResizeDirection, Window, WindowId};
 
@@ -116,7 +117,10 @@ fn ensure() -> Result<(), String> {
                 return Err(error);
             }
         };
+        #[cfg(feature = "wayland")]
         let wayland = event_loop.is_wayland();
+        #[cfg(not(feature = "wayland"))]
+        let wayland = false;
         #[cfg(feature = "test_hooks")]
         eprintln!("Lite XL native backend '{}'", if wayland { "wayland" } else { "x11" });
         platform::publish_proxy(event_loop.create_proxy());
@@ -315,11 +319,14 @@ impl Owner {
             .with_inner_size(LogicalSize::new(width as i32, height as i32))
             .with_resizable(true).with_visible(false).with_window_icon(Some(icon));
         // Both extensions write the same Linux name field: choose once for the active backend.
+        #[cfg(feature = "wayland")]
         let attrs = if self.wayland {
             winit::platform::wayland::WindowAttributesExtWayland::with_name(attrs, "com.lite_xl.LiteXL", "lite-xl")
         } else {
             winit::platform::x11::WindowAttributesExtX11::with_name(attrs, "Lite XL", "lite-xl")
         };
+        #[cfg(not(feature = "wayland"))]
+        let attrs = winit::platform::x11::WindowAttributesExtX11::with_name(attrs, "Lite XL", "lite-xl");
         let window = Arc::new(event_loop.create_window(attrs).map_err(|e| format!("cannot create window: {e}"))?);
         window.set_cursor(self.cursor);
         let context = Context::new(window.clone()).map_err(|e| format!("cannot create presentation context: {e}"))?;

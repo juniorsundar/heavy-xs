@@ -74,6 +74,13 @@ LITE_PREFIX="$(pwd)/stage/usr/local" ./stage/usr/local/bin/lite-xl
 directory, the desktop file, metainfo, icon and licenses (PREFIX defaults to `/usr/local`).
 Without `LITE_RELEASE=1` the version string carries the git commit.
 
+The default build opens an X11 window, which runs natively on X11 and through XWayland in a
+Wayland session. `cargo build --release --features wayland` adds the native Wayland backend,
+used when `WAYLAND_DISPLAY` is set. Known issues on native Wayland: dragging files into the
+window does nothing and the window has no icon of its own (the compositor can still take it
+from the installed desktop file), because winit 0.30.13 implements neither there. Both work
+through XWayland.
+
 `scripts/rust-port/verify.sh` builds the editor and runs the contract suites.
 
 ## Installing Prebuilt

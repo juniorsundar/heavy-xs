@@ -17,7 +17,7 @@ The implementation reference remains **`c80459bc0f464df68b8d8cdff553cd8288519a67
 
 ## Reviewed differences and invariants
 
-Document these seven reviewed differences in configuration/interface documentation and test expectations, following their owning resolutions:
+Document these eight reviewed differences in configuration/interface documentation and test expectations, following their owning resolutions:
 
 1. Whole-window opacity is an intentional no-op with existing argument handling and `true` return; remove functional-opacity configuration/UI if present. Do not recover it. Internal drawing alpha remains required.
 2. Portal dialogs control the Cancel label; custom Accept text, filters, parent modality and accept/cancel/error distinctions remain.
@@ -29,6 +29,8 @@ Document these seven reviewed differences in configuration/interface documentati
 
 7. Native `wait_event` readiness means **actual pending input** (including a pending process quit), not SDL's backend poll-cycle sentinel. The user accepted `false` after the queue has been drained where SDL could still report `true`. String-timeout/extra-argument tests must use real queued input rather than that sentinel; retain non-consuming readiness, timeout/coercion rules, one monotonic deadline and false-on-error behavior. Internal proxy wakes alone are not input.
 
+8. **Native Wayland is an opt-in `wayland` cargo feature; the default build is X11-only** (native X11, or XWayland in a Wayland session). User decision during Step 4, after the live Wayland review found that winit 0.30.13, the latest release, implements neither file drop (`DroppedFile` exists only in its X11 backend) nor a window icon (`set_window_icon` is empty) on Wayland, where SDL 3.4 supported both. The user declined adding our own Wayland drag-and-drop or toplevel-icon code. With the feature, both are **known issues** on native Wayland: drops do nothing, and only the installed desktop file (app id `com.lite_xl.LiteXL`) can supply the icon. Both work through XWayland. The feature gates winit `wayland`/`wayland-dlopen`/`wayland-csd-adwaita`, softbuffer `wayland`/`wayland-dlopen`, arboard `wayland-data-control` and ashpd `wayland` together; the default build links and dlopens no Wayland crate or library. X11 support is unchanged, and this is not approval to drop the Wayland backend.
+
 Also carry the explicitly reviewed early-runtime timing and app-side borderless-zone mechanism. Neither permits losing hit-region/coordinate quirks, title controls, normal quit confirmation or other Lua behavior. Freeze the [complete observable inventory](platform-contract-inventory.md): 41 system functions, four window functions and 26 event shapes, not merely the cases currently covered by tests. Linux remains the supported target; restoring other platforms is out of scope.
 
 ## Dependency and build plan
@@ -38,10 +40,10 @@ Adopt these only in the steps below, with Cargo.lock updated and locked builds c
 | Dependency | Planning reference and feature constraints |
 | --- | --- |
 | libloading | `=0.8.9` as the cached implementation reference for the already-selected loader; compile/behavior validation belongs to Step 2, not a claimed prototype pass. |
-| winit | `=0.30.13`, Wayland **and** X11, retaining tested defaults/raw-window-handle support. No GPU renderer or forced fallback to another protocol. |
-| softbuffer | Git revision **`9a7c9caf4ac29a8ae361d68c9a5babb97e36dc70`** from the upstream softbuffer repository; its package version says `0.4.8` but this is **not released 0.4.8**. Retain tested `wayland`, `wayland-dlopen`, `x11`, `x11-dlopen` with default features disabled. |
-| arboard | `=3.7.0`, default features disabled, `wayland-data-control`; text-only feature set was exercised by the probe. |
-| ashpd | `=0.13.13`, `file_chooser`, `raw_handle`, `wayland`, with the Tokio executor selected consistently with zbus. Native fatal notifications use its public zbus/zvariant re-export; no portal-notification feature/helper is needed. |
+| winit | `=0.30.13`, default features off; `rwh_06` and `x11` always, `wayland`/`wayland-dlopen`/`wayland-csd-adwaita` only under the `wayland` feature (difference 8). No GPU renderer or forced fallback to another protocol. |
+| softbuffer | Git revision **`9a7c9caf4ac29a8ae361d68c9a5babb97e36dc70`** from the upstream softbuffer repository; its package version says `0.4.8` but this is **not released 0.4.8**. Default features disabled; `x11`, `x11-dlopen` always, `wayland`, `wayland-dlopen` only under the `wayland` feature. |
+| arboard | `=3.7.0`, default features disabled; `wayland-data-control` only under the `wayland` feature. The default build uses X11 selections, which XWayland bridges. |
+| ashpd | `=0.13.13`, `file_chooser`, `raw_handle`, plus `wayland` only under the `wayland` feature, with the Tokio executor selected consistently with zbus. Native fatal notifications use its public zbus/zvariant re-export; no portal-notification feature/helper is needed. |
 | Tokio | `=1.53.3`; retain tested `rt`/`rt-multi-thread`, `net`, `time`, adding `signal` and the required `sync` notifier facilities. IO/time are also enabled on the runtime builder; there is no Cargo feature named `io`. Signal/notifier integration is selected but not prototype-certified. One worker serves signals, dialogs and reporting. |
 
 Do not add rfd, Zenity, notify-send, native libnotify, a second executor, an SDL fallback or a generic adapter framework. Retain existing font/regex/Lua dependencies and libc.
@@ -160,7 +162,7 @@ Request permission before live launches, chooser/notification interaction, clipb
 
 | Path/check | Required disposition |
 | --- | --- |
-| Migrated editor on native Wayland and XWayland | Actual input/shortcut/non-US/dead-key/IME composition and candidate placement, pointer/caret/scale and mixed-output movement, window/focus/icon/cursor/hit controls, click-through, multi-click counts and held-button dragging beyond window bounds, nonprivate drop, clipboard/primary and Open/Save/Directory accept/cancel/error/parent behavior; full-editor drawing parity and supported ARGB presentation. Check 1× and genuine fractional scaling; Xvfb is not fractional/native-desktop evidence. |
+| Migrated editor on native Wayland and XWayland | Default build on XWayland; `wayland`-feature build on native Wayland, with file drop and window icon recorded as known issues (difference 8). Actual input/shortcut/non-US/dead-key/IME composition and candidate placement, pointer/caret/scale and mixed-output movement, window/focus/icon/cursor/hit controls, click-through, multi-click counts and held-button dragging beyond window bounds, nonprivate drop, clipboard/primary and Open/Save/Directory accept/cancel/error/parent behavior; full-editor drawing parity and supported ARGB presentation. Check 1× and genuine fractional scaling; Xvfb is not fractional/native-desktop evidence. |
 | Clipboard/primary without a manager | Required isolated-session comparison with SDL, without disturbing the user's current manager. Do not promise additional persistence or infer a pass from manager-assisted tests. |
 | Native X11 | Retain backend support; **accepted-unverified/reactive**, not a proactive session gate. XWayland/private Xvfb do not certify it. |
 | Touch hardware | Retain translation/support and carry real hardware validation as unverified until available; no invented pass or silent removal. |
