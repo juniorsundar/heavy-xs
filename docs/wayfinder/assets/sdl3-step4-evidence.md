@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name, owned-input-queue and sandbox/environment slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name, owned-input-queue and sandbox/environment slices are complete; winit key and click helpers are prepared.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -108,6 +108,10 @@ Checks: 28 unit tests pass (queue order/flush/coalescing and registry numbering/
 Based on `733568fb`: `get_sandbox`, `setenv` and the `PLATFORM` global no longer call SDL. `PLATFORM` is the literal `"Linux"` (Linux is the only supported target). `app::run` calls `system::snapshot_environment` where `SDL_Init` used to snapshot the environment: it records only whether `SNAP`, `SNAP_NAME` and `SNAP_REVISION` are present (empty counts, as `SDL_getenv` saw them). `setenv` keeps SDL's rules (empty or `=`-containing names are refused, C-string truncation, always overwrite), sets that snapshot flag first and then calls libc `setenv`, so an external change is invisible to the snapshot exactly as before. `get_sandbox` classifies at its first call with SDL 3.4's Linux priority (`/.flatpak-info`, then all three SNAP variables, then `/run/host/container-manager`, else `none`) and caches the answer for the life of the process, across Lua restarts. No window, portal or Tokio is involved.
 
 Checks: 30 unit tests pass, including priority and snapshot/setter semantics. `startup-check.sh` gained real-process cases: `none` cached across a restart, SNAP set at launch with empty `SNAP` counting, and a `setenv` after the first answer not changing it; 15/15 on private Xvfb and on dummy. All 18 contract suites pass on both profiles with unchanged goldens (the `sandbox`/`setenv` rows included); `normal-build-check.sh` 4/4; bounded GLM review found no blockers. Not tested: a real Flatpak or container-manager filesystem marker (classification of those two inputs is unit-tested only). Logs: `target/step4-env-*.log`.
+
+## Native input helpers (prepared, not yet wired)
+
+`src/keymap.rs` maps winit `PhysicalKey`/`Key` to the SDL 3.4 scancode and unshifted-keycode numbers the editor's existing key naming uses (168 `KeyCode`s checked against the SDL header and the 3.4.14 scancode names; keys SDL has no scancode for map to 0). `src/clicks.rs` ports SDL 3.4.14's multi-click counting (500 ms; the hint value 4 is a per-axis distance, not squared; a press exactly 500 ms later resets; releases do not change state; per-source and per-button state; 255 saturation). Both are pure with unit tests (43 total pass) and are consumed by the winit producer in the cutover commit. Logged questions for that commit: shifted-letter contract case (4, 65) must use the key with Shift applied for the keycode only if SDL's unshifted-keycode contract demands it (SDL keycodes are unshifted, so the cutover passes the key without modifiers); winit `Meta`/`Hyper` map to 0.
 
 ## Remaining work and limits
 
