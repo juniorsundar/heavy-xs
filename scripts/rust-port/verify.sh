@@ -14,6 +14,8 @@
 #   RECORD=1      also copy each passing suite's output to $EVIDENCE_DIR/record for review. Goldens
 #                 are never replaced by this script; that is a reviewed, manual copy.
 #   SUITE_SIGINT  default (default) | ignore: the SIGINT disposition each suite process starts with
+# The system suite also runs clipboard-check.sh invariants on a separate private Xvfb, regardless
+# of PROFILE; its historical golden retains the unavailable-display clipboard results.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/scripts/rust-port/private-display.sh"
@@ -82,13 +84,23 @@ sdl_lines="^(App name|App version|App ID|SDL revision): |^SDL chose (video|rende
 sdl_lines="$sdl_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"
 sdl_lines="$sdl_lines|^Note: you can probably enable DRI3 in your Xorg config\$"
 
+# Preserve the system suite's historical unavailable-clipboard observations. Actual clipboard
+# and primary-selection round trips are asserted separately by clipboard-check.sh on private Xvfb.
+run_suite() {
+  if [ "$s" = system ]; then
+    pd_run env -u DISPLAY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET "$@"
+  else
+    pd_run "$@"
+  fi
+}
+
 status=0
 for s in $(echo "$suites" | tr , ' '); do
   raw=$work/$s.raw out=$work/$s.out
   # A crash or non-zero exit must fail the run, not silently truncate the diff. SIGINT starts at
   # its default: children inherit an ignored SIGINT through exec, and the process suite's
   # "interrupt then dead" then fails (reproduced on the SDL reference; see sdl-reference.sh).
-  if pd_run SDL_LOGGING=system=debug \
+  if run_suite SDL_LOGGING=system=debug \
       LXL_PLUGIN_SRC="$root/tests/contract/plugin" LXL_PLUGIN_INC="$root/resources/include" \
       CONTRACT_SUITES="$s" LITE_PREFIX="$stage" LITE_XL_RUNTIME=contract \
       env --"${SUITE_SIGINT:-default}"-signal=INT timeout -k 2 60 "$bin" >"$raw" 2>&1; then
@@ -121,5 +133,9 @@ for s in $(echo "$suites" | tr , ' '); do
     cp "$out" "$evidence/record/$s.txt"
   fi
 done
+case ",$suites," in
+  *,system,*)
+    BIN="$bin" STAGE_DIR="$stage_root" "$root/scripts/rust-port/clipboard-check.sh" || status=1 ;;
+esac
 [ "${RECORD:-}" = 1 ] && echo "recorded outputs for review in $evidence/record (provenance.txt names the binary)"
 exit $status
