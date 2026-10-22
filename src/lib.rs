@@ -15,6 +15,10 @@ mod renwindow;
 mod renwindow_api;
 mod dirmonitor;
 mod hit;
+#[allow(dead_code)] // consumed by the winit producer
+mod clicks;
+#[allow(dead_code)] // consumed by the winit producer
+mod keymap;
 mod keynames;
 mod platform;
 mod plugin_syms;
