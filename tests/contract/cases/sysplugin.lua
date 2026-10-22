@@ -5,7 +5,8 @@
 -- the shipped lite_xl_plugin_api.h and without linking Lua, exactly as a plugin author would.
 --
 -- DIALOGS: no test here ever lets a real dialog open. The environment is pointed at a dead
--- D-Bus socket, and SDL_FILE_DIALOG_DRIVER is cleared, so SDL answers with an `error` event.
+-- D-Bus socket. Native portal errors are checked before normalizing their backend-specific text;
+-- the historical SDL runner instead rejects its empty SDL_FILE_DIALOG_DRIVER.
 
 local ROOT = "/tmp/lxl_sysplugin_contract"
 local SRC = os.getenv("LXL_PLUGIN_SRC") or "tests/contract/plugin"
@@ -26,7 +27,12 @@ end
 
 -- A dialog result with the driver-list wording of SDL's error dropped.
 local function nodriver(msg)
-  return (tostring(msg):gsub("%(supported values.-%)", "(...)"))
+  msg = tostring(msg)
+  if msg:match("^dialogfinished,%-?%d+,error,Portal file chooser: .+") then
+    assert(msg:match("ZBus Error:.*Failed to connect to address"), "not the expected unavailable-portal failure: " .. msg)
+    return (msg:gsub(",error,Portal file chooser: .*", ",error,File dialog driver unsupported (...)"))
+  end
+  return (msg:gsub("%(supported values.-%)", "(...)"))
 end
 
 -- An error message with machine-specific text (paths, pointers) reduced to its shape.
