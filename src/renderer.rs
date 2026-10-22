@@ -138,9 +138,6 @@ pub struct RenFont {
 
 // --------------------------------------------------------------- globals
 
-/// The 1x1 surface `ren_draw_rect` blits for translucent rectangles.
-static mut DRAW_RECT_SURFACE: *mut sdl::SDL_Surface = ptr::null_mut();
-
 // --------------------------------------------------------------- font helpers
 
 fn font_is_subpixel(font: &RenFont) -> bool {
@@ -920,15 +917,32 @@ pub unsafe extern "C" fn ren_draw_rect(rs: *mut RenSurface, rect: RenRect, color
             return;
         }
 
-        let pixel = (*DRAW_RECT_SURFACE).pixels as *mut u32;
-        *pixel = sdl::SDL_MapSurfaceRGBA(DRAW_RECT_SURFACE, color.r, color.g, color.b, color.a);
-        sdl::SDL_BlitSurfaceScaled(
-            DRAW_RECT_SURFACE,
-            ptr::null(),
-            surface,
-            &clipped,
-            sdl::SDL_SCALEMODE_LINEAR,
-        );
+        // SDL stretched a 1x1 blended pixel here; stretching a single colour is that colour,
+        // so only its per-channel blend (`ALPHA_BLEND_CHANNEL`, SDL_blit.h) remains.
+        let format = &*sdl::SDL_GetPixelFormatDetails((*surface).format);
+        let a = color.a as u32;
+        let blend = |s: u32, d: u32| {
+            let mut x = (s.wrapping_sub(d).wrapping_mul(a).wrapping_add((d << 8) - d)) & 0xffff;
+            x += 1;
+            x += x >> 8;
+            (x >> 8) & 0xff
+        };
+        let channel = |p: u32, mask: u32, shift: u8| (p & mask) >> shift;
+        for row in clipped.y..clipped.y + clipped.h {
+            let line = ((*surface).pixels as *mut u8).offset(((*surface).pitch * row) as isize)
+                as *mut u32;
+            for col in clipped.x..clipped.x + clipped.w {
+                let pixel = line.offset(col as isize);
+                let d = *pixel;
+                let mut out = (blend(color.r as u32, channel(d, format.Rmask, format.Rshift)) << format.Rshift)
+                    | (blend(color.g as u32, channel(d, format.Gmask, format.Gshift)) << format.Gshift)
+                    | (blend(color.b as u32, channel(d, format.Bmask, format.Bshift)) << format.Bshift);
+                if format.Amask != 0 {
+                    out |= blend(255, channel(d, format.Amask, format.Ashift)) << format.Ashift;
+                }
+                *pixel = out;
+            }
+        }
     }
 }
 
@@ -956,24 +970,6 @@ pub unsafe extern "C" fn video_init() -> c_int {
         REN_INITED.store(true, Ordering::SeqCst);
     }
     0
-}
-
-/// `ren_init`.
-#[no_mangle]
-pub unsafe extern "C" fn ren_init() -> c_int {
-    let surface = sdl::SDL_CreateSurface(1, 1, sdl::SDL_PixelFormat::RGBA32);
-    if surface.is_null() {
-        return -1;
-    }
-    DRAW_RECT_SURFACE = surface;
-    0
-}
-
-/// `ren_free`.
-#[no_mangle]
-pub unsafe extern "C" fn ren_free() {
-    sdl::SDL_DestroySurface(DRAW_RECT_SURFACE);
-    DRAW_RECT_SURFACE = ptr::null_mut();
 }
 
 #[cfg(test)]
