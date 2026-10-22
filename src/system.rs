@@ -96,10 +96,6 @@ fn strerror(err: i32) -> String {
     unsafe { CStr::from_ptr(libc::strerror(err)) }.to_string_lossy().into_owned()
 }
 
-fn sdl_error() -> String {
-    unsafe { CStr::from_ptr(sdl::SDL_GetError()) }.to_string_lossy().into_owned()
-}
-
 // --------------------------------------------------------- filesystem: info
 
 /// `f_get_file_info`: `{size, type?, modified, symlink?}`, or `nil, message`.
@@ -605,13 +601,12 @@ fn overlay(lua: &Lua, system: &Table) -> LuaResult<()> {
 /// `dialogfinished` event cannot be registered.
 pub fn luaopen_system(lua: &Lua) -> LuaResult<Table> {
     unsafe {
-        if !crate::custom_events::register_custom_event(
-            c"dialogfinished".as_ptr(),
+        if let Err(reason) = crate::custom_events::register_custom_event(
+            b"dialogfinished",
             Some(crate::sysplugin::dialogfinished_callback),
         ) {
             return Err(LuaError::runtime(format!(
-                "Unable to register custom dialogfinished event: {}",
-                sdl_error()
+                "Unable to register custom dialogfinished event: {reason}"
             )));
         }
         // The NativePlugin metatable is looked up by name (luaL_setmetatable) when a plugin loads.
