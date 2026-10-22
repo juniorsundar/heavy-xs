@@ -5,7 +5,7 @@
 //! per-device click counters. Native window lifecycle, resizing, redraw, hit testing and
 //! the implicit left-button drag stay in `native.rs`.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::os::unix::ffi::OsStrExt;
 use std::time::Instant;
 
@@ -37,6 +37,36 @@ struct WindowState {
     touch_prev: HashMap<u64, (f32, f32)>,
 }
 
+/// Keys Lua has seen pressed and not released, by scancode, with the key code and NumLock
+/// state of the press so the release names the same key.
+///
+/// SDL resets the keyboard when its window loses keyboard focus (`SDL_ResetKeyboard`): every
+/// held key gets a release, in scancode order, before the focus-lost event. Winit's X11 backend
+/// sends those releases itself; its Wayland backend only clears the modifiers, which left Lua
+/// holding Ctrl after a Ctrl+O dialog took focus. Scancode 0 is untracked, as in SDL.
+#[derive(Default)]
+struct HeldKeys(BTreeMap<i32, (u32, bool)>);
+
+impl HeldKeys {
+    fn note(&mut self, scancode: i32, key: u32, numlock: bool, down: bool) {
+        if scancode == 0 {
+            return;
+        }
+        if down {
+            self.0.insert(scancode, (key, numlock));
+        } else {
+            self.0.remove(&scancode);
+        }
+    }
+
+    fn release_all(&mut self) -> Vec<Input> {
+        std::mem::take(&mut self.0)
+            .into_iter()
+            .map(|(scancode, (key, numlock))| Input::Key { down: false, scancode, key, numlock })
+            .collect()
+    }
+}
+
 /// The winit input producer. One instance lives in `native.rs` for the process lifetime.
 pub struct InputState {
     start: Instant,
@@ -44,6 +74,7 @@ pub struct InputState {
     sources: HashMap<DeviceId, u32>,
     next_source: u32,
     windows: HashMap<u32, WindowState>,
+    held: HeldKeys,
 }
 
 impl InputState {
@@ -54,6 +85,7 @@ impl InputState {
             sources: HashMap::new(),
             next_source: 0,
             windows: HashMap::new(),
+            held: HeldKeys::default(),
         }
     }
 
@@ -105,6 +137,7 @@ impl InputState {
                     &event.logical_key,
                 );
                 let down = event.state == ElementState::Pressed;
+                self.held.note(scancode, key, numlock, down);
                 platform::push(Input::Key { down, scancode, key, numlock });
                 if down {
                     if let Some(text) = event.text.as_deref() {
@@ -177,6 +210,11 @@ impl InputState {
                 platform::push(Input::Finger { window: id, kind, x, y, dx, dy, finger: touch.id });
             }
             WindowEvent::Focused(focused) => {
+                if !*focused {
+                    for input in self.held.release_all() {
+                        platform::push(input);
+                    }
+                }
                 platform::push(if *focused { Input::FocusGained } else { Input::FocusLost });
             }
             _ => {}
@@ -321,6 +359,20 @@ fn wheel_delta(delta: &MouseScrollDelta) -> (f32, f32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn focus_loss_releases_held_keys_in_scancode_order() {
+        let mut held = HeldKeys::default();
+        held.note(224, 0x4000_00E0, false, true); // left ctrl
+        held.note(18, 0x6F, false, true); // o
+        held.note(18, 0x6F, false, true); // a repeat is still one held key
+        held.note(89, 0x4000_0059, true, true); // keypad 1 under NumLock
+        held.note(0, 0, false, true); // unknown scancodes are not tracked
+        held.note(18, 0x6F, false, false);
+        let up = |scancode, key, numlock| Input::Key { down: false, scancode, key, numlock };
+        assert_eq!(held.release_all(), vec![up(89, 0x4000_0059, true), up(224, 0x4000_00E0, false)]);
+        assert!(held.release_all().is_empty(), "released keys are forgotten");
+    }
 
     #[test]
     fn preedit_offsets_are_character_counts() {
