@@ -154,7 +154,7 @@ return function(rec)
   for _ = 1, 200 do system.set_cursor("ibeam"); system.set_cursor("hand") end
   rec("set_cursor 400 times", "ok")
 
-  -- Argument validation of show_fatal_error only: calling it opens a modal box -----------------
+  -- Fatal-report argument errors precede stderr/IPC; real transport has a private-bus check. ---
   rec("show_fatal_error no args", try(system.show_fatal_error))
   rec("show_fatal_error one arg", try(system.show_fatal_error, "title"))
   rec("show_fatal_error tables", try(system.show_fatal_error, {}, {}))

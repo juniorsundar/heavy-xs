@@ -1,4 +1,4 @@
-//! Window, cursor, text-input and message-box functions from `src/api/system.c`.
+//! Window, cursor, text-input and fatal-report functions from `src/api/system.c`.
 //!
 //! These take a `RenWindow` userdata, which in C is `RenWindow **` created by
 //! `src/api/renwindow.c`. Window state now lives in the native winit owner: a `RenWindow`
@@ -13,7 +13,6 @@ use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushstring, lua_toboolean,
     luaL_checknumber, luaL_checkoption, luaL_checkstring, luaL_checkudata,
 };
-use sdl3_sys::everything as sdl;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::window::{CursorIcon, Fullscreen};
 
@@ -231,11 +230,13 @@ pub unsafe extern "C-unwind" fn clear_ime(l: *mut lua_State) -> c_int {
     0
 }
 
-// ------------------------------------------------------------- message box
+// ------------------------------------------------------------- fatal report
 
 pub unsafe extern "C-unwind" fn show_fatal_error(l: *mut lua_State) -> c_int {
     let title = luaL_checkstring(l, 1);
     let message = luaL_checkstring(l, 2);
-    sdl::SDL_ShowSimpleMessageBox(sdl::SDL_MESSAGEBOX_ERROR, title, message, std::ptr::null_mut());
+    let title = CStr::from_ptr(title).to_bytes().to_vec();
+    let message = CStr::from_ptr(message).to_bytes().to_vec();
+    crate::fatal::report(title, message);
     0
 }
