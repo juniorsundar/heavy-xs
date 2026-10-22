@@ -35,10 +35,6 @@ extern "C" {
     fn rencache_invalidate();
 }
 
-const NUMPAD: [&str; 11] = [
-    "end", "down", "pagedown", "left", "", "right", "home", "up", "pageup", "ins", "delete",
-];
-
 /// `button_name`.
 fn button_name(button: u8) -> &'static CStr {
     match button as i32 {
@@ -51,23 +47,8 @@ fn button_name(button: u8) -> &'static CStr {
     }
 }
 
-/// `get_key_name`: layout-aware names for Latin keys and special keys, the
-/// QWERTY scancode name otherwise; keypad keys become their navigation name
-/// while NumLock is off. Always lower case (ASCII only, like `tolower` in "C").
 fn key_name(key: &sdl::SDL_KeyboardEvent) -> String {
-    let scancode = key.scancode.0;
-    let kp1 = sdl::SDL_Scancode::KP_1.0;
-    if scancode >= kp1 && scancode <= kp1 + 10 && key.r#mod.0 & sdl::SDL_Keymod::NUM.0 == 0 {
-        return NUMPAD[(scancode - kp1) as usize].to_string();
-    }
-    let name = unsafe {
-        if key.key.0 < 128 || key.key.0 & sdl::SDL_Keycode::SCANCODE_MASK.0 != 0 {
-            CStr::from_ptr(sdl::SDL_GetKeyName(key.key))
-        } else {
-            CStr::from_ptr(sdl::SDL_GetScancodeName(key.scancode))
-        }
-    };
-    name.to_string_lossy().to_ascii_lowercase()
+    crate::keynames::key_name(key.scancode.0, key.key.0, key.r#mod.0 & sdl::SDL_Keymod::NUM.0 != 0)
 }
 
 unsafe fn push_str(l: *mut lua_State, s: &str) {
