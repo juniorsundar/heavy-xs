@@ -16,6 +16,7 @@ mod renwindow_api;
 mod dirmonitor;
 mod hit;
 mod keynames;
+mod platform;
 mod plugin_syms;
 mod process;
 mod system;

@@ -6,33 +6,35 @@
 //! C recordings: that implementation is gone and nothing in this binary selects it.
 //!
 //! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
-//! `SDL_PushEvent` and returns whether SDL accepted it.
+//! `SDL_PushEvent`, so it is converted into an owned input record by the production producer,
+//! and returns whether SDL accepted it.
 
 use std::ffi::{c_int, c_void, CString};
 
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
 use sdl3_sys::everything as sdl;
 
-use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
 use crate::custom_events::{
     get_custom_event_callback_by_name, get_custom_event_name, push_custom_event, register_custom_event,
-    CustomEvent, CustomEventCallback,
+    CustomEvent, CustomEventCallback, FIRST_TYPE,
 };
+use crate::platform::{Custom, Payload};
+use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
 
 extern "C" {
     fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
 }
 
 /// A callback that pushes ("custom", code, data1 as integer) so a test can see it ran.
-unsafe extern "C" fn tracer(l: *mut mlua::lua_State, e: *mut sdl::SDL_Event) -> std::ffi::c_int {
+unsafe fn tracer(l: *mut mlua::lua_State, e: &Custom) -> i32 {
     mlua::ffi::lua_pushstring(l, c"custom".as_ptr());
-    mlua::ffi::lua_pushinteger(l, (*e).user.code as i64);
-    mlua::ffi::lua_pushinteger(l, (*e).user.data1 as usize as i64);
+    mlua::ffi::lua_pushinteger(l, e.code as i64);
+    mlua::ffi::lua_pushinteger(l, e.data1 as i64);
     3
 }
 
 /// A callback that returns 0 values, which poll_event must treat as "next event".
-unsafe extern "C" fn silent(_l: *mut mlua::lua_State, _e: *mut sdl::SDL_Event) -> std::ffi::c_int {
+unsafe fn silent(_l: *mut mlua::lua_State, _e: &Custom) -> i32 {
     0
 }
 
@@ -118,51 +120,43 @@ fn surface_hash(
     Ok(format!("{hash:08x}/{lit}"))
 }
 
+/// The name up to its first NUL, as the C string the hooks used to pass.
+fn c_name(name: &str) -> &[u8] {
+    name.as_bytes().split(|&b| b == 0).next().unwrap_or_default()
+}
+
 fn custom_register(_: &Lua, (name, kind): (String, String)) -> LuaResult<bool> {
-    let name = CString::new(name).unwrap_or_default();
     let callback: CustomEventCallback = match kind.as_str() {
         "tracer" => Some(tracer),
         "silent" => Some(silent),
         _ => None,
     };
-    Ok(unsafe { register_custom_event(name.as_ptr(), callback) })
+    Ok(register_custom_event(c_name(&name), callback).is_ok())
 }
 
 fn custom_push(_: &Lua, (name, code, data1): (String, i32, i64)) -> LuaResult<bool> {
-    let name = CString::new(name).unwrap_or_default();
-    let mut event = CustomEvent {
-        window_id: 0,
-        code,
-        data1: data1 as usize as *mut c_void,
-        data2: std::ptr::null_mut(),
-    };
-    Ok(unsafe { push_custom_event(name.as_ptr(), &mut event) })
+    let event = CustomEvent { code, data1: data1 as usize, payload: None };
+    Ok(push_custom_event(c_name(&name), event).is_ok())
 }
 
-/// The type number of a registered name (the first SDL user event is 0x8000), or nil.
+/// The type number of a registered name, as an offset from the first custom type, or nil.
 fn custom_type(_: &Lua, name: String) -> LuaResult<Option<i64>> {
     // Walk the user range: the API only maps type -> name, so invert it.
-    for ty in 0x8000u32..0x8040 {
-        let found = get_custom_event_name(ty);
-        if !found.is_null() && unsafe { std::ffi::CStr::from_ptr(found) }.to_bytes() == name.as_bytes() {
-            return Ok(Some((ty - 0x8000) as i64));
+    for ty in FIRST_TYPE..FIRST_TYPE + 0x40 {
+        if get_custom_event_name(ty).is_some_and(|found| found == c_name(&name)) {
+            return Ok(Some((ty - FIRST_TYPE) as i64));
         }
     }
     Ok(None)
 }
 
 fn custom_name(_: &Lua, offset: i64) -> LuaResult<Option<String>> {
-    let found = get_custom_event_name(0x8000u32.wrapping_add(offset as u32));
-    Ok(if found.is_null() {
-        None
-    } else {
-        Some(unsafe { std::ffi::CStr::from_ptr(found) }.to_string_lossy().into_owned())
-    })
+    let found = get_custom_event_name(FIRST_TYPE.wrapping_add(offset as u32));
+    Ok(found.map(|name| String::from_utf8_lossy(&name).into_owned()))
 }
 
 fn custom_has_callback(_: &Lua, name: String) -> LuaResult<bool> {
-    let name = CString::new(name).unwrap_or_default();
-    Ok(unsafe { get_custom_event_callback_by_name(name.as_ptr()) }.is_some())
+    Ok(get_custom_event_callback_by_name(c_name(&name)).is_some())
 }
 
 fn num(t: &Table, key: &str) -> LuaResult<f64> {
@@ -273,35 +267,21 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
             "other" => e.common.r#type = num(&spec, "etype")? as u32,
             "dialog_finished" => {
                 // A forged `dialogfinished` event: what dialog_callback pushes when a dialog
-                // ends. `paths` is a Lua list; data2 is the "a\0b\0\0" block the callback
-                // expects (SDL_malloc'd, because the callback SDL_free()s it).
+                // ends, with the same owned payload.
                 let code = num(&spec, "code")? as i32;
-                let paths: Vec<String> = spec.raw_get::<Option<Vec<String>>>("paths")?.unwrap_or_default();
-                let mut block: Vec<u8> = Vec::new();
-                for p in &paths {
-                    block.extend_from_slice(p.as_bytes());
-                    block.push(0);
-                }
-                block.push(0);
-                let heap = if code == 1 && paths.is_empty() && text.as_bytes().is_empty() {
-                    std::ptr::null_mut() // DIALOG_CANCEL carries no data
+                let paths: Vec<mlua::LuaString> =
+                    spec.raw_get::<Option<Vec<mlua::LuaString>>>("paths")?.unwrap_or_default();
+                let message = text.as_bytes().to_vec();
+                let payload = if code == 1 && paths.is_empty() && message.is_empty() {
+                    None // DIALOG_CANCEL carries no data
                 } else if code == 0 {
-                    let m = sdl::SDL_malloc(block.len()) as *mut u8;
-                    std::ptr::copy_nonoverlapping(block.as_ptr(), m, block.len());
-                    m as *mut c_void
+                    Some(Payload::Paths(paths.iter().map(|p| p.as_bytes().to_vec()).collect()))
                 } else {
-                    sdl::SDL_strdup(text.as_ptr()) as *mut c_void // DIALOG_ERROR message
+                    Some(Payload::Message(message)) // DIALOG_ERROR message
                 };
-                e.user.r#type = sdl::SDL_EventType::USER.0; // "dialogfinished" is registered first
-                e.user.code = code;
-                e.user.data1 = num(&spec, "id")? as usize as *mut c_void;
-                e.user.data2 = heap;
-                let pushed = sdl::SDL_PushEvent(&mut e);
-                if !pushed {
-                    sdl::SDL_free(heap);
-                }
                 sdl::SDL_free(owned_text as *mut c_void);
-                return Ok(pushed);
+                let event = CustomEvent { code, data1: num(&spec, "id")? as usize, payload };
+                return Ok(push_custom_event(b"dialogfinished", event).is_ok());
             }
             other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
         }

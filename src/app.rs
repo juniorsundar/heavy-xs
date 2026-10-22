@@ -108,13 +108,7 @@ pub fn run() -> ExitCode {
         }
         libc::atexit(quit);
 
-        if !crate::custom_events::init_custom_events() {
-            eprintln!(
-                "Error initializing custom events: {}",
-                CStr::from_ptr(sdl::SDL_GetError()).to_string_lossy()
-            );
-            std::process::exit(1);
-        }
+        crate::custom_events::init_custom_events();
 
         let args: Vec<_> = std::env::args_os().collect();
         let exe = exe_filename()

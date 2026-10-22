@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view and key-name slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name and owned-input-queue slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -94,6 +94,14 @@ Based on `2bee0f9a`, new `src/keynames.rs` names keys without `SDL_GetKeyName`/`
 Reviewed difference by user decision: letter keys are always named by their plain letter; SDL used the layout's shifted character (Turkish dotless-i read `İ`). Recorded in the handoff's reviewed differences. Not observed on a real non-US layout.
 
 Checks: 26 unit tests pass, including the contract's key cases plus out-of-range and scancode-165 cases; `sysevents` goldens pass on private Xvfb and offscreen. Logs: `target/step4-keys/`, `target/step4-keys-*.log`.
+
+## Owned-input-queue slice
+
+Based on `e19ef020`, staged by user decision: `poll_event`/`wait_event` now hand Lua only owned Rust records (`src/platform.rs`), with SDL still the native producer. `sysevents.rs` converts one SDL event per poll into a record, so SDL keeps its queue, poll-cycle sentinel and wait semantics (an earlier draft that drained SDL into the Rust queue changed `wait_event` results after a drained poll cycle; reverted after probing SDL 3.4.14 behaviour, `target/step4-queue/probe*.c`). Motion/touch coalescing pulls same-kind events forward and folds them; focus gain flushes key presses from both queues.
+
+Custom events are registered, numbered (from `0x8000`, never reused, kept across Lua restart) and dispatched in Rust; callbacks take an owned record. Pushes from worker threads still travel through SDL's queue as an integer token naming a Rust-owned record, which keeps ordering relative to native events and wakes `SDL_WaitEvent`. Dialog results and forged test events carry owned payloads: no `SDL_malloc`/`SDL_strdup`/`SDL_free` of event payloads remains. `init_custom_events` can no longer fail, so its startup error path is gone. Shortcut, documented in `platform.rs`: SDL token transport and producer remain until the native pump replaces them; tokens still queued in SDL at exit are freed with the process. The plugin API exposes no SDL, so nothing outside the editor can mint colliding SDL event types.
+
+Checks: 28 unit tests pass (queue order/flush/coalescing and registry numbering/refusals/restart added); all 18 contract suites pass on private Xvfb and offscreen with unchanged goldens; `startup-check.sh` 12/12 on dummy and private Xvfb; `normal-build-check.sh` 4/4; normal and hook builds warning-free; bounded GLM review found no blockers. Logs: `target/step4-queue/`, `target/step4-queue-*.log`.
 
 ## Remaining work and limits
 
