@@ -40,13 +40,7 @@ const INOTIFY_HEADER: usize = 16; // sizeof(struct inotify_event) without the na
 // ------------------------------------------------------------ custom events
 
 fn wake_event_loop() {
-    let mut event = CustomEvent {
-        window_id: 0,
-        code: 0,
-        data1: std::ptr::null_mut(),
-        data2: std::ptr::null_mut(),
-    };
-    unsafe { push_custom_event(c"dirmonitor".as_ptr(), &mut event) };
+    let _ = push_custom_event(b"dirmonitor", CustomEvent { code: 0, data1: 0, payload: None });
 }
 
 // ------------------------------------------------------------ the backend
@@ -328,8 +322,7 @@ impl UserData for DirMonitor {
 /// `new` and `mode` (and the methods) on it; `data/` only uses `new`, `mode`
 /// and the methods of the instances.
 pub fn luaopen_dirmonitor(lua: &Lua) -> LuaResult<Table> {
-    if !unsafe { register_custom_event(c"dirmonitor".as_ptr(), None) } {
-        let reason = unsafe { CStr::from_ptr(sdl3_sys::everything::SDL_GetError()) }.to_string_lossy().into_owned();
+    if let Err(reason) = register_custom_event(b"dirmonitor", None) {
         return Err(LuaError::runtime(format!(
             "Unable to register custom dirmonitor event: {}",
             reason

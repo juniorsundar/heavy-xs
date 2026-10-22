@@ -22,6 +22,7 @@ use sdl3_sys::everything as sdl;
 use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
 
 use crate::custom_events::{push_custom_event, CustomEvent};
+use crate::platform::{Custom, Payload};
 use crate::plugin_syms::SYMBOLS;
 
 // ----------------------------------------------------------- api_require
@@ -200,68 +201,51 @@ extern "C" {
 /// main thread's `poll_event` turns into Lua values via `dialogfinished_callback`.
 unsafe extern "C" fn dialog_callback(userdata: *mut c_void, filelist: *const *const c_char, _filter: c_int) {
     let data = Box::from_raw(userdata as *mut DialogData);
-    let mut event = CustomEvent {
-        window_id: 0,
-        code: DIALOG_OK,
-        data1: data.id as *mut c_void,
-        data2: std::ptr::null_mut(),
-    };
+    let data1 = data.id;
     drop(data); // the filters had to outlive the dialog; they no longer do
 
-    if filelist.is_null() {
-        event.code = DIALOG_ERROR;
-        event.data2 = sdl::SDL_strdup(sdl::SDL_GetError()) as *mut c_void;
+    let (code, payload) = if filelist.is_null() {
+        let message = CStr::from_ptr(sdl::SDL_GetError()).to_bytes().to_vec();
+        (DIALOG_ERROR, Some(Payload::Message(message)))
     } else if (*filelist).is_null() {
-        event.code = DIALOG_CANCEL;
+        (DIALOG_CANCEL, None)
     } else {
-        // "path1\0path2\0...pathN\0\0"
-        let mut bytes = 0usize;
+        // Owned copies: SDL frees `filelist` when this callback returns.
+        let mut paths = Vec::new();
         let mut i = 0;
         while !(*filelist.add(i)).is_null() {
-            bytes += CStr::from_ptr(*filelist.add(i)).to_bytes().len() + 1;
+            paths.push(CStr::from_ptr(*filelist.add(i)).to_bytes().to_vec());
             i += 1;
         }
-        let buffer = sdl::SDL_malloc(bytes + 1) as *mut u8;
-        if buffer.is_null() {
-            event.code = DIALOG_ERROR;
-        } else {
-            let mut at = buffer;
-            let mut i = 0;
-            while !(*filelist.add(i)).is_null() {
-                let entry = CStr::from_ptr(*filelist.add(i)).to_bytes_with_nul();
-                std::ptr::copy_nonoverlapping(entry.as_ptr(), at, entry.len());
-                at = at.add(entry.len());
-                i += 1;
-            }
-            *at = 0;
-            event.data2 = buffer as *mut c_void;
-        }
-    }
+        (DIALOG_OK, Some(Payload::Paths(paths)))
+    };
 
-    if !push_custom_event(c"dialogfinished".as_ptr(), &mut event) {
-        sdl::SDL_free(event.data2);
-    }
+    let _ = push_custom_event(b"dialogfinished", CustomEvent { code, data1, payload });
 }
 
 /// `dialogfinished_callback`: runs on the main thread inside `poll_event` and pushes
 /// `("dialogfinished", id, "accept"|"cancel"|"error", list_or_message?)`.
-pub unsafe extern "C" fn dialogfinished_callback(l: *mut lua_State, e: *mut sdl::SDL_Event) -> c_int {
+pub unsafe fn dialogfinished_callback(l: *mut lua_State, e: &Custom) -> c_int {
     lua_pushstring(l, c"dialogfinished".as_ptr());
-    lua_pushinteger(l, (*e).user.data1 as usize as i64);
-    match (*e).user.code {
+    lua_pushinteger(l, e.data1 as i64);
+    match e.code {
         DIALOG_OK => {
             lua_pushstring(l, c"accept".as_ptr());
-            let mut at = (*e).user.data2 as *const c_char;
             lua_createtable(l, 0, 0);
-            let mut index = 1;
-            while !at.is_null() && *at != 0 {
-                let entry = CStr::from_ptr(at);
-                lua_pushlstring(l, at, entry.to_bytes().len());
-                lua_rawseti(l, -2, index);
-                at = at.add(entry.to_bytes().len() + 1);
-                index += 1;
+            // The C's "a\0b\0\0" block, walked the same way: an empty entry ends the list.
+            let mut block = Vec::new();
+            if let Some(Payload::Paths(paths)) = &e.payload {
+                for path in paths {
+                    block.extend_from_slice(path);
+                    block.push(0);
+                }
             }
-            sdl::SDL_free((*e).user.data2);
+            let entries = block.split(|&b| b == 0).take_while(|entry| !entry.is_empty());
+            for (index, entry) in entries.enumerate() {
+                lua_pushlstring(l, entry.as_ptr() as *const c_char, entry.len());
+                lua_rawseti(l, -2, index as i64 + 1);
+            }
+            drop(block);
             4
         }
         DIALOG_CANCEL => {
@@ -270,8 +254,14 @@ pub unsafe extern "C" fn dialogfinished_callback(l: *mut lua_State, e: *mut sdl:
         }
         DIALOG_ERROR => {
             lua_pushstring(l, c"error".as_ptr());
-            lua_pushstring(l, (*e).user.data2 as *const c_char);
-            sdl::SDL_free((*e).user.data2);
+            match &e.payload {
+                // NULL in the C pushes nil.
+                Some(Payload::Message(message)) => {
+                    let len = message.iter().position(|&b| b == 0).unwrap_or(message.len());
+                    lua_pushlstring(l, message.as_ptr() as *const c_char, len);
+                }
+                _ => mlua::ffi::lua_pushnil(l),
+            }
             4
         }
         _ => {

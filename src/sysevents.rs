@@ -1,29 +1,33 @@
 //! `system.poll_event` and `system.wait_event`, ported from `src/api/system.c`.
 //!
-//! Both are raw `lua_CFunction`s rather than mlua callbacks: `poll_event` returns
-//! 0 to 6 values depending on the event, and the custom-event callbacks it
-//! dispatches to (`dialogfinished_callback`, in `sysplugin.rs`) push their results straight
-//! onto the Lua stack. Nothing in here holds a Rust destructor across a call that
-//! can raise a Lua error, so the `longjmp`s Lua uses are safe to cross.
+//! Lua only ever sees owned [`Input`] records. `next_input` is the native producer: it takes one
+//! SDL event and converts it into a record, after which no SDL memory is referenced. Records are
+//! taken from SDL one per poll, so SDL keeps its queue and its poll-cycle and wait semantics;
+//! the owned queue only holds what coalescing pulled forward. Custom events pushed from other
+//! threads travel through SDL's queue as a plain integer token naming a Rust-owned record in
+//! `PENDING`, so they keep their order relative to native events and still wake `SDL_WaitEvent`.
 //!
-//! `RenWindow` stays opaque: scale and the `SDL_Window` come through the C
-//! accessors added to `src/renwindow.c`.
+//! Both are raw `lua_CFunction`s rather than mlua callbacks: `poll_event` returns 0 to 6 values
+//! depending on the event, and custom-event callbacks push straight onto the Lua stack. Nothing
+//! here holds a Rust destructor across a call that can raise a Lua error.
 //!
 //! Deviations from the C, all on paths where it dereferences NULL or overflows:
-//!   * a mouse or touch event for a window that is no longer registered is
-//!     dropped, where the C reads `window_renderer->scale_x` through NULL;
-//!   * key names are built as Rust strings, where the C `strcpy`s into a
-//!     `char buf[16]` that several scancode names ("Keypad Memory Store") exceed.
+//!   * a mouse or touch event for a window that is no longer registered is dropped, where the C
+//!     reads `window_renderer->scale_x` through NULL;
+//!   * key names are built as Rust strings (see `keynames.rs`).
 
+use std::collections::HashMap;
 use std::ffi::{c_char, c_int, c_void, CStr};
+use std::sync::Mutex;
 
 use mlua::ffi::{
-    lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushnumber, lua_pushstring,
-    luaL_checknumber,
+    lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushlstring, lua_pushnumber,
+    lua_pushstring, luaL_checknumber,
 };
 use sdl3_sys::everything as sdl;
 
-use crate::custom_events::get_custom_event_callback_by_type;
+use crate::custom_events::{get_custom_event_callback_by_type, FIRST_TYPE};
+use crate::platform::{self, Custom, FingerKind, Input};
 
 extern "C" {
     fn ren_find_window_from_id(id: sdl::SDL_WindowID) -> *mut c_void;
@@ -34,6 +38,163 @@ extern "C" {
     fn ren_refresh_after_foreground();
     fn rencache_invalidate();
 }
+
+// ------------------------------------------------------------- custom-event transport
+
+/// Custom records waiting in SDL's queue, by token. A token is removed exactly once: by
+/// `convert` when SDL hands it back, or by `post_custom` when SDL refused it.
+static PENDING: Mutex<Option<(u64, HashMap<u64, Custom>)>> = Mutex::new(None);
+
+/// Queues a custom record from any thread. False (record dropped) when SDL's queue refused it.
+pub fn post_custom(custom: Custom) -> bool {
+    let event_type = custom.event_type;
+    let token = {
+        let mut guard = PENDING.lock().unwrap();
+        let (next, map) = guard.get_or_insert_with(|| (1, HashMap::new()));
+        let token = *next;
+        *next += 1;
+        map.insert(token, custom);
+        token
+    };
+    let mut e: sdl::SDL_Event = unsafe { std::mem::zeroed() };
+    e.user.r#type = event_type;
+    e.user.data1 = token as usize as *mut c_void;
+    if unsafe { sdl::SDL_PushEvent(&mut e) } {
+        return true;
+    }
+    take_pending(token);
+    false
+}
+
+fn take_pending(token: u64) -> Option<Custom> {
+    PENDING.lock().unwrap().as_mut()?.1.remove(&token)
+}
+
+pub fn sdl_error() -> String {
+    let message = sdl::SDL_GetError();
+    if message.is_null() {
+        return String::new();
+    }
+    unsafe { CStr::from_ptr(message) }.to_string_lossy().into_owned()
+}
+
+// --------------------------------------------------------------- the SDL producer
+
+fn bytes(text: *const c_char) -> Vec<u8> {
+    if text.is_null() {
+        return Vec::new();
+    }
+    unsafe { CStr::from_ptr(text) }.to_bytes().to_vec()
+}
+
+/// One SDL event as an owned record.
+unsafe fn convert(e: &sdl::SDL_Event) -> Input {
+    use sdl::SDL_EventType as T;
+    let kind = T(e.r#type);
+    match kind {
+        T::QUIT => Input::Quit,
+        T::WINDOW_RESIZED => {
+            Input::Resized { window: e.window.windowID.0, w: e.window.data1, h: e.window.data2 }
+        }
+        T::WINDOW_DISPLAY_SCALE_CHANGED | T::WINDOW_PIXEL_SIZE_CHANGED => {
+            Input::Rescaled { window: e.window.windowID.0 }
+        }
+        T::WINDOW_EXPOSED => Input::Exposed,
+        T::WINDOW_MINIMIZED => Input::Minimized,
+        T::WINDOW_MAXIMIZED => Input::Maximized,
+        T::WINDOW_RESTORED => Input::Restored,
+        T::WINDOW_MOUSE_LEAVE => Input::MouseLeft,
+        T::WINDOW_FOCUS_LOST => Input::FocusLost,
+        T::WINDOW_FOCUS_GAINED => Input::FocusGained,
+        T::DROP_FILE => Input::FileDropped { window: e.drop.windowID.0, path: bytes(e.drop.data) },
+        T::KEY_DOWN | T::KEY_UP => Input::Key {
+            down: kind == T::KEY_DOWN,
+            scancode: e.key.scancode.0,
+            key: e.key.key.0,
+            numlock: e.key.r#mod.0 & sdl::SDL_Keymod::NUM.0 != 0,
+        },
+        T::TEXT_INPUT => Input::TextInput(bytes(e.text.text)),
+        T::TEXT_EDITING => Input::TextEditing {
+            text: bytes(e.edit.text),
+            start: e.edit.start,
+            length: e.edit.length,
+        },
+        T::MOUSE_BUTTON_DOWN | T::MOUSE_BUTTON_UP => Input::MouseButton {
+            window: e.button.windowID.0,
+            down: kind == T::MOUSE_BUTTON_DOWN,
+            button: e.button.button,
+            x: e.button.x,
+            y: e.button.y,
+            clicks: e.button.clicks,
+        },
+        T::MOUSE_MOTION => Input::MouseMotion {
+            window: e.motion.windowID.0,
+            x: e.motion.x,
+            y: e.motion.y,
+            xrel: e.motion.xrel,
+            yrel: e.motion.yrel,
+        },
+        T::MOUSE_WHEEL => Input::MouseWheel { x: e.wheel.x, y: e.wheel.y },
+        T::FINGER_DOWN | T::FINGER_UP | T::FINGER_MOTION => Input::Finger {
+            window: e.tfinger.windowID.0,
+            kind: match kind {
+                T::FINGER_DOWN => FingerKind::Down,
+                T::FINGER_UP => FingerKind::Up,
+                _ => FingerKind::Motion,
+            },
+            x: e.tfinger.x,
+            y: e.tfinger.y,
+            dx: e.tfinger.dx,
+            dy: e.tfinger.dy,
+            finger: e.tfinger.fingerID.0,
+        },
+        T::WILL_ENTER_FOREGROUND => Input::EnteringForeground,
+        T::DID_ENTER_FOREGROUND => Input::EnteredForeground,
+        T::WILL_ENTER_BACKGROUND => Input::EnteringBackground,
+        T::DID_ENTER_BACKGROUND => Input::EnteredBackground,
+        _ if e.r#type >= FIRST_TYPE => {
+            // Ours carry a token; anything else in the user range (a forged or foreign event)
+            // is an empty custom record of that type, as SDL delivered it.
+            let token = e.user.data1 as usize as u64;
+            take_pending(token).filter(|c| c.event_type == e.r#type).unwrap_or(Custom {
+                event_type: e.r#type,
+                code: e.user.code,
+                data1: e.user.data1 as usize,
+                payload: None,
+            })
+            .into()
+        }
+        _ => Input::Other,
+    }
+}
+
+impl From<Custom> for Input {
+    fn from(custom: Custom) -> Self {
+        Input::Custom(custom)
+    }
+}
+
+/// The next record: one already pulled forward, else one SDL event (SDL frees its strings).
+fn next_input() -> Option<Input> {
+    platform::pop().or_else(|| unsafe {
+        let mut e: sdl::SDL_Event = std::mem::zeroed();
+        sdl::SDL_PollEvent(&mut e).then(|| convert(&e))
+    })
+}
+
+/// Pulls every SDL event of `kind` forward into the owned queue in order, leaving the rest in
+/// SDL's queue (`SDL_PumpEvents` then `SDL_PeepEvents`).
+fn pull_forward(kind: sdl::SDL_EventType) {
+    unsafe {
+        sdl::SDL_PumpEvents();
+        let mut e: sdl::SDL_Event = std::mem::zeroed();
+        while sdl::SDL_PeepEvents(&mut e, 1, sdl::SDL_EventAction::GETEVENT, kind.0, kind.0) > 0 {
+            platform::push(convert(&e));
+        }
+    }
+}
+
+// --------------------------------------------------------------- the Lua side
 
 /// `button_name`.
 fn button_name(button: u8) -> &'static CStr {
@@ -47,18 +208,10 @@ fn button_name(button: u8) -> &'static CStr {
     }
 }
 
-fn key_name(key: &sdl::SDL_KeyboardEvent) -> String {
-    crate::keynames::key_name(key.scancode.0, key.key.0, key.r#mod.0 & sdl::SDL_Keymod::NUM.0 != 0)
-}
-
-unsafe fn push_str(l: *mut lua_State, s: &str) {
-    // lua_pushstring wants a NUL-terminated copy; key names never contain NUL.
-    let c = std::ffi::CString::new(s).unwrap_or_default();
-    lua_pushstring(l, c.as_ptr());
-}
-
-unsafe fn push_cstr(l: *mut lua_State, s: *const c_char) {
-    lua_pushstring(l, s);
+unsafe fn push_bytes(l: *mut lua_State, s: &[u8]) {
+    // As lua_pushstring of the C string: an embedded NUL ends it.
+    let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
+    lua_pushlstring(l, s.as_ptr() as *const c_char, end);
 }
 
 /// Pushes `name` plus the values and returns how many were pushed in total.
@@ -72,51 +225,54 @@ macro_rules! event {
     }};
 }
 
+unsafe fn window_of(id: u32) -> *mut c_void {
+    ren_find_window_from_id(sdl::SDL_WindowID(id))
+}
+
 /// `f_poll_event`.
 pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
-    let mut e: sdl::SDL_Event = std::mem::zeroed();
-
     // `top:` in the C: events that produce nothing loop to the next one.
     loop {
-        if !sdl::SDL_PollEvent(&mut e) {
+        let Some(mut input) = next_input() else {
             return 0;
-        }
+        };
 
-        match sdl::SDL_EventType(e.r#type) {
-            sdl::SDL_EventType::QUIT => event!(l, "quit"),
+        match input {
+            Input::Quit => event!(l, "quit"),
 
-            sdl::SDL_EventType::WINDOW_RESIZED => {
-                let window = ren_find_window_from_id(e.window.windowID);
+            Input::Resized { window, w, h } => {
+                let window = window_of(window);
                 if !window.is_null() {
                     ren_resize_window(window);
                 }
                 // The size is in points.
-                event!(
-                    l,
-                    "resized",
-                    lua_pushinteger(l, e.window.data1 as i64),
-                    lua_pushinteger(l, e.window.data2 as i64),
-                )
+                event!(l, "resized", lua_pushinteger(l, w as i64), lua_pushinteger(l, h as i64))
+            }
+            Input::Rescaled { window } => {
+                let window = window_of(window);
+                if !window.is_null() {
+                    ren_resize_window(window);
+                }
             }
 
-            sdl::SDL_EventType::WINDOW_EXPOSED => {
+            Input::Exposed => {
                 rencache_invalidate();
                 event!(l, "exposed")
             }
-            sdl::SDL_EventType::WINDOW_MINIMIZED => event!(l, "minimized"),
-            sdl::SDL_EventType::WINDOW_MAXIMIZED => event!(l, "maximized"),
-            sdl::SDL_EventType::WINDOW_RESTORED => event!(l, "restored"),
-            sdl::SDL_EventType::WINDOW_MOUSE_LEAVE => event!(l, "mouseleft"),
-            sdl::SDL_EventType::WINDOW_FOCUS_LOST => event!(l, "focuslost"),
+            Input::Minimized => event!(l, "minimized"),
+            Input::Maximized => event!(l, "maximized"),
+            Input::Restored => event!(l, "restored"),
+            Input::MouseLeft => event!(l, "mouseleft"),
+            Input::FocusLost => event!(l, "focuslost"),
 
-            sdl::SDL_EventType::WINDOW_FOCUS_GAINED => {
+            Input::FocusGained => {
                 // Alt-tabbing can queue several `tab` key presses; discard them.
                 sdl::SDL_FlushEvent(sdl::SDL_EventType::KEY_DOWN.0);
-                continue;
+                platform::remove_all(|i| matches!(i, Input::Key { down: true, .. }));
             }
 
-            sdl::SDL_EventType::DROP_FILE => {
-                let window = ren_find_window_from_id(e.drop.windowID);
+            Input::FileDropped { window, ref path } => {
+                let window = window_of(window);
                 let (mut mx, mut my) = (0f32, 0f32);
                 sdl::SDL_GetMouseState(&mut mx, &mut my);
                 // A drag into the dock can arrive before a window exists.
@@ -128,83 +284,64 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
                 event!(
                     l,
                     "filedropped",
-                    push_cstr(l, e.drop.data),
+                    push_bytes(l, path),
                     lua_pushinteger(l, (mx * sx) as i64),
                     lua_pushinteger(l, (my * sy) as i64),
                 )
             }
 
-            sdl::SDL_EventType::KEY_DOWN => {
-                event!(l, "keypressed", push_str(l, &key_name(&e.key)))
-            }
-            sdl::SDL_EventType::KEY_UP => {
-                event!(l, "keyreleased", push_str(l, &key_name(&e.key)))
+            Input::Key { down, scancode, key, numlock } => {
+                let name = crate::keynames::key_name(scancode, key, numlock);
+                if down {
+                    event!(l, "keypressed", push_bytes(l, name.as_bytes()))
+                }
+                event!(l, "keyreleased", push_bytes(l, name.as_bytes()))
             }
 
-            sdl::SDL_EventType::TEXT_INPUT => event!(l, "textinput", push_cstr(l, e.text.text)),
-            sdl::SDL_EventType::TEXT_EDITING => event!(
+            Input::TextInput(ref text) => event!(l, "textinput", push_bytes(l, text)),
+            Input::TextEditing { ref text, start, length } => event!(
                 l,
                 "textediting",
-                push_cstr(l, e.edit.text),
-                lua_pushinteger(l, e.edit.start as i64),
-                lua_pushinteger(l, e.edit.length as i64),
+                push_bytes(l, text),
+                lua_pushinteger(l, start as i64),
+                lua_pushinteger(l, length as i64),
             ),
 
-            sdl::SDL_EventType::MOUSE_BUTTON_DOWN => {
-                if e.button.button == 1 {
-                    sdl::SDL_CaptureMouse(true);
+            Input::MouseButton { window, down, button, x, y, clicks } => {
+                if button == 1 {
+                    sdl::SDL_CaptureMouse(down);
                 }
-                let window = ren_find_window_from_id(e.button.windowID);
+                let window = window_of(window);
                 if window.is_null() {
                     continue;
                 }
                 let (sx, sy) = (ren_get_scale_x(window), ren_get_scale_y(window));
-                event!(
-                    l,
-                    "mousepressed",
-                    push_cstr(l, button_name(e.button.button).as_ptr()),
-                    lua_pushinteger(l, (e.button.x * sx) as i64),
-                    lua_pushinteger(l, (e.button.y * sy) as i64),
-                    lua_pushinteger(l, e.button.clicks as i64),
-                )
-            }
-
-            sdl::SDL_EventType::MOUSE_BUTTON_UP => {
-                if e.button.button == 1 {
-                    sdl::SDL_CaptureMouse(false);
+                let name = button_name(button).as_ptr();
+                if down {
+                    event!(
+                        l,
+                        "mousepressed",
+                        lua_pushstring(l, name),
+                        lua_pushinteger(l, (x * sx) as i64),
+                        lua_pushinteger(l, (y * sy) as i64),
+                        lua_pushinteger(l, clicks as i64),
+                    )
                 }
-                let window = ren_find_window_from_id(e.button.windowID);
-                if window.is_null() {
-                    continue;
-                }
-                let (sx, sy) = (ren_get_scale_x(window), ren_get_scale_y(window));
                 event!(
                     l,
                     "mousereleased",
-                    push_cstr(l, button_name(e.button.button).as_ptr()),
-                    lua_pushinteger(l, (e.button.x * sx) as i64),
-                    lua_pushinteger(l, (e.button.y * sy) as i64),
+                    lua_pushstring(l, name),
+                    lua_pushinteger(l, (x * sx) as i64),
+                    lua_pushinteger(l, (y * sy) as i64),
                 )
             }
 
-            sdl::SDL_EventType::MOUSE_MOTION => {
+            Input::MouseMotion { .. } => {
                 // Coalesce queued motion: keep the last position, sum the deltas.
-                sdl::SDL_PumpEvents();
-                let mut next: sdl::SDL_Event = std::mem::zeroed();
-                while sdl::SDL_PeepEvents(
-                    &mut next,
-                    1,
-                    sdl::SDL_EventAction::GETEVENT,
-                    sdl::SDL_EventType::MOUSE_MOTION.0,
-                    sdl::SDL_EventType::MOUSE_MOTION.0,
-                ) > 0
-                {
-                    e.motion.x = next.motion.x;
-                    e.motion.y = next.motion.y;
-                    e.motion.xrel += next.motion.xrel;
-                    e.motion.yrel += next.motion.yrel;
-                }
-                let window = ren_find_window_from_id(e.motion.windowID);
+                pull_forward(sdl::SDL_EventType::MOUSE_MOTION);
+                platform::coalesce(&mut input);
+                let Input::MouseMotion { window, x, y, xrel, yrel } = input else { unreachable!() };
+                let window = window_of(window);
                 if window.is_null() {
                     continue;
                 }
@@ -212,121 +349,98 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
                 event!(
                     l,
                     "mousemoved",
-                    lua_pushinteger(l, (e.motion.x * sx) as i64),
-                    lua_pushinteger(l, (e.motion.y * sy) as i64),
-                    lua_pushinteger(l, (e.motion.xrel * sx) as i64),
-                    lua_pushinteger(l, (e.motion.yrel * sy) as i64),
+                    lua_pushinteger(l, (x * sx) as i64),
+                    lua_pushinteger(l, (y * sy) as i64),
+                    lua_pushinteger(l, (xrel * sx) as i64),
+                    lua_pushinteger(l, (yrel * sy) as i64),
                 )
             }
 
-            sdl::SDL_EventType::MOUSE_WHEEL => event!(
+            Input::MouseWheel { x, y } => event!(
                 l,
                 "mousewheel",
-                lua_pushnumber(l, e.wheel.y as f64),
+                lua_pushnumber(l, y as f64),
                 // -x keeps horizontal scrolling consistent with vertical (shift+scroll).
-                lua_pushnumber(l, -(e.wheel.x as f64)),
+                lua_pushnumber(l, -(x as f64)),
             ),
 
-            sdl::SDL_EventType::FINGER_DOWN | sdl::SDL_EventType::FINGER_UP => {
-                let window = ren_find_window_from_id(e.tfinger.windowID);
+            Input::Finger { kind, .. } => {
+                if kind == FingerKind::Motion {
+                    pull_forward(sdl::SDL_EventType::FINGER_MOTION);
+                    platform::coalesce(&mut input);
+                }
+                let Input::Finger { window, x, y, dx, dy, finger, .. } = input else { unreachable!() };
+                let window = window_of(window);
                 if window.is_null() {
                     continue;
                 }
                 let (mut w, mut h) = (0, 0);
                 sdl::SDL_GetWindowSize(ren_get_sdl_window(window), &mut w, &mut h);
-                let name: &CStr = if e.r#type == sdl::SDL_EventType::FINGER_DOWN.0 {
-                    c"touchpressed"
-                } else {
-                    c"touchreleased"
-                };
-                lua_pushstring(l, name.as_ptr());
-                lua_pushinteger(l, (e.tfinger.x * w as f32) as i64);
-                lua_pushinteger(l, (e.tfinger.y * h as f32) as i64);
-                lua_pushinteger(l, e.tfinger.fingerID.0 as i64);
-                return 4;
+                let (w, h) = (w as f32, h as f32);
+                match kind {
+                    FingerKind::Down | FingerKind::Up => {
+                        let name: &CStr =
+                            if kind == FingerKind::Down { c"touchpressed" } else { c"touchreleased" };
+                        lua_pushstring(l, name.as_ptr());
+                        lua_pushinteger(l, (x * w) as i64);
+                        lua_pushinteger(l, (y * h) as i64);
+                        lua_pushinteger(l, finger as i64);
+                        return 4;
+                    }
+                    FingerKind::Motion => event!(
+                        l,
+                        "touchmoved",
+                        lua_pushinteger(l, (x * w) as i64),
+                        lua_pushinteger(l, (y * h) as i64),
+                        lua_pushinteger(l, (dx * w) as i64),
+                        lua_pushinteger(l, (dy * h) as i64),
+                        lua_pushinteger(l, finger as i64),
+                    ),
+                }
             }
 
-            sdl::SDL_EventType::FINGER_MOTION => {
-                sdl::SDL_PumpEvents();
-                let mut next: sdl::SDL_Event = std::mem::zeroed();
-                while sdl::SDL_PeepEvents(
-                    &mut next,
-                    1,
-                    sdl::SDL_EventAction::GETEVENT,
-                    sdl::SDL_EventType::FINGER_MOTION.0,
-                    sdl::SDL_EventType::FINGER_MOTION.0,
-                ) > 0
-                {
-                    e.tfinger.x = next.tfinger.x;
-                    e.tfinger.y = next.tfinger.y;
-                    e.tfinger.dx += next.tfinger.dx;
-                    e.tfinger.dy += next.tfinger.dy;
-                }
-                let window = ren_find_window_from_id(e.tfinger.windowID);
-                if window.is_null() {
-                    continue;
-                }
-                let (mut w, mut h) = (0, 0);
-                sdl::SDL_GetWindowSize(ren_get_sdl_window(window), &mut w, &mut h);
-                event!(
-                    l,
-                    "touchmoved",
-                    lua_pushinteger(l, (e.tfinger.x * w as f32) as i64),
-                    lua_pushinteger(l, (e.tfinger.y * h as f32) as i64),
-                    lua_pushinteger(l, (e.tfinger.dx * w as f32) as i64),
-                    lua_pushinteger(l, (e.tfinger.dy * h as f32) as i64),
-                    lua_pushinteger(l, e.tfinger.fingerID.0 as i64),
-                )
-            }
-
-            sdl::SDL_EventType::WILL_ENTER_FOREGROUND | sdl::SDL_EventType::DID_ENTER_FOREGROUND => {
+            Input::EnteringForeground => {
                 ren_refresh_after_foreground();
-                let name: &CStr = if e.r#type == sdl::SDL_EventType::WILL_ENTER_FOREGROUND.0 {
-                    c"enteringforeground"
-                } else {
-                    c"enteredforeground"
-                };
-                lua_pushstring(l, name.as_ptr());
-                return 1;
+                event!(l, "enteringforeground")
             }
-            sdl::SDL_EventType::WILL_ENTER_BACKGROUND => event!(l, "enteringbackground"),
-            sdl::SDL_EventType::DID_ENTER_BACKGROUND => event!(l, "enteredbackground"),
+            Input::EnteredForeground => {
+                ren_refresh_after_foreground();
+                event!(l, "enteredforeground")
+            }
+            Input::EnteringBackground => event!(l, "enteringbackground"),
+            Input::EnteredBackground => event!(l, "enteredbackground"),
 
-            kind => {
-                // The two events below resize the window, then fall into the default arm.
-                if kind == sdl::SDL_EventType::WINDOW_DISPLAY_SCALE_CHANGED
-                    || kind == sdl::SDL_EventType::WINDOW_PIXEL_SIZE_CHANGED
-                {
-                    let window = ren_find_window_from_id(e.window.windowID);
-                    if !window.is_null() {
-                        ren_resize_window(window);
-                    }
-                }
-                // Custom event types start at SDL_EVENT_USER.
-                if e.r#type >= sdl::SDL_EventType::USER.0 {
-                    if let Some(callback) = get_custom_event_callback_by_type(e.r#type) {
-                        let pushed = callback(l, &mut e);
-                        // A callback that returned nothing means "next event".
-                        if pushed != 0 {
-                            return pushed;
-                        }
+            Input::Custom(ref custom) => {
+                if let Some(callback) = get_custom_event_callback_by_type(custom.event_type) {
+                    let pushed = callback(l, custom);
+                    // A callback that returned nothing means "next event".
+                    if pushed != 0 {
+                        return pushed;
                     }
                 }
             }
+
+            Input::Other => {}
         }
     }
 }
 
-/// `f_wait_event`: true if an event arrived, false on timeout.
+/// `f_wait_event`: true if an event arrived, false on timeout. Readiness only: the event stays
+/// queued for `poll_event`.
 pub unsafe extern "C-unwind" fn wait_event(l: *mut lua_State) -> c_int {
-    if lua_gettop(l) >= 1 {
-        let mut seconds = luaL_checknumber(l, 1);
-        if seconds < 0.0 {
-            seconds = 0.0;
-        }
-        lua_pushboolean(l, sdl::SDL_WaitEventTimeout(std::ptr::null_mut(), (seconds * 1000.0) as i32) as c_int);
+    let timeout = if lua_gettop(l) >= 1 {
+        let seconds = luaL_checknumber(l, 1);
+        Some((seconds.max(0.0) * 1000.0) as i32)
     } else {
-        lua_pushboolean(l, sdl::SDL_WaitEvent(std::ptr::null_mut()) as c_int);
-    }
+        None
+    };
+    // Only coalescing pulls records forward, and it consumes them at once, so this is SDL's
+    // own readiness.
+    let ready = !platform::is_empty()
+        || match timeout {
+            Some(ms) => sdl::SDL_WaitEventTimeout(std::ptr::null_mut(), ms),
+            None => sdl::SDL_WaitEvent(std::ptr::null_mut()),
+        };
+    lua_pushboolean(l, ready as c_int);
     1
 }
