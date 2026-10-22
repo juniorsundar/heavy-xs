@@ -61,8 +61,8 @@ check "restart: first run not RESTARTED" "$(grep -c '^STARTUP run false args 2 e
 check "restart: second run RESTARTED" "$(grep -c '^STARTUP run true ' "$out")" 1
 check "restart: window survives" "$(grep -c '^STARTUP restored yes 200' "$out")" 1
 
-# --- sandbox classification: get_sandbox reads the environment as it was at process start (SDL's
-# snapshot), updated only by system.setenv, and caches its first answer across a Lua restart.
+# --- sandbox classification: get_sandbox reads the owned startup environment snapshot,
+# updated only by system.setenv, and caches its first answer across a Lua restart.
 cat > "$share/startup_sandbox.lua" <<'LUA'
 local M = {}
 local function say(...) io.stderr:write("SANDBOX ", table.concat({...}, " "), "\n") end
@@ -92,16 +92,17 @@ sandbox_run partial SNAP=1 SNAP_NAME=n
 check "sandbox: setenv after start is too late once cached" "$(grep '^SANDBOX' "$work/sandbox_partial.log" | tr '\n' ' ')" "SANDBOX first none SANDBOX again none "
 
 # --- startup failure: a runtime that cannot load must exit 1 and leave error.txt. The fatal
-# error dialog is attempted, so the process gets no display or bus that could show a real one.
+# notification is attempted, so the process gets no display or bus that could show a real one.
 cat > "$share/startup_broken.lua" <<'LUA'
 error("deliberate startup failure")
 LUA
 out=$work/broken.log
-# pd_run without the xvfb display: the same isolation, offscreen driver, nothing to show a dialog on.
+# pd_run without Xvfb: the same isolation, no native display and an unreachable session bus.
 ( cd "$work" && pd_profile=offscreen && pd_run LITE_PREFIX="$stage" LITE_XL_RUNTIME=startup_broken timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" >"$out" 2>&1 ) && rc=0 || rc=$?
 check "failure: exit code" "$rc" 1
 check "failure: error.txt names the error" "$(grep -c 'deliberate startup failure' "$work/error.txt" 2>/dev/null || echo 0)" 1
 check "failure: stdout has traceback" "$(grep -c 'stack traceback' "$out")" 1
+check "failure: full report reaches stderr despite unavailable IPC" "$(grep -c '^Lite XL internal error: An internal error occurred' "$out")" 1
 
 # --- quit: the native SIGINT/SIGTERM bridge requests normal core.exit, which removes projects, and
 # core.run stops after that step. The step must not update or draw in between, or any plugin that

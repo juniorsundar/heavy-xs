@@ -9,6 +9,7 @@ pub mod app;
 mod clipboard;
 mod custom_events;
 mod dialogs;
+mod fatal;
 #[cfg(test)]
 #[path = "../tests/contract/portal.rs"]
 mod portal_fixture;

@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
-# Real ashpd transport against a scripted FileChooser on a private, non-activating bus.
-# No host desktop, portal, chooser or hook-enabled binary is required.
+# Real dialog and fatal-notification transport on private, non-activating buses.
+# No host desktop, portal, notification daemon or hook-enabled binary is required.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/scripts/rust-port/private-display.sh"
@@ -11,17 +11,18 @@ stage=${STAGE_DIR:-$target/stage}/usr/local
 share=$stage/share/lite-xl
 [ -x "$bin" ] && [ -d "$share" ] || { echo 'run verify.sh first' >&2; exit 1; }
 work=$(mktemp -d)
-subject_pid= portal_pid= bus_pid=
+subject_pid= portal_pid= bus_pid= empty_bus_pid=
 cleanup() {
-  for pid in "$subject_pid" "$portal_pid" "$bus_pid"; do
+  for pid in "$subject_pid" "$portal_pid" "$bus_pid" "$empty_bus_pid"; do
     if [ -n "$pid" ]; then kill -KILL "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true; fi
   done
   pd_profile_stop
-  rm -rf "$work" "$share/dialog_check.lua"
+  rm -rf "$work" "$share/dialog_check.lua" "$share/fatal_check.lua"
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
 cp "$root/tests/contract/dialog.lua" "$share/dialog_check.lua"
+cp "$root/tests/contract/fatal.lua" "$share/fatal_check.lua"
 pd_profile_start xvfb "$work/display"
 pd_describe
 # Reuse the current Cargo target; read the exact fixture artifact rather than guessing a hash.
@@ -106,3 +107,68 @@ wait_file received-exit
 finish
 kill -0 "$portal_pid"
 echo 'OK   outstanding chooser: process exits without waiting for response'
+
+# A second non-activating bus has no notification service at all.
+printf '%s\n' "<busconfig><type>session</type><listen>unix:path=$work/empty-bus</listen><auth>EXTERNAL</auth><policy context=\"default\"><allow send_destination=\"*\"/><allow receive_sender=\"*\"/><allow own=\"*\"/></policy></busconfig>" >"$work/empty.conf"
+dbus-daemon --nofork --config-file="$work/empty.conf" >"$work/empty.log" 2>&1 &
+empty_bus_pid=$!
+i=0; while [ ! -S "$work/empty-bus" ] && [ $i -lt 50 ]; do sleep 0.1; i=$((i + 1)); done
+[ -S "$work/empty-bus" ]
+fatal() {
+  mode=$1
+  dir=$work/fatal-$mode
+  mkdir -p "$dir/user"
+  printf '%s' "$mode" >"$work/notify-mode"
+  : >"$dir/stderr"
+  error_output=$dir/stderr
+  [ "$mode" != writefail ] || error_output=/dev/full
+  address=$bus; test_profile=offscreen; disposition=--default-signal
+  case $mode in
+    absent) address=unix:path=$work/empty-bus ;;
+    deadbus) address=unix:path=$work/no-bus ;;
+    auth-timeout) address=unix:path=$work/auth-stall ;;
+    independent) test_profile=xvfb ;;
+    lazy-runtime) disposition=--ignore-signal ;;
+  esac
+  (cd "$dir"; pd_exec=1; pd_profile=$test_profile
+    pd_run env "$disposition=INT" "$disposition=TERM" DBUS_SESSION_BUS_ADDRESS="$address" \
+      DIALOG_CHECK_WORK="$work" FATAL_CHECK_ROLE="$mode" LITE_USERDIR="$dir/user" \
+      LITE_PREFIX="$stage" LITE_XL_RUNTIME=fatal_check "$bin" >"$dir/stdout" 2>"$error_output") &
+  subject_pid=$!
+  i=0; while kill -0 "$subject_pid" 2>/dev/null && [ $i -lt 70 ]; do sleep 0.1; i=$((i + 1)); done
+  if kill -0 "$subject_pid" 2>/dev/null; then kill -KILL "$subject_pid"; fi
+  wait "$subject_pid" && rc=0 || rc=$?
+  subject_pid=
+  expected_rc=0
+  [ "$mode" != bootstrap ] || expected_rc=1
+  if [ "$rc" != "$expected_rc" ]; then
+    echo "FAIL fatal $mode exit=$rc"; tail -n 20 "$dir/stdout" "$dir/stderr" "$work/portal.log"; exit 1
+  fi
+  if [ "$mode" = bootstrap ]; then
+    grep -q 'stack traceback' "$dir/stdout"
+    grep -q 'deliberate fatal notification startup failure' "$dir/error.txt"
+  else
+    grep -q "^FATAL $mode passed$" "$dir/stdout"
+  fi
+  caps=1; notify=1
+  case $mode in
+    invalid-title|invalid-message|absent|deadbus|auth-timeout) caps=0; notify=0 ;;
+    caps-error|caps-timeout) notify=0 ;;
+  esac
+  for phase in caps caps-validated notify notify-validated; do
+    case $phase in caps*) expected=$caps ;; *) expected=$notify ;; esac
+    count=0
+    [ ! -f "$dir/$phase" ] || count=$(wc -l <"$dir/$phase" | tr -d ' ')
+    if [ "$count" != "$expected" ]; then
+      echo "FAIL fatal $mode $phase=$count expected=$expected"; tail -n 25 "$work/portal.log"; exit 1
+    fi
+  done
+  [ "$mode" != ack ] || [ -f "$dir/ack" ]
+  [ "$mode" != auth-timeout ] || [ -f "$work/auth-accepted" ]
+  echo "OK   fatal $mode: zero returns, diagnostic policy and bounded private IPC"
+}
+for mode in plain markup numeric nul after-nul invalid-title invalid-message writefail ack \
+  caps-error notify-error caps-timeout notify-timeout deadline absent deadbus auth-timeout \
+  failed-init independent lazy-runtime bootstrap; do
+  fatal "$mode"
+done

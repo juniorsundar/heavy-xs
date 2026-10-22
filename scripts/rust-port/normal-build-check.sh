@@ -48,5 +48,5 @@ check "no lxl_test global or module" "$(echo "$plain" | grep '^lxl_test')" "lxl_
 check "LXL_TEST_C_EVENTS has no effect" "$(run LXL_TEST_C_EVENTS=1)" "$plain"
 check "system exports the full table" "$(echo "$plain" | sed -n 's/^system	\([0-9]*\)	.*/\1/p')" 41
 # Hook code is compiled out, not merely unregistered.
-check "no hook symbols in the binary" "$(grep -c -a -E 'lxl_test|push_event|surface_hash|dirty_rects' "$bin" || true)" 0
+check "no hook symbols in the binary" "$(grep -c -a -E 'lxl_test|push_event|surface_hash|dirty_rects|DIALOG_CHECK_WORK|FATAL_CHECK_ROLE|LXL_PRIVATE_DISPLAY_TEST|LXL_FATAL_RUNTIME_TEST' "$bin" || true)" 0
 exit $fail
