@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend and Rust draw-view slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view and key-name slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -86,6 +86,14 @@ Checks: 23 unit tests pass; `renderer` and `rencache` goldens (translucent hashe
 Based on `e896a6c7`, drawing no longer calls SDL surface APIs. `RenSurface` is a per-frame Rust view of the window's pixels (pointer, size, pitch, channel masks/shifts, clip, scale), built once per frame from the SDL window surface; that remaining SDL lookup is replaced by the Rust pixel store at the window cutover. The clip lives in the view and is set by rencache's redraw loop, the only drawing path, with `SDL_SetSurfaceClipRect`/`SDL_GetRectIntersection` arithmetic ported (including empty and overflow results). Opaque rectangles fill whole `u32` pixels with `SDL_MapSurfaceRGB`'s 8-bit packing; test hooks read channels through the view. `ren_set_clip_rect` and the `renwin_get_surface` C export are gone. Shortcut, asserted in debug builds: drawing supports only 4-byte, 8-bit-per-channel window formats, as the text blend already required.
 
 Checks: 25 unit tests pass, including two pinning the clip arithmetic; all 18 contract suites pass on private Xvfb and offscreen with unchanged goldens; `normal-build-check.sh` passes; bounded GLM review found no blockers. Logs: `target/step4-view/`, `target/step4-view-*.log`. Nix and desktop paths not rerun.
+
+## Key-name slice
+
+Based on `2bee0f9a`, new `src/keynames.rs` names keys without `SDL_GetKeyName`/`SDL_GetScancodeName`: the editor's NumLock-off keypad table, SDL's six special ASCII names, other ASCII as the character, scancode-masked keys and non-ASCII keycodes by scancode name, ASCII lowercase. The scancode-name table was extracted from SDL 3.4.18 source and compared with all 512 names returned by the linked SDL 3.4.14 (`target/step4-keys/names.c`); the only difference, 3.4.18's added scancode 165 name `Front`, is kept unnamed as in 3.4.14. `src/sysevents.rs` still receives SDL events but now calls the Rust naming.
+
+Reviewed difference by user decision: letter keys are always named by their plain letter; SDL used the layout's shifted character (Turkish dotless-i read `İ`). Recorded in the handoff's reviewed differences. Not observed on a real non-US layout.
+
+Checks: 26 unit tests pass, including the contract's key cases plus out-of-range and scancode-165 cases; `sysevents` goldens pass on private Xvfb and offscreen. Logs: `target/step4-keys/`, `target/step4-keys-*.log`.
 
 ## Remaining work and limits
 
