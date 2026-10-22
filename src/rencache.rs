@@ -14,7 +14,7 @@ use std::ffi::{c_char, c_int};
 use std::ptr;
 
 use crate::renwindow::{
-    expand_command_buffer, ren_get_size, ren_set_clip_rect, ren_update_rects, renwin_get_surface,
+    expand_command_buffer, ren_get_size, ren_update_rects, renwin_get_surface,
     RenRect, RenWindow,
 };
 
@@ -431,14 +431,14 @@ pub unsafe extern "C" fn rencache_end_frame(window: *mut RenWindow) {
     // Redraw the updated regions.
     for i in 0..rect_count {
         let r = cache.rect_buf[i];
-        ren_set_clip_rect(window, r);
+        rs.set_clip(r);
 
         each_command(window, |cmd| {
             let payload = (cmd as *const u8).add(COMMAND_BARE_SIZE);
             match (*cmd).r#type {
                 SET_CLIP => {
                     let ccmd = payload as *const SetClipCommand;
-                    ren_set_clip_rect(window, intersect_rects((*ccmd).rect, r));
+                    rs.set_clip(intersect_rects((*ccmd).rect, r));
                 }
                 DRAW_RECT => {
                     let rcmd = payload as *const DrawRectCommand;

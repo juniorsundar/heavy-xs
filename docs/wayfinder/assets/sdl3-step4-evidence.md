@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage and translucent-rectangle blend slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend and Rust draw-view slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -80,6 +80,12 @@ Logs: `target/step4-atlas/`, `target/step4-atlas-*.log`. Full contracts, Nix and
 Based on `f464884d`, translucent `ren_draw_rect` no longer stretches a 1x1 SDL `RGBA32` surface. Stretching one colour yields that colour, so it now blends each clipped destination pixel directly with SDL 3.4.18's `ALPHA_BLEND_CHANNEL` arithmetic (`SDL_blit.h:497`, including its `Uint16` truncation), and destination alpha as `(255, dA, sA)` when the format has an alpha mask. `ren_init`/`ren_free` and the global surface are removed with their `src/app.rs` calls. Opaque fills and the destination window surface remain SDL until the draw-target cutover.
 
 Checks: 23 unit tests pass; `renderer` and `rencache` goldens (translucent hashes at alpha 1, 30-210, 128 and 254) pass on private Xvfb and offscreen; bounded GLM review found no actionable issues. Logs: `target/step4-rect/`, `target/step4-rect-*.log`.
+
+## Rust draw-view slice
+
+Based on `e896a6c7`, drawing no longer calls SDL surface APIs. `RenSurface` is a per-frame Rust view of the window's pixels (pointer, size, pitch, channel masks/shifts, clip, scale), built once per frame from the SDL window surface; that remaining SDL lookup is replaced by the Rust pixel store at the window cutover. The clip lives in the view and is set by rencache's redraw loop, the only drawing path, with `SDL_SetSurfaceClipRect`/`SDL_GetRectIntersection` arithmetic ported (including empty and overflow results). Opaque rectangles fill whole `u32` pixels with `SDL_MapSurfaceRGB`'s 8-bit packing; test hooks read channels through the view. `ren_set_clip_rect` and the `renwin_get_surface` C export are gone. Shortcut, asserted in debug builds: drawing supports only 4-byte, 8-bit-per-channel window formats, as the text blend already required.
+
+Checks: 25 unit tests pass, including two pinning the clip arithmetic; all 18 contract suites pass on private Xvfb and offscreen with unchanged goldens; `normal-build-check.sh` passes; bounded GLM review found no blockers. Logs: `target/step4-view/`, `target/step4-view-*.log`. Nix and desktop paths not rerun.
 
 ## Remaining work and limits
 
