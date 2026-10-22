@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening, font-error transport, glyph-atlas storage, translucent-rectangle blend, Rust draw-view, key-name, owned-input-queue, sandbox/environment and clipboard slices are complete; winit key and click helpers are prepared.** Windows, presentation, input, dialogs and fatal UI still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. The native window/storage/event/signal core is implemented, including the previously prepared key/click helpers; clipboard and the earlier independent slices are complete.** SDL remains for startup initialization, file dialogs and fatal UI. This is an internal staged checkpoint, not a completed native-platform migration or permission to waive its desktop/performance/failure-path acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -109,11 +109,11 @@ Based on `733568fb`: `get_sandbox`, `setenv` and the `PLATFORM` global no longer
 
 Checks: 30 unit tests pass, including priority and snapshot/setter semantics. `startup-check.sh` gained real-process cases: `none` cached across a restart, SNAP set at launch with empty `SNAP` counting, and a `setenv` after the first answer not changing it; 15/15 on private Xvfb and on dummy. All 18 contract suites pass on both profiles with unchanged goldens (the `sandbox`/`setenv` rows included); `normal-build-check.sh` 4/4; bounded GLM review found no blockers. Not tested: a real Flatpak or container-manager filesystem marker (classification of those two inputs is unit-tested only). Logs: `target/step4-env-*.log`.
 
-## Native input helpers (prepared, not yet wired)
+## Native input helpers (preparatory checkpoint; now wired below)
 
 `src/keymap.rs` maps winit `PhysicalKey`/`Key` to the SDL 3.4 scancode and unshifted-keycode numbers the editor's existing key naming uses (168 `KeyCode`s checked against the SDL header and the 3.4.14 scancode names; keys SDL has no scancode for map to 0). `src/clicks.rs` ports SDL 3.4.14's multi-click counting (500 ms; the hint value 4 is a per-axis distance, not squared; a press exactly 500 ms later resets; releases do not change state; per-source and per-button state; 255 saturation). Both are pure with unit tests (43 total pass) and are consumed by the winit producer in the cutover commit. Logged questions for that commit: shifted-letter contract case (4, 65) must use the key with Shift applied for the keycode only if SDL's unshifted-keycode contract demands it (SDL keycodes are unshifted, so the cutover passes the key without modifiers); winit `Meta`/`Hyper` map to 0.
 
-### Native key-event adapter (prepared, not yet wired)
+### Native key-event adapter (preparatory checkpoint; now wired below)
 
 Based on `31b6a5ee`, `keymap::key_event_codes` now combines a winit physical key, location, unmodified key and effective logical key into the existing `(scancode, keycode, numlock)` fields. The key-only helper could not preserve keypad identity or left/right modifier sides: keypad Enter/operators/digits now use their physical SDL keypad code, generic right-side modifiers get their right-side code, and AltGraph is not shifted twice. Ordinary layout-derived keys retain their unmodified character mapping.
 
@@ -121,7 +121,7 @@ Source inspection of the pinned winit showed that `key_without_modifiers` always
 
 Checks: 55 unit tests pass (11 focused keymap tests), covering all eleven digit/decimal keys both ways, winit's unmodified-navigation/effective-digit combination, unidentified keypad 5 while navigating, keypad operators/Enter/equal/comma, left/right modifiers including AltGraph, Shift/Caps/layout remaps, unknown physical keys and ordinary navigation. `sysevents` goldens pass unchanged on private Xvfb and offscreen; ordinary build and `git diff --check` pass; bounded read-only review found no blockers. Logs: `target/step4-key-events-*.log`, `target/step4-key-events/`.
 
-This adapter is **not wired to production input yet**. No native window/key capture, unusual-layout desktop test, full contract collection or Nix rebuild is claimed for this preparatory slice. The native owner/event/signal cutover remains coupled and incomplete.
+At this preparatory checkpoint the adapter was **not wired to production input yet**. No native window/key capture, unusual-layout desktop test, full contract collection or Nix rebuild was claimed for that slice. The coupled native-core checkpoint below wires it.
 
 ## Native clipboard slice
 
@@ -133,8 +133,40 @@ Checks: 49 unit tests pass; all 18 contract suites pass on private Xvfb and offs
 
 Not checked here: native Wayland/XWayland clipboard integration, non-text external owners, externally supplied embedded-NUL text, owner-exit persistence against SDL without a manager, installed-artifact tracing or cost gates. The helper uses arboard's ordinary backend dispatch; these private-Xvfb checks establish X11 selection transfer only. No desktop clipboard or primary selection was touched.
 
+## Coupled native window/storage/event/signal core
+
+Based on `10af6ce5`, this internal checkpoint replaces SDL window ownership, surfaces, event pumping and signal-to-quit delivery together. The agreed later dialog/fatal/startup cleanup remains separate; it does not ship an SDL-surface bridge or a second signal producer.
+
+- `src/native.rs` owns the lazy, process-lived winit loop and id-based window registry on the main thread. Window creation is staged into `resumed`/`about_to_wait`; the owner and its event loop are taken out of their cell before pumping, so callbacks never reborrow the global owner or enter Lua. Failed loop creation is retained. Window functions, cursors, hit zones and text-input requests use the native owner; compositor drag/resize starts only in a live left-button callback. Wayland app ID stays `com.lite_xl.LiteXL`. Whole-window opacity is the accepted no-op; no matching configuration/UI was present to remove.
+- `RenWindow` owns tightly packed `0xFFRRGGBB` pixels and the existing command buffer. Drawing/cache/test reads all use this store. A present copies every visible row into a fresh softbuffer buffer, honoring its stride and not relying on buffer age. Wayland uses the pinned supported Premultiplied/opaque-ARGB route; X11 uses Ignored alpha. Zero/minimized presentation is skipped. Each window is shown after its first actual frame; a forced foreground refresh does not accidentally show a hidden window. Existing RGB goldens remain unchanged.
+- `src/native_input.rs` converts winit keys, text/IME, pointer, wheel, touch and drop records. It uses the prepared key/click helpers, preserves native filename bytes, converts preedit byte offsets to character counts, suppresses ordinary Ctrl/Alt text without suppressing AltGraph, and uses native implicit dragging rather than cursor confinement. No timed text-deduplication heuristic is used. Hardware-specific behavior is not inferred from the unit or Xvfb checks.
+- `src/platform.rs` owns the queue, proxy wake target, display-free Tokio notifier, generation fence and one coalesced process quit request. Publication precedes wake and notifier registration precedes predicate rechecking. A monotonic deadline spans internal wakes. Only consumption clears the quit; filtering/restart does not. Old dialog results are rejected under the same lock as generation/closure checks. The custom-event integer-token transport and all SDL polling/pushing are gone. Hook builds decode historical numeric fixtures into this same queue; that path is not OS-input evidence.
+- `src/services.rs` supplies the single cached one-worker runtime. Startup synchronously inspects dispositions and registers only default SIGINT/SIGTERM before SDL initialization, leaving ignored/custom handlers alone. Tasks publish Rust state, never Lua or process termination. Runtime/setup errors fail before Lua; live errors wake the ordinary Lua error path. Generation retirement drains old native input and disables old text composition before queue retirement. Both normal teardown and the private Lua bootstrap `os.exit` wrapper close delivery before Lua destruction, without waiting for signal tasks or a dialog.
+- SDL dialogs temporarily have no SDL parent and their callbacks now carry a generation fence. This is explicitly not the final parent/modality implementation. SDL fatal UI and initialization remain. `renderer.rs` has no SDL dependency left. Cargo binaries obtain the same dlopen-provider RPATHs already retained by Nix; no dependency/version/lock change was needed.
+
+### Reviewed wait-readiness difference
+
+The first native run passed 17/18 suites. The remaining two observations expected SDL's poll-cycle readiness after the actual queue was drained. The user chose **actual pending input** rather than reproducing that sentinel. This seventh reviewed difference is recorded in the handoff and API docs. The string-timeout/extra-argument cases now enqueue real input to test argument behavior; timeout, non-consuming readiness and empty-queue behavior retain separate checks. No golden was edited. An earlier foreground-refresh mismatch was fixed at its root (refresh must not show a hidden window), not normalized away.
+
+### Checks performed
+
+| Check | Result |
+| --- | --- |
+| `env -u LD_LIBRARY_PATH cargo test --offline --locked --lib` | 63 pass; one ignored subprocess subject is explicitly invoked in six fresh children by its parent test (INT/TERM × default/ignored/custom). Includes queue ordering/coalescing, quit survival/consumption, generation rejection, notifier error wake, spurious-wake deadline and final-close assertions. |
+| `PROFILE=xvfb scripts/rust-port/verify.sh`, debug and `CARGO_ARGS=--release` | All 18 suites pass in both builds; unchanged historical RGB/event goldens, native X11 backend tags, and private clipboard invariants. Offscreen/dummy window profiles are retired. |
+| `scripts/rust-port/startup-check.sh`, debug and release | 19/19 in both builds: real SIGINT and SIGTERM separately reach a running full editor, exit cleanly without error.txt or update/draw after project removal; restart/global/environment and real missing-display Lua traceback/error.txt/exit-1 checks pass. |
+| `scripts/rust-port/native-check.sh` | 14/14: SIGINT and SIGTERM wake actual indefinite waits before a loop, after failed loop creation and with a native loop; requests survive a real Lua restart without consumption or duplicate delivery. XTEST drives actual X11 capture through winit: plain/shifted text, right Ctrl, suppressed Ctrl+S text, NumLock-off navigation/on keypad digit, keypad Enter. Uses no injection hook; also passes 14/14 in release. |
+| `scripts/rust-port/normal-build-check.sh` | 4/4: hook code/global/module absent, retired switch inert, 41 system exports. Native checks also pass 14/14 with this ordinary no-hooks binary. |
+| `scripts/rust-port/hit-test-check.sh` | All 1,239,848 recorded C points agree. |
+| `nix build --no-link --print-out-paths .#lite-xl` | Pass; installed release ELF passes native checks 14/14 and private clipboard checks 10/10 against staged test data with host display/bus/loader paths removed. |
+| Shell/Lua syntax; `git diff --check`; bounded independent reviews | Pass; no blockers. Reviews prompted the app-ID fix and an additional focused review covered final teardown/argument-lifetime/test-isolation changes. |
+
+Installed checkpoint ELF: `/nix/store/y6wzhiymnl8bydp8grpbyisvh27babwd-lite-xl-2.1.7/bin/lite-xl`, SHA-256 `b5be6245eee83d965bbf4adb5178343c39a5d3deadc941b5d76c95d239c03970`. Built from the uncommitted checkpoint based on `10af6ce5`, before final documentation/test-only changes; not a final migration artifact. Cargo.lock SHA-256 remains `16c7a91895650e7d38c4302457580a6fb79fe8659b89f499f50d08fc5e4c830f`. Its NEEDED list still includes `libSDL3.so.0`, as expected. This is runtime-provider/OS-path evidence, not the Step 5 no-SDL dynamic audit. Logs/provenance: `target/step4-native/`, `target/step4-native-*.log`.
+
+All runtime checks used runner-owned Xvfb or no display, an unreachable session bus and private runtime directories. No host window, clipboard, portal or notification was used. XTEST is simulated input through the real X server, not physical keyboard or native-Wayland evidence.
+
 ## Remaining work and limits
 
-The coupled main-thread platform owner, persistent draw target, native event conversion/waits, generation-fenced dialogs, process-signal integration and fatal notification remain to implement and validate. The planner's proposed temporary SDL-surface bridge is rejected by the existing pixel-storage resolution. Signal ownership must move with the pump, not as an independently operating or duplicate signal producer.
+Implement ashpd dialogs with final native parent/lease/lifecycle policy, native fatal notification, and removal of residual SDL initialization. Complete native desktop/presentation/IME/fractional-scale/held-drag/touch/drop validation and calibrated cost gates. Required runtime/registration and live listener/driver failure injection, deterministic proxy-publication races and final chooser-specific fault/lifecycle checks remain unqualified; current tests exercise the reported-error wake path and real signal waits, not every fault. Do not treat this internal checkpoint as a passed full Step 4. The planner's proposed temporary SDL-surface bridge is rejected by the existing pixel-storage resolution. Signal ownership must move with the pump, not as an independently operating or duplicate signal producer.
 
-No live desktop, native Wayland/XWayland presentation/input, IME, selection, chooser, notification or performance check was performed here. Native X11 retains its accepted-unverified disposition; aarch64 was evaluated only. Library resolution and passing SDL tests do not qualify the replacement. Preserve all existing stop conditions, including an observed non-excepted IME/input difference. SDL removal and the final installed-artifact dynamic proof belong to Step 5, not this checkpoint.
+No live-desktop Wayland/XWayland presentation/input, IME, selection, chooser, notification or performance check was performed here; the private-Xvfb evidence is listed above. Native X11-session hardware retains its accepted-unverified disposition; aarch64 was evaluated only. Passing private tests and resolving libraries do not qualify the replacement. Preserve all existing stop conditions, including an observed non-excepted IME/input difference. SDL removal and the final installed-artifact dynamic proof belong to Step 5, not this checkpoint.

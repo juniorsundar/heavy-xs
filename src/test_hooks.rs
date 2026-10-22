@@ -1,4 +1,4 @@
-//! Test-only: lets the contract suite inject synthetic SDL events and read back what was drawn.
+//! Test-only: inject owned records before Lua packing and read back the Rust draw target.
 //!
 //! Compiled only with the `test_hooks` cargo feature; shipping builds have no
 //! injection surface (a plugin could otherwise forge input), which
@@ -6,8 +6,8 @@
 //! C recordings: that implementation is gone and nothing in this binary selects it.
 //!
 //! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
-//! `SDL_PushEvent`, so it is converted into an owned input record by the production producer,
-//! and returns whether SDL accepted it.
+//! the shared owned-input queue after decoding the historical numeric event fixtures.
+//! Native capture is validated separately; this is not OS-input evidence.
 
 use std::ffi::{c_int, c_void, CString};
 
@@ -22,7 +22,7 @@ use crate::platform::{Custom, Payload};
 use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
 
 extern "C" {
-    fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
+    fn ren_get_window_id(window: *mut c_void) -> u32;
 }
 
 /// A callback that pushes ("custom", code, data1 as integer) so a test can see it ran.
@@ -174,7 +174,7 @@ fn window_id(t: &Table) -> LuaResult<sdl::SDL_WindowID> {
             let ud: AnyUserData = ud;
             let slot = ud.to_pointer() as *const *mut c_void;
             let window = unsafe { *slot };
-            Ok(unsafe { sdl::SDL_GetWindowID(ren_get_sdl_window(window)) })
+            Ok(sdl::SDL_WindowID(unsafe { ren_get_window_id(window) }))
         }
         _ => Ok(sdl::SDL_WindowID(0)),
     }
@@ -185,12 +185,11 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
 
     let kind: String = spec.raw_get("type")?;
     let mut e: sdl::SDL_Event = unsafe { std::mem::zeroed() };
-    let text = CString::new(spec.raw_get::<Option<String>>("text")?.unwrap_or_default()).unwrap();
+    let text = spec.raw_get::<Option<mlua::LuaString>>("text")?.map(|s| s.as_bytes().to_vec()).unwrap_or_default();
+    let text = CString::new(text.split(|&b| b == 0).next().unwrap_or_default()).unwrap();
     let wid = window_id(&spec)?;
-    // SDL queues a copy of the event but not the strings it points to. SDL's own
-    // producers SDL_strdup them and SDL frees them in SDL_CleanupEvent, so do the
-    // same instead of pointing at `text`, which is gone when this function returns.
-    let owned_text = unsafe { sdl::SDL_strdup(text.as_ptr()) };
+    // The decoder copies borrowed fixture text before this callback returns.
+    let owned_text = text.as_ptr();
 
     unsafe {
         match kind.as_str() {
@@ -279,17 +278,14 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
                 } else {
                     Some(Payload::Message(message)) // DIALOG_ERROR message
                 };
-                sdl::SDL_free(owned_text as *mut c_void);
                 let event = CustomEvent { code, data1: num(&spec, "id")? as usize, payload };
                 return Ok(push_custom_event(b"dialogfinished", event).is_ok());
             }
             other => return Err(LuaError::runtime(format!("unknown test event type '{other}'"))),
         }
-        let pushed = sdl::SDL_PushEvent(&mut e);
-        // Only the three text-carrying kinds hand ownership of the copy to SDL.
-        if !pushed || !matches!(kind.as_str(), "text_input" | "text_editing" | "drop_file") {
-            sdl::SDL_free(owned_text as *mut c_void);
-        }
+        let input = crate::sysevents::injected_input(&e);
+        // SDL's producer rejected window notifications without a registered window.
+        let pushed = if kind == "window" && wid.0 == 0 { true } else { crate::platform::post(input) };
         Ok(pushed)
     }
 }

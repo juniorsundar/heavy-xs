@@ -20,9 +20,11 @@ const ARCH_TUPLE: &CStr = unsafe {
 
 /// The Lua chunk that boots the editor, verbatim from `main.c` for Linux (`HOME`, `/`).
 /// It returns `core.restart_request` so the caller knows whether to start over.
-const INIT_LITE_CODE: &CStr = c"local core
+const INIT_LITE_CODE: &CStr = c"local close_platform = ...
+local core
 local os_exit = os.exit
 os.exit = function(code, close)
+  close_platform()
   os_exit(code, close == nil and true or close)
 end
 xpcall(function()
@@ -86,11 +88,21 @@ fn exe_filename() -> Option<Vec<u8>> {
         .filter(|p| !p.is_empty())
 }
 
+unsafe extern "C-unwind" fn close_platform(_: *mut lua_State) -> c_int {
+    crate::platform::close();
+    crate::services::close();
+    0
+}
+
 pub fn run() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
         // Where SDL_Init used to snapshot the environment: before Lua, before any setenv.
         crate::system::snapshot_environment();
+        if let Err(error) = crate::services::init_signals() {
+            eprintln!("Error initializing process services: {error}");
+            return ExitCode::FAILURE;
+        }
 
         sdl::SDL_SetAppMetadata(
             c"Lite XL".as_ptr(),
@@ -106,6 +118,8 @@ pub fn run() -> ExitCode {
         }
         sdl::SDL_SetEventEnabled(sdl::SDL_EVENT_DROP_FILE.into(), true);
         extern "C" fn quit() {
+            crate::platform::close();
+            crate::services::close();
             unsafe { sdl::SDL_Quit() }
         }
         libc::atexit(quit);
@@ -147,8 +161,16 @@ pub fn run() -> ExitCode {
                 std::process::exit(1);
             }
             // The chunk handles its own errors (xpcall); the status is not needed.
-            lua_pcall(l, 0, 1, 0);
+            mlua::ffi::lua_pushcfunction(l, close_platform);
+            lua_pcall(l, 1, 1, 0);
             let restart = lua_toboolean(l, -1) != 0;
+            if restart {
+                crate::native::retire_generation();
+                crate::platform::retire_generation();
+            } else {
+                crate::platform::close();
+                crate::services::close();
+            }
             lua_close(l);
             if restart {
                 crate::rencache::rencache_invalidate();

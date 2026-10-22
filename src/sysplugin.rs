@@ -21,7 +21,7 @@ use mlua::ffi::{
 use sdl3_sys::everything as sdl;
 use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
 
-use crate::custom_events::{push_custom_event, CustomEvent};
+use crate::custom_events::{push_custom_event_at, CustomEvent};
 use crate::platform::{Custom, Payload};
 use crate::plugin_syms::SYMBOLS;
 
@@ -178,6 +178,7 @@ const DIALOG_ERROR: i32 = 2;
 /// Everything the SDL callback needs once the dialog finishes (possibly on another thread).
 struct DialogData {
     id: usize,
+    generation: u64,
     filters: Vec<sdl::SDL_DialogFileFilter>,
 }
 
@@ -192,9 +193,6 @@ impl Drop for DialogData {
     }
 }
 
-extern "C" {
-    fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
-}
 
 /// `dialog_callback`: SDL calls this (on whichever thread finished the dialog) with the
 /// chosen paths. It never touches Lua; the result becomes a `dialogfinished` event that the
@@ -202,6 +200,7 @@ extern "C" {
 unsafe extern "C" fn dialog_callback(userdata: *mut c_void, filelist: *const *const c_char, _filter: c_int) {
     let data = Box::from_raw(userdata as *mut DialogData);
     let data1 = data.id;
+    let generation = data.generation;
     drop(data); // the filters had to outlive the dialog; they no longer do
 
     let (code, payload) = if filelist.is_null() {
@@ -220,7 +219,7 @@ unsafe extern "C" fn dialog_callback(userdata: *mut c_void, filelist: *const *co
         (DIALOG_OK, Some(Payload::Paths(paths)))
     };
 
-    let _ = push_custom_event(b"dialogfinished", CustomEvent { code, data1, payload });
+    let _ = push_custom_event_at(b"dialogfinished", CustomEvent { code, data1, payload }, Some(generation));
 }
 
 /// `dialogfinished_callback`: runs on the main thread inside `poll_event` and pushes
@@ -308,7 +307,7 @@ unsafe fn dialog_filters(l: *mut lua_State, index: c_int) -> Vec<sdl::SDL_Dialog
 }
 
 unsafe fn open_dialog(l: *mut lua_State, kind: sdl::SDL_FileDialogType) -> c_int {
-    let renwindow = *(luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut c_void);
+    luaL_checkudata(l, 1, c"RenWindow".as_ptr());
     let id = luaL_checkinteger(l, 2) as usize;
 
     let (mut default_location, mut title, mut accept, mut cancel) = (None, None, None, None);
@@ -342,7 +341,7 @@ unsafe fn open_dialog(l: *mut lua_State, kind: sdl::SDL_FileDialogType) -> c_int
 
     // SDL reads the filter array until the callback runs, so it lives in the Box that
     // `dialog_callback` takes back and drops.
-    let data = Box::new(DialogData { id, filters });
+    let data = Box::new(DialogData { id, filters, generation: crate::platform::generation() });
     let filter_ptr = data.filters.as_ptr();
     let filter_count = data.filters.len();
     let data = Box::into_raw(data);
@@ -350,7 +349,7 @@ unsafe fn open_dialog(l: *mut lua_State, kind: sdl::SDL_FileDialogType) -> c_int
     let opt = |value: &Option<CString>| value.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
     sdl::SDL_SetPointerProperty(props, sdl::SDL_PROP_FILE_DIALOG_FILTERS_POINTER, filter_ptr as *mut c_void);
     sdl::SDL_SetNumberProperty(props, sdl::SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, filter_count as i64);
-    sdl::SDL_SetPointerProperty(props, sdl::SDL_PROP_FILE_DIALOG_WINDOW_POINTER, ren_get_sdl_window(renwindow) as *mut c_void);
+    // shortcut: SDL dialogs are temporarily unparented; replace with ashpd before shipping Step 4.
     sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_LOCATION_STRING, opt(&default_location));
     sdl::SDL_SetBooleanProperty(props, sdl::SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, allow_many);
     sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_TITLE_STRING, opt(&title));

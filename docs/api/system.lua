@@ -83,7 +83,7 @@ system = {}
 function system.poll_event() end
 
 ---
----Wait until an event is triggered.
+---Wait for pending input without consuming it. An internal backend wake alone is not input.
 ---
 ---@param timeout? number Amount of seconds, also supports fractions
 ---of a second, eg: 0.01. If not provided, waits forever.
@@ -360,13 +360,12 @@ function system.exec(command) end
 function system.fuzzy_match(haystack, needle, file) end
 
 ---
----Change the opacity (also known as transparency) of the window.
+---Compatibility no-op: whole-window opacity is not supported by the native backend.
 ---
 ---@param window renwindow
----@param opacity number A value from 0.0 to 1.0, the lower the value
----the less visible the window will be.
+---@param opacity number Accepted for compatibility; has no effect.
 ---
----@return boolean success True if the operation suceeded.
+---@return boolean success Always true, preserving the historical return value.
 function system.set_window_opacity(window, opacity) end
 
 ---
