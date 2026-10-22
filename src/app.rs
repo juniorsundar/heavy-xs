@@ -89,6 +89,8 @@ fn exe_filename() -> Option<Vec<u8>> {
 pub fn run() -> ExitCode {
     unsafe {
         libc::signal(libc::SIGPIPE, libc::SIG_IGN);
+        // Where SDL_Init used to snapshot the environment: before Lua, before any setenv.
+        crate::system::snapshot_environment();
 
         sdl::SDL_SetAppMetadata(
             c"Lite XL".as_ptr(),
@@ -128,7 +130,7 @@ pub fn run() -> ExitCode {
             }
             lua_setglobal(l, c"ARGS".as_ptr());
 
-            lua_pushstring(l, sdl::SDL_GetPlatform());
+            lua_pushstring(l, c"Linux".as_ptr());
             lua_setglobal(l, c"PLATFORM".as_ptr());
             lua_pushstring(l, ARCH_TUPLE.as_ptr());
             lua_setglobal(l, c"ARCH".as_ptr());

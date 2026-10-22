@@ -481,7 +481,7 @@ Covered in §6/§7. **Deliverable:** Rust `.a` linked into the C build, probe mo
 
 **Contract** (`src/main.c:99-230`, `data/core/start.lua:1-43`):
 - Order: `SDL_SetAppMetadata("Lite XL", LITE_PROJECT_VERSION_STR, "com.lite_xl.LiteXL")` → `SDL_Init(SDL_INIT_EVENTS)` → `SDL_SetEventEnabled(DROP_FILE)` → `atexit(SDL_Quit)` → `ren_init()` → `init_custom_events()` → `luaL_newstate` → `luaL_openlibs` → `api_load_libs(L)`.
-- Globals set from C before `start.lua`: `ARGS` (1-based argv table), `PLATFORM` (`SDL_GetPlatform()`), `ARCH` (`LITE_ARCH_TUPLE`), `RESTARTED` (bool), `EXEFILE` (exe path, fallback `argv[0]`), optional `MACOS_RESOURCES`.
+- Globals set from C before `start.lua`: `ARGS` (1-based argv table), `PLATFORM` (the literal `"Linux"` since Step 4; it was `SDL_GetPlatform()`), `ARCH` (`LITE_ARCH_TUPLE`), `RESTARTED` (bool), `EXEFILE` (exe path, fallback `argv[0]`), optional `MACOS_RESOURCES`.
 - Embedded chunk semantics: `os.exit` wrapped to default `close=true`; `HOME = os.getenv(LITE_OS_HOME)`; `DATADIR = MACOS_RESOURCES or (prefix .. '/share/lite-xl') or exedir .. '/data'`; `dofile(DATADIR/core/start.lua)`; `require(os.getenv('LITE_XL_RUNTIME') or 'core')`; `core.init()`; `core.run()`.
 - Error path: write `error.txt` (or `USERDIR/error.txt` + `core.on_error`), print `debug.traceback(nil, 2)`, `system.show_fatal_error`, `os.exit(1)`.
 - Restart: if `core.restart_request` is truthy → `lua_close`, `rencache_invalidate()`, `has_restarted = 1`, jump back to state creation. **The Lua state is recreated per restart and the SDL window survives** (`renwindow._persist`). `RESTARTED` must be set correctly across iterations. `autorestart.lua` depends on this.
