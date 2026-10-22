@@ -18,10 +18,8 @@ use mlua::ffi::{
     lua_toboolean, lua_touserdata, lua_type, luaL_checkinteger, luaL_checklstring, luaL_checkstring,
     luaL_checkudata, luaL_error, luaL_len, luaL_optlstring, luaL_setmetatable, LUA_TNIL, LUA_TTABLE,
 };
-use sdl3_sys::everything as sdl;
 use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
 
-use crate::custom_events::{push_custom_event_at, CustomEvent};
 use crate::platform::{Custom, Payload};
 use crate::plugin_syms::SYMBOLS;
 
@@ -175,53 +173,6 @@ const DIALOG_OK: i32 = 0;
 const DIALOG_CANCEL: i32 = 1;
 const DIALOG_ERROR: i32 = 2;
 
-/// Everything the SDL callback needs once the dialog finishes (possibly on another thread).
-struct DialogData {
-    id: usize,
-    generation: u64,
-    filters: Vec<sdl::SDL_DialogFileFilter>,
-}
-
-impl Drop for DialogData {
-    fn drop(&mut self) {
-        for filter in &self.filters {
-            unsafe {
-                sdl::SDL_free(filter.name as *mut c_void);
-                sdl::SDL_free(filter.pattern as *mut c_void);
-            }
-        }
-    }
-}
-
-
-/// `dialog_callback`: SDL calls this (on whichever thread finished the dialog) with the
-/// chosen paths. It never touches Lua; the result becomes a `dialogfinished` event that the
-/// main thread's `poll_event` turns into Lua values via `dialogfinished_callback`.
-unsafe extern "C" fn dialog_callback(userdata: *mut c_void, filelist: *const *const c_char, _filter: c_int) {
-    let data = Box::from_raw(userdata as *mut DialogData);
-    let data1 = data.id;
-    let generation = data.generation;
-    drop(data); // the filters had to outlive the dialog; they no longer do
-
-    let (code, payload) = if filelist.is_null() {
-        let message = CStr::from_ptr(sdl::SDL_GetError()).to_bytes().to_vec();
-        (DIALOG_ERROR, Some(Payload::Message(message)))
-    } else if (*filelist).is_null() {
-        (DIALOG_CANCEL, None)
-    } else {
-        // Owned copies: SDL frees `filelist` when this callback returns.
-        let mut paths = Vec::new();
-        let mut i = 0;
-        while !(*filelist.add(i)).is_null() {
-            paths.push(CStr::from_ptr(*filelist.add(i)).to_bytes().to_vec());
-            i += 1;
-        }
-        (DIALOG_OK, Some(Payload::Paths(paths)))
-    };
-
-    let _ = push_custom_event_at(b"dialogfinished", CustomEvent { code, data1, payload }, Some(generation));
-}
-
 /// `dialogfinished_callback`: runs on the main thread inside `poll_event` and pushes
 /// `("dialogfinished", id, "accept"|"cancel"|"error", list_or_message?)`.
 pub unsafe fn dialogfinished_callback(l: *mut lua_State, e: &Custom) -> c_int {
@@ -270,104 +221,86 @@ pub unsafe fn dialogfinished_callback(l: *mut lua_State, e: &Custom) -> c_int {
     }
 }
 
-/// An owned copy of an optional string option: `NULL` when the field is nil.
-unsafe fn optional_string(l: *mut lua_State, index: c_int, field: &CStr) -> Option<CString> {
-    lua_getfield(l, index, field.as_ptr());
-    let mut length = 0usize;
-    let text = luaL_optlstring(l, -1, std::ptr::null(), &mut length);
-    let owned = if text.is_null() {
-        None
-    } else {
-        Some(CString::new(std::slice::from_raw_parts(text as *const u8, length)).unwrap_or_default())
-    };
-    owned
+// Snapshot validated Lua values before allocating Rust owners: option metamethods may raise.
+unsafe fn checked_options(l: *mut lua_State, kind: crate::dialogs::Kind) -> c_int {
+    let has_options = lua_type(l, 3) > LUA_TNIL;
+    if has_options { mlua::ffi::luaL_checktype(l, 3, LUA_TTABLE); }
+    lua_createtable(l, 6, 0);
+    let snapshot = lua_gettop(l);
+    if !has_options { return snapshot; }
+    for (i, field) in [c"default_location", c"title", c"accept_label", c"cancel_label"].iter().enumerate() {
+        lua_getfield(l, 3, field.as_ptr());
+        luaL_optlstring(l, -1, std::ptr::null(), std::ptr::null_mut());
+        lua_rawseti(l, snapshot, i as i64 + 1);
+    }
+    if kind != crate::dialogs::Kind::Save {
+        lua_getfield(l, 3, c"allow_many".as_ptr());
+        let many = lua_toboolean(l, -1);
+        lua_settop(l, lua_gettop(l) - 1);
+        mlua::ffi::lua_pushboolean(l, many);
+        lua_rawseti(l, snapshot, 5);
+    }
+    if kind != crate::dialogs::Kind::Directory {
+        lua_getfield(l, 3, c"filters".as_ptr());
+        let original = lua_gettop(l);
+        let count = if lua_type(l, original) > LUA_TNIL { luaL_len(l, original) } else { 0 };
+        lua_createtable(l, 0, 0);
+        let flat = lua_gettop(l);
+        for i in 0..count {
+            mlua::ffi::lua_geti(l, original, i + 1);
+            for (j, field) in [c"name", c"pattern"].iter().enumerate() {
+                lua_getfield(l, -1, field.as_ptr());
+                luaL_checklstring(l, -1, std::ptr::null_mut());
+                lua_rawseti(l, flat, i * 2 + j as i64 + 1);
+            }
+            lua_settop(l, lua_gettop(l) - 1);
+        }
+        lua_rawseti(l, snapshot, 6);
+        lua_settop(l, snapshot);
+    }
+    snapshot
 }
 
-/// `get_dialog_filters`: `{ {name=, pattern=}, ... }` -> SDL filters, strings owned by SDL's heap.
-unsafe fn dialog_filters(l: *mut lua_State, index: c_int) -> Vec<sdl::SDL_DialogFileFilter> {
-    let index = if index < 0 { index + lua_gettop(l) + 1 } else { index };
-    if lua_type(l, index) <= LUA_TNIL {
-        return Vec::new();
-    }
-    let count = luaL_len(l, index);
-    let mut filters = Vec::with_capacity(count.max(0) as usize);
-    for i in 0..count {
-        mlua::ffi::lua_geti(l, index, i + 1);
-        let mut length = 0usize;
-        lua_getfield(l, -1, c"name".as_ptr());
-        let name = luaL_checklstring(l, -1, &mut length);
-        let name = sdl::SDL_strndup(name, length);
-        lua_getfield(l, -2, c"pattern".as_ptr());
-        let pattern = luaL_checklstring(l, -1, &mut length);
-        let pattern = sdl::SDL_strndup(pattern, length);
-        lua_settop(l, lua_gettop(l) - 3);
-        filters.push(sdl::SDL_DialogFileFilter { name, pattern });
-    }
-    filters
+unsafe fn copied_string(l: *mut lua_State, index: c_int, field: i64) -> Option<Vec<u8>> {
+    mlua::ffi::lua_rawgeti(l, index, field);
+    let ptr = mlua::ffi::lua_tolstring(l, -1, std::ptr::null_mut());
+    let bytes = if ptr.is_null() { None } else { Some(CStr::from_ptr(ptr).to_bytes().to_vec()) };
+    lua_settop(l, lua_gettop(l) - 1);
+    bytes
 }
 
-unsafe fn open_dialog(l: *mut lua_State, kind: sdl::SDL_FileDialogType) -> c_int {
-    luaL_checkudata(l, 1, c"RenWindow".as_ptr());
+unsafe fn open_dialog(l: *mut lua_State, kind: crate::dialogs::Kind) -> c_int {
+    let window = luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut crate::renwindow::RenWindow;
     let id = luaL_checkinteger(l, 2) as usize;
-
-    let (mut default_location, mut title, mut accept, mut cancel) = (None, None, None, None);
-    let mut allow_many = false;
+    let snapshot = checked_options(l, kind);
+    let location = copied_string(l, snapshot, 1);
+    let title = copied_string(l, snapshot, 2);
+    let accept = copied_string(l, snapshot, 3);
+    mlua::ffi::lua_rawgeti(l, snapshot, 5);
+    let many = lua_toboolean(l, -1) != 0;
+    lua_settop(l, snapshot);
+    mlua::ffi::lua_rawgeti(l, snapshot, 6);
+    let flat = lua_gettop(l);
     let mut filters = Vec::new();
-
-    if lua_type(l, 3) > LUA_TNIL {
-        mlua::ffi::luaL_checktype(l, 3, LUA_TTABLE);
-        default_location = optional_string(l, 3, c"default_location");
-        title = optional_string(l, 3, c"title");
-        accept = optional_string(l, 3, c"accept_label");
-        cancel = optional_string(l, 3, c"cancel_label");
-        lua_settop(l, lua_gettop(l) - 4);
-
-        if kind == sdl::SDL_FileDialogType::OPENFILE || kind == sdl::SDL_FileDialogType::OPENFOLDER {
-            lua_getfield(l, 3, c"allow_many".as_ptr());
-            allow_many = lua_type(l, -1) > LUA_TNIL && lua_toboolean(l, -1) != 0;
-            lua_settop(l, lua_gettop(l) - 1);
-        }
-        if kind == sdl::SDL_FileDialogType::OPENFILE || kind == sdl::SDL_FileDialogType::SAVEFILE {
-            lua_getfield(l, 3, c"filters".as_ptr());
-            filters = dialog_filters(l, -1);
-            lua_settop(l, lua_gettop(l) - 1);
+    if lua_type(l, flat) == LUA_TTABLE {
+        let count = mlua::ffi::lua_rawlen(l, flat) / 2;
+        for i in 0..count {
+            let name = copied_string(l, flat, i as i64 * 2 + 1).unwrap();
+            let pattern = copied_string(l, flat, i as i64 * 2 + 2).unwrap();
+            filters.push((name, pattern));
         }
     }
-
-    let props = sdl::SDL_CreateProperties();
-    if props.0 == 0 {
-        return luaL_error(l, c"Error while creating SDL Property: %s".as_ptr(), sdl::SDL_GetError());
-    }
-
-    // SDL reads the filter array until the callback runs, so it lives in the Box that
-    // `dialog_callback` takes back and drops.
-    let data = Box::new(DialogData { id, filters, generation: crate::platform::generation() });
-    let filter_ptr = data.filters.as_ptr();
-    let filter_count = data.filters.len();
-    let data = Box::into_raw(data);
-
-    let opt = |value: &Option<CString>| value.as_ref().map_or(std::ptr::null(), |c| c.as_ptr());
-    sdl::SDL_SetPointerProperty(props, sdl::SDL_PROP_FILE_DIALOG_FILTERS_POINTER, filter_ptr as *mut c_void);
-    sdl::SDL_SetNumberProperty(props, sdl::SDL_PROP_FILE_DIALOG_NFILTERS_NUMBER, filter_count as i64);
-    // shortcut: SDL dialogs are temporarily unparented; replace with ashpd before shipping Step 4.
-    sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_LOCATION_STRING, opt(&default_location));
-    sdl::SDL_SetBooleanProperty(props, sdl::SDL_PROP_FILE_DIALOG_MANY_BOOLEAN, allow_many);
-    sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_TITLE_STRING, opt(&title));
-    sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_ACCEPT_STRING, opt(&accept));
-    sdl::SDL_SetStringProperty(props, sdl::SDL_PROP_FILE_DIALOG_CANCEL_STRING, opt(&cancel));
-
-    sdl::SDL_ShowFileDialogWithProperties(kind, Some(dialog_callback), data as *mut c_void, props);
-    sdl::SDL_DestroyProperties(props);
+    crate::dialogs::start(crate::renwindow::ren_get_window_id(*window), id, kind,
+        crate::dialogs::Options { location, title, accept, many, filters });
     0
 }
 
 pub unsafe extern "C-unwind" fn open_file_dialog(l: *mut lua_State) -> c_int {
-    open_dialog(l, sdl::SDL_FileDialogType::OPENFILE)
+    open_dialog(l, crate::dialogs::Kind::Open)
 }
 pub unsafe extern "C-unwind" fn save_file_dialog(l: *mut lua_State) -> c_int {
-    open_dialog(l, sdl::SDL_FileDialogType::SAVEFILE)
+    open_dialog(l, crate::dialogs::Kind::Save)
 }
 pub unsafe extern "C-unwind" fn open_directory_dialog(l: *mut lua_State) -> c_int {
-    open_dialog(l, sdl::SDL_FileDialogType::OPENFOLDER)
+    open_dialog(l, crate::dialogs::Kind::Directory)
 }
-
