@@ -1,6 +1,6 @@
 # SDL3 migration Step 4 evidence
 
-**Status: in progress. Dependency/build, font-file opening and font-error transport slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
+**Status: in progress. Dependency/build, font-file opening, font-error transport and glyph-atlas storage slices are complete.** Windows, drawing, input and services still use SDL. This is not evidence of a completed native cutover or permission to waive its acceptance gates.
 
 ## Dependency/build checkpoint
 
@@ -62,6 +62,18 @@ Checks performed:
 - Bounded read-only GLM review: no present correctness blocker; userdata receives its metatable only after successful load/copy, as before.
 
 Logs/provenance: `target/step4-font-errors/` and `target/step4-font-errors-*.log`. The existing invalid-pixel-size branch was preserved but not independently forced; the full contract collection, Nix build and desktop paths were not rerun for this slice.
+
+## Glyph-atlas storage slice
+
+Based on `e03289ae`, glyph atlases in `src/renderer.rs` now use boxed, zero-filled Rust coverage buffers (3 bytes/pixel subpixel, 1 grayscale) instead of SDL `RGB24`/`INDEX8` surfaces. Rows are packed (`width * bytes_per_pixel`) rather than SDL's 4-byte-aligned pitch; all reads and writes use the stored pitch, so placement and blending arithmetic are unchanged. Boxing keeps handed-out coverage pointers stable while an atlas grows; clearing the cache drops them. The internal write-only `bytesize` estimate now counts the Rust structs. The window surface and translucent-rectangle blit remain SDL until the draw-target cutover.
+
+Checks performed:
+
+- `env -u LD_LIBRARY_PATH cargo test --offline --locked --lib`: 23 pass, no warnings.
+- `scripts/rust-port/verify.sh renderer` and `rencache`, each on private Xvfb and offscreen: unchanged goldens, including text pixel hashes.
+- `git diff --check`: pass. Bounded read-only GLM review: no findings.
+
+Logs: `target/step4-atlas/`, `target/step4-atlas-*.log`. Full contracts, Nix and desktop paths not rerun for this slice.
 
 ## Remaining work and limits
 
