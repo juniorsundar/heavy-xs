@@ -24,12 +24,74 @@ pub struct RenRect {
     pub height: c_int,
 }
 
-/// `RenSurface` from `src/renderer.h`: a surface plus the scale its coordinates are in.
-#[repr(C)]
+/// One colour channel of a packed pixel.
+#[derive(Clone, Copy)]
+pub struct Channel {
+    pub mask: u32,
+    pub shift: u32,
+}
+
+impl Channel {
+    pub fn get(self, pixel: u32) -> u32 {
+        (pixel & self.mask) >> self.shift
+    }
+}
+
+/// `RenSurface` from `src/renderer.h`: one frame's view of a window's pixels plus the scale its
+/// coordinates are in. The clip lives here, not in the pixel storage: drawing only happens inside
+/// rencache's redraw loop, which sets it before every replayed rect.
 #[derive(Clone, Copy)]
 pub struct RenSurface {
-    pub surface: *mut sdl::SDL_Surface,
+    pub pixels: *mut u8,
+    pub w: c_int,
+    pub h: c_int,
+    pub pitch: c_int,
+    pub bytes_per_pixel: c_int,
+    pub r: Channel,
+    pub g: Channel,
+    pub b: Channel,
+    pub a: Channel,
+    pub clip: RenRect,
     pub scale: c_int,
+}
+
+impl RenSurface {
+    /// `SDL_SetSurfaceClipRect`: the rect within the surface, kept unchanged on overflow.
+    pub fn set_clip(&mut self, rect: RenRect) {
+        let full = RenRect { x: 0, y: 0, width: self.w, height: self.h };
+        if let Some(clip) = rect_intersection(scaled_rect(rect, self.scale), full) {
+            self.clip = clip;
+        }
+    }
+}
+
+/// `SDL_RectEmpty`.
+pub fn rect_empty(r: RenRect) -> bool {
+    r.width <= 0 || r.height <= 0
+}
+
+/// `SDL_GetRectIntersection`'s arithmetic: `None` when either rect could overflow (SDL then
+/// leaves its result untouched), otherwise the intersection, which may be empty.
+pub fn rect_intersection(a: RenRect, b: RenRect) -> Option<RenRect> {
+    let can_overflow = |r: RenRect| {
+        r.x <= i32::MIN / 2
+            || r.x >= i32::MAX / 2
+            || r.y <= i32::MIN / 2
+            || r.y >= i32::MAX / 2
+            || r.width >= i32::MAX / 2
+            || r.height >= i32::MAX / 2
+    };
+    if can_overflow(a) || can_overflow(b) {
+        return None;
+    }
+    let x = a.x.max(b.x);
+    let y = a.y.max(b.y);
+    Some(RenRect {
+        x,
+        y,
+        width: (a.x + a.width).min(b.x + b.width) - x,
+        height: (a.y + a.height).min(b.y + b.height) - y,
+    })
 }
 
 /// `struct RenWindow`.
@@ -79,7 +141,6 @@ pub unsafe extern "C" fn ren_create(win: *mut sdl::SDL_Window) -> *mut RenWindow
     init_surface(ren);
     (*ren).command_buf_idx = 0;
     (*ren).command_buf_size = 0;
-    clip_to_surface(ren);
     with_state(|state| state.list.push(ren));
     ren
 }
@@ -151,8 +212,8 @@ pub unsafe extern "C" fn ren_set_target_window(window: *mut RenWindow) {
 #[no_mangle]
 pub unsafe extern "C" fn ren_get_size(ren: *mut RenWindow, x: *mut c_int, y: *mut c_int) {
     let rs = get_surface(ren);
-    *x = (*rs.surface).w;
-    *y = (*rs.surface).h;
+    *x = rs.w;
+    *y = rs.h;
 }
 
 /// `ren_resize_window`: SDL resizes the window surface itself, so only the scale is redone.
@@ -179,23 +240,13 @@ pub unsafe extern "C" fn ren_update_rects(ren: *mut RenWindow, rects: *mut RenRe
     }
 }
 
-/// `ren_set_clip_rect`.
-///
-/// # Safety
-/// `ren` is a live `RenWindow`.
-#[no_mangle]
-pub unsafe extern "C" fn ren_set_clip_rect(ren: *mut RenWindow, rect: RenRect) {
-    set_clip_rect(ren, rect);
-}
-
 // --------------------------------------------------------------- the Rust API
 
-/// `renwin_get_surface`.
+/// `renwin_get_surface`: valid until the window surface changes (resize) or the window goes.
 ///
 /// # Safety
 /// `ren` is a live `RenWindow`.
-#[no_mangle]
-pub unsafe extern "C" fn renwin_get_surface(ren: *mut RenWindow) -> RenSurface {
+pub unsafe fn renwin_get_surface(ren: *mut RenWindow) -> RenSurface {
     get_surface(ren)
 }
 
@@ -241,7 +292,25 @@ unsafe fn get_surface(ren: *mut RenWindow) -> RenSurface {
         eprintln!("Error getting window surface: {}", sdl_error());
         std::process::exit(1);
     }
-    RenSurface { surface, scale: 1 }
+    let surface = &*surface;
+    let format = &*sdl::SDL_GetPixelFormatDetails(surface.format);
+    // shortcut: drawing writes whole u32 pixels (as the text blend always did), so only 4-byte
+    // 8-bit-per-channel window formats are supported; the Rust 0xFFRRGGBB store removes this.
+    debug_assert_eq!(format.bytes_per_pixel, 4);
+    let channel = |mask: u32, shift: u8| Channel { mask, shift: shift as u32 };
+    RenSurface {
+        pixels: surface.pixels as *mut u8,
+        w: surface.w,
+        h: surface.h,
+        pitch: surface.pitch,
+        bytes_per_pixel: format.bytes_per_pixel as c_int,
+        r: channel(format.Rmask, format.Rshift),
+        g: channel(format.Gmask, format.Gshift),
+        b: channel(format.Bmask, format.Bshift),
+        a: channel(format.Amask, format.Ashift),
+        clip: RenRect { x: 0, y: 0, width: surface.w, height: surface.h },
+        scale: 1,
+    }
 }
 
 fn scaled_rect(rect: RenRect, scale: c_int) -> RenRect {
@@ -251,19 +320,6 @@ fn scaled_rect(rect: RenRect, scale: c_int) -> RenRect {
         width: rect.width * scale,
         height: rect.height * scale,
     }
-}
-
-unsafe fn clip_to_surface(ren: *mut RenWindow) {
-    sdl::SDL_SetSurfaceClipRect(get_surface(ren).surface, std::ptr::null());
-}
-
-unsafe fn set_clip_rect(ren: *mut RenWindow, rect: RenRect) {
-    let rs = get_surface(ren);
-    let sr = scaled_rect(rect, rs.scale);
-    sdl::SDL_SetSurfaceClipRect(
-        rs.surface,
-        &sdl::SDL_Rect { x: sr.x, y: sr.y, w: sr.width, h: sr.height },
-    );
 }
 
 unsafe fn update_scale(ren: *mut RenWindow) {
@@ -404,5 +460,45 @@ mod command_buffer {
             assert_eq!(*(*ren).command_buf, 7);
             free_command_buffer(ren);
         }
+    }
+}
+
+#[cfg(test)]
+mod clip {
+    use super::*;
+
+    fn rect(x: c_int, y: c_int, width: c_int, height: c_int) -> RenRect {
+        RenRect { x, y, width, height }
+    }
+
+    #[test]
+    fn matches_sdl_rect_intersection() {
+        let full = rect(0, 0, 800, 480);
+        assert_eq!(rect_intersection(rect(790, 10, 100, 10), full), Some(rect(790, 10, 10, 10)));
+        // Disjoint rects give SDL's negative-extent (empty) result, not None.
+        let apart = rect_intersection(rect(5000, 5000, 20, 20), full).unwrap();
+        assert!(rect_empty(apart));
+        assert_eq!(rect_intersection(rect(i32::MAX / 2, 0, 1, 1), full), None);
+    }
+
+    #[test]
+    fn set_clip_keeps_previous_on_overflow() {
+        let mut rs = RenSurface {
+            pixels: std::ptr::null_mut(),
+            w: 800,
+            h: 480,
+            pitch: 3200,
+            bytes_per_pixel: 4,
+            r: Channel { mask: 0xff0000, shift: 16 },
+            g: Channel { mask: 0xff00, shift: 8 },
+            b: Channel { mask: 0xff, shift: 0 },
+            a: Channel { mask: 0, shift: 0 },
+            clip: rect(0, 0, 800, 480),
+            scale: 1,
+        };
+        rs.set_clip(rect(10, 20, 30, 40));
+        assert_eq!(rs.clip, rect(10, 20, 30, 40));
+        rs.set_clip(rect(0, 0, i32::MAX / 2, 1));
+        assert_eq!(rs.clip, rect(10, 20, 30, 40));
     }
 }

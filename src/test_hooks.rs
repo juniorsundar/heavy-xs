@@ -13,6 +13,7 @@ use std::ffi::{c_int, c_void, CString};
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
 use sdl3_sys::everything as sdl;
 
+use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
 use crate::custom_events::{
     get_custom_event_callback_by_name, get_custom_event_name, push_custom_event, register_custom_event,
     CustomEvent, CustomEventCallback,
@@ -62,25 +63,22 @@ fn dirty_rects(_: &Lua, _: ()) -> LuaResult<String> {
     Ok(out.join(" "))
 }
 
-/// `RenSurface` from renderer.h.
-#[repr(C)]
-struct RenSurfaceRaw {
-    surface: *mut sdl::SDL_Surface,
-    scale: c_int,
-}
-
-extern "C" {
-    fn renwin_get_surface(ren: *mut c_void) -> RenSurfaceRaw;
-    fn SDL_GetPixelFormatDetails(format: sdl::SDL_PixelFormat) -> *const sdl::SDL_PixelFormatDetails;
-    fn SDL_GetRGBA(
-        pixel: u32,
-        format: *const sdl::SDL_PixelFormatDetails,
-        palette: *const sdl::SDL_Palette,
-        r: *mut u8,
-        g: *mut u8,
-        b: *mut u8,
-        a: *mut u8,
-    );
+/// The logical r,g,b of one window-surface pixel (8 bits per channel, as `SDL_GetRGBA` read it),
+/// or `None` out of bounds.
+fn surface_rgb(rs: &RenSurface, x: c_int, y: c_int) -> Option<(u8, u8, u8)> {
+    if x < 0 || y < 0 || x >= rs.w || y >= rs.h || rs.pixels.is_null() {
+        return None;
+    }
+    let offset = y as usize * rs.pitch as usize + x as usize * rs.bytes_per_pixel as usize;
+    let mut pixel: u32 = 0;
+    unsafe {
+        std::ptr::copy_nonoverlapping(
+            rs.pixels.add(offset),
+            &mut pixel as *mut u32 as *mut u8,
+            (rs.bytes_per_pixel as usize).min(4),
+        )
+    };
+    Some((rs.r.get(pixel) as u8, rs.g.get(pixel) as u8, rs.b.get(pixel) as u8))
 }
 
 /// The b,g,r,a bytes of one surface pixel of a window, or nil when it is out of bounds. Used to
@@ -88,34 +86,11 @@ extern "C" {
 /// that draws nothing.
 fn pixel(_: &Lua, (window, x, y): (mlua::AnyUserData, c_int, c_int)) -> LuaResult<Option<String>> {
     // The userdata holds a RenWindow*, like the C's `RenWindow **`.
-    let ren = unsafe { *(window.to_pointer() as *mut *mut c_void) };
+    let ren = unsafe { *(window.to_pointer() as *mut *mut RenWindow) };
     let rs = unsafe { renwin_get_surface(ren) };
-    if rs.surface.is_null() {
-        return Ok(None);
-    }
-    let surface = unsafe { &*rs.surface };
-    if x < 0 || y < 0 || x >= surface.w || y >= surface.h || surface.pixels.is_null() {
-        return Ok(None);
-    }
-    let bytes_per_pixel = sdl::SDL_BYTESPERPIXEL(surface.format) as usize;
-    let offset = y as usize * surface.pitch as usize + x as usize * bytes_per_pixel;
-    // Read through the format so the value is the logical r,g,b,a: the window surface and the
-    // SDL renderer's texture surface use different byte orders, and the test must not care.
-    let mut pixel: u32 = 0;
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            (surface.pixels as *const u8).add(offset),
-            &mut pixel as *mut u32 as *mut u8,
-            bytes_per_pixel.min(4),
-        )
-    };
-    let details = unsafe { SDL_GetPixelFormatDetails(surface.format) };
-    let (mut r, mut g, mut b, mut a) = (0u8, 0u8, 0u8, 0u8);
-    unsafe { SDL_GetRGBA(pixel, details, std::ptr::null(), &mut r, &mut g, &mut b, &mut a) };
     // Colour only: alpha is 0 in some surface formats and 255 in others for an untouched
     // pixel, which is a format artifact rather than cache behaviour.
-    let _ = a;
-    Ok(Some(format!("{r:02x}{g:02x}{b:02x}")))
+    Ok(surface_rgb(&rs, x, y).map(|(r, g, b)| format!("{r:02x}{g:02x}{b:02x}")))
 }
 
 /// FNV-1a over the logical r,g,b of every pixel in a rectangle of the window surface, plus the
@@ -126,25 +101,12 @@ fn surface_hash(
     _: &Lua,
     (window, rx, ry, rw, rh): (mlua::AnyUserData, c_int, c_int, c_int, c_int),
 ) -> LuaResult<String> {
-    let ren = unsafe { *(window.to_pointer() as *mut *mut c_void) };
+    let ren = unsafe { *(window.to_pointer() as *mut *mut RenWindow) };
     let rs = unsafe { renwin_get_surface(ren) };
-    let surface = unsafe { &*rs.surface };
-    let bytes_per_pixel = sdl::SDL_BYTESPERPIXEL(surface.format) as usize;
-    let details = unsafe { SDL_GetPixelFormatDetails(surface.format) };
     let (mut hash, mut lit) = (2166136261u32, 0usize);
-    for y in ry.max(0)..(ry + rh).min(surface.h) {
-        for x in rx.max(0)..(rx + rw).min(surface.w) {
-            let offset = y as usize * surface.pitch as usize + x as usize * bytes_per_pixel;
-            let mut pixel: u32 = 0;
-            unsafe {
-                std::ptr::copy_nonoverlapping(
-                    (surface.pixels as *const u8).add(offset),
-                    &mut pixel as *mut u32 as *mut u8,
-                    bytes_per_pixel.min(4),
-                )
-            };
-            let (mut r, mut g, mut b, mut a) = (0u8, 0u8, 0u8, 0u8);
-            unsafe { SDL_GetRGBA(pixel, details, std::ptr::null(), &mut r, &mut g, &mut b, &mut a) };
+    for y in ry.max(0)..(ry + rh).min(rs.h) {
+        for x in rx.max(0)..(rx + rw).min(rs.w) {
+            let Some((r, g, b)) = surface_rgb(&rs, x, y) else { continue };
             for byte in [r, g, b] {
                 hash = (hash ^ byte as u32).wrapping_mul(16777619);
             }
