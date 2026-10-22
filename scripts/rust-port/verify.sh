@@ -16,6 +16,7 @@
 #   SUITE_SIGINT  default (default) | ignore: the SIGINT disposition each suite process starts with
 # The system suite also runs clipboard-check.sh invariants on a separate private Xvfb, regardless
 # of PROFILE; its historical golden retains the unavailable-display clipboard results.
+# The sysplugin suite also checks real ashpd transport/leases on a scripted private portal.
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/scripts/rust-port/private-display.sh"
@@ -137,6 +138,10 @@ done
 case ",$suites," in
   *,system,*)
     BIN="$bin" STAGE_DIR="$stage_root" "$root/scripts/rust-port/clipboard-check.sh" || status=1 ;;
+esac
+case ",$suites," in
+  *,sysplugin,*)
+    BIN="$bin" STAGE_DIR="$stage_root" TARGET_DIR="$target" "$root/scripts/rust-port/dialog-check.sh" || status=1 ;;
 esac
 [ "${RECORD:-}" = 1 ] && echo "recorded outputs for review in $evidence/record (provenance.txt names the binary)"
 exit $status

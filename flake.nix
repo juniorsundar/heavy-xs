@@ -119,6 +119,7 @@
               xauth
               util-linux # mcookie
               dbus # private session bus for service contract checks
+              jq # select the exact test fixture artifact from Cargo JSON
 
               # note: ibus is only dlopen()ed by SDL at runtime for input
               # methods; it is not needed at build time.

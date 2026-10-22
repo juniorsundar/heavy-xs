@@ -19,7 +19,12 @@ use crate::native_input::InputState;
 use crate::platform::{self, Input};
 
 #[derive(Debug)]
-pub struct Wake;
+pub enum Wake {
+    Input,
+    ReleaseParent(u64),
+    #[cfg(test)]
+    Panic,
+}
 
 // Fields drop in declaration order: presentation resources before their window lease.
 struct NativeWindow {
@@ -38,12 +43,54 @@ struct Owner {
     windows: HashMap<u32, NativeWindow>,
     ids: HashMap<WindowId, u32>,
     next_id: u32,
+    parents: HashMap<u64, Arc<Window>>,
+    next_parent: u64,
     create: Option<Create>,
     created: Option<Result<u32, String>>,
     input: InputState,
     cursor: CursorIcon,
     hit_info: [i32; 3],
     wayland: bool,
+}
+
+// Detached chooser threads may still borrow the display when main-thread TLS is destroyed.
+impl Drop for Owner {
+    fn drop(&mut self) {
+        if !self.parents.is_empty() {
+            std::mem::forget(self.event_loop.take());
+            std::mem::forget(std::mem::take(&mut self.windows));
+            std::mem::forget(std::mem::take(&mut self.parents));
+        }
+    }
+}
+
+pub struct Parent {
+    window: Option<Arc<Window>>,
+    token: u64,
+    proxy: winit::event_loop::EventLoopProxy<Wake>,
+}
+
+impl Parent {
+    pub fn window(&self) -> &Window { self.window.as_deref().unwrap() }
+}
+
+impl Drop for Parent {
+    fn drop(&mut self) {
+        // The main-thread registry keeps the last Arc until this borrow has gone.
+        drop(self.window.take());
+        let _ = self.proxy.send_event(Wake::ReleaseParent(self.token));
+    }
+}
+
+pub fn retain_parent(id: u32) -> Result<Parent, String> {
+    with_owner(|owner| {
+        let window = owner.windows.get(&id).ok_or("dialog parent is no longer registered")?.window.clone();
+        let token = owner.next_parent;
+        owner.next_parent = token.checked_add(1).ok_or("dialog request tokens exhausted")?;
+        let proxy = owner.event_loop.as_ref().unwrap().create_proxy();
+        owner.parents.insert(token, window.clone());
+        Ok(Parent { window: Some(window), token, proxy })
+    }).unwrap_or_else(|| Err("native dialog parent is not available".into()))
 }
 
 enum Slot { Empty, Ready(Box<Owner>), Failed(String), Pumping }
@@ -58,7 +105,10 @@ fn ensure() -> Result<(), String> {
             Slot::Pumping => return Err("native event loop is already pumping".into()),
             Slot::Empty => {}
         }
-        let event_loop = match EventLoop::<Wake>::with_user_event().build() {
+        let mut builder = EventLoop::<Wake>::with_user_event();
+        #[cfg(test)]
+        winit::platform::x11::EventLoopBuilderExtX11::with_any_thread(&mut builder, true);
+        let event_loop = match builder.build() {
             Ok(event_loop) => event_loop,
             Err(error) => {
                 let error = format!("cannot create native event loop: {error}");
@@ -72,7 +122,8 @@ fn ensure() -> Result<(), String> {
         platform::publish_proxy(event_loop.create_proxy());
         *slot = Slot::Ready(Box::new(Owner {
             event_loop: Some(event_loop), windows: HashMap::new(), ids: HashMap::new(),
-            next_id: 1, create: None, created: None, input: InputState::new(),
+            next_id: 1, parents: HashMap::new(), next_parent: 1,
+            create: None, created: None, input: InputState::new(),
             cursor: CursorIcon::Default, hit_info: [0; 3], wayland,
         }));
         Ok(())
@@ -100,9 +151,16 @@ pub fn pump(timeout: Option<Duration>) -> Result<(), String> {
         }
     })?;
     let mut event_loop = owner.event_loop.take().expect("event loop belongs to owner");
-    let status = event_loop.pump_app_events(timeout, &mut *owner);
+    let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        event_loop.pump_app_events(timeout, &mut *owner)
+    }));
+    // Restore ownership even on unwind: outstanding choosers must not lose their display.
     owner.event_loop = Some(event_loop);
     OWNER.with(|cell| *cell.borrow_mut() = Slot::Ready(owner));
+    let status = match status {
+        Ok(status) => status,
+        Err(panic) => std::panic::resume_unwind(panic),
+    };
     match status {
         PumpStatus::Continue => Ok(()),
         PumpStatus::Exit(code) => Err(format!("native event loop exited ({code})")),
@@ -128,6 +186,7 @@ pub fn window(id: u32) -> Option<Arc<Window>> {
 pub fn destroy(id: u32) {
     with_owner(|owner| {
         if let Some(window) = owner.windows.remove(&id) {
+            window.window.set_visible(false);
             owner.ids.remove(&window.window.id());
             owner.input.remove(id);
         }
@@ -293,7 +352,14 @@ fn resize_direction(zone: i32) -> Option<ResizeDirection> {
 impl ApplicationHandler<Wake> for Owner {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) { self.create_pending(event_loop); }
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) { self.create_pending(event_loop); }
-    fn user_event(&mut self, _event_loop: &ActiveEventLoop, _event: Wake) {}
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: Wake) {
+        match event {
+            Wake::Input => {},
+            Wake::ReleaseParent(token) => { self.parents.remove(&token); },
+            #[cfg(test)]
+            Wake::Panic => panic!("test native callback unwind"),
+        }
+    }
     fn window_event(&mut self, _event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
         let Some(&id) = self.ids.get(&window_id) else { return; };
         let Some(window) = self.windows.get(&id) else { return; };
@@ -344,6 +410,21 @@ impl ApplicationHandler<Wake> for Owner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    #[ignore = "fault subject; dialog-check.sh supplies an isolated private X server"]
+    fn pump_unwind_keeps_parent_alive() {
+        use winit::raw_window_handle::HasWindowHandle;
+        assert_eq!(std::env::var("LXL_PRIVATE_DISPLAY_TEST").as_deref(), Ok("1"), "run via dialog-check.sh");
+        let id = create("unwind-parent", 120.0, 80.0).unwrap();
+        let parent = retain_parent(id).unwrap();
+        destroy(id);
+        parent.proxy.send_event(Wake::Panic).unwrap();
+        assert!(std::panic::catch_unwind(|| pump(Some(Duration::ZERO))).is_err());
+        assert!(with_owner(|o| o.event_loop.is_some() && o.parents.contains_key(&parent.token)).unwrap());
+        assert!(parent.window().window_handle().is_ok());
+        drop(parent); // the main owner retains resources until process exit, without another pump
+    }
+
     #[test]
     fn resize_zones_keep_editor_quirks() {
         assert_eq!(resize_direction(hit::NORMAL), None);

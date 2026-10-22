@@ -30,10 +30,21 @@ static void key(Display *d, KeySym sym, int down) {
 }
 static void tap(Display *d, KeySym sym) { key(d, sym, True); key(d, sym, False); }
 
+static int ignore_xerror(Display *d, XErrorEvent *e) { (void)d; (void)e; return 0; }
+
 int main(int argc, char **argv) {
-  assert(argc == 2);
+  assert(argc == 2 || argc == 4);
   Display *d = XOpenDisplay(NULL);
   assert(d);
+  if (argc == 4) {
+    assert(!strcmp(argv[1], "parent"));
+    XSetErrorHandler(ignore_xerror);
+    XWindowAttributes attrs;
+    int exists = XGetWindowAttributes(d, strtoul(argv[2], NULL, 16), &attrs);
+    int ok = !strcmp(argv[3], "absent") ? !exists : exists && attrs.map_state == (!strcmp(argv[3], "hidden") ? IsUnmapped : IsViewable);
+    XCloseDisplay(d);
+    return ok ? 0 : 1;
+  }
   if (!strcmp(argv[1], "focus")) {
     Window window = find_window(d, DefaultRootWindow(d));
     assert(window);

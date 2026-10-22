@@ -81,7 +81,7 @@ static NOTIFY: Notify = Notify::const_new();
 fn wake() {
     NOTIFY.notify_one();
     let proxy = STATE.lock().unwrap().proxy.clone();
-    if let Some(proxy) = proxy { let _ = proxy.send_event(crate::native::Wake); }
+    if let Some(proxy) = proxy { let _ = proxy.send_event(crate::native::Wake::Input); }
 }
 
 pub fn publish_proxy(proxy: EventLoopProxy<crate::native::Wake>) {
@@ -101,6 +101,11 @@ pub fn post(input: Input) -> bool {
 }
 
 pub fn generation() -> u64 { STATE.lock().unwrap().generation }
+
+pub fn accepts(generation: u64) -> bool {
+    let state = STATE.lock().unwrap();
+    !state.closed && state.generation == generation
+}
 
 pub fn post_for_generation(generation: u64, input: Input) -> bool {
     post_inner(Some(generation), input)

@@ -8,6 +8,10 @@ compile_error!("Lite XL is Linux-only");
 pub mod app;
 mod clipboard;
 mod custom_events;
+mod dialogs;
+#[cfg(test)]
+#[path = "../tests/contract/portal.rs"]
+mod portal_fixture;
 mod native;
 mod native_input;
 mod services;
