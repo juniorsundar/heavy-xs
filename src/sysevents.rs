@@ -5,11 +5,7 @@ use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushlstring, lua_pushnumber,
     lua_pushstring, luaL_checknumber,
 };
-#[cfg(feature = "test_hooks")]
-use sdl3_sys::everything as sdl;
 use crate::custom_events::get_custom_event_callback_by_type;
-#[cfg(feature = "test_hooks")]
-use crate::custom_events::FIRST_TYPE;
 use crate::platform::{self, Custom, FingerKind, Input};
 
 extern "C" {
@@ -29,92 +25,6 @@ unsafe fn native_error(l: *mut lua_State, error: String) -> c_int {
     drop(error);
     mlua::ffi::lua_error(l)
 }
-
-// Historical numeric injection fixtures are decoded only in hook-enabled builds. No SDL pump.
-#[cfg(feature = "test_hooks")]
-fn bytes(text: *const c_char) -> Vec<u8> {
-    if text.is_null() {
-        return Vec::new();
-    }
-    unsafe { CStr::from_ptr(text) }.to_bytes().to_vec()
-}
-
-/// One SDL event as an owned record.
-#[cfg(feature = "test_hooks")]
-pub(crate) unsafe fn injected_input(e: &sdl::SDL_Event) -> Input {
-    use sdl::SDL_EventType as T;
-    let kind = T(e.r#type);
-    match kind {
-        T::QUIT => Input::Quit,
-        T::WINDOW_RESIZED => {
-            Input::Resized { window: e.window.windowID.0, w: e.window.data1, h: e.window.data2 }
-        }
-        T::WINDOW_DISPLAY_SCALE_CHANGED | T::WINDOW_PIXEL_SIZE_CHANGED => {
-            Input::Rescaled { window: e.window.windowID.0 }
-        }
-        T::WINDOW_EXPOSED => Input::Exposed,
-        T::WINDOW_MINIMIZED => Input::Minimized,
-        T::WINDOW_MAXIMIZED => Input::Maximized,
-        T::WINDOW_RESTORED => Input::Restored,
-        T::WINDOW_MOUSE_LEAVE => Input::MouseLeft,
-        T::WINDOW_FOCUS_LOST => Input::FocusLost,
-        T::WINDOW_FOCUS_GAINED => Input::FocusGained,
-        T::DROP_FILE => Input::FileDropped { window: e.drop.windowID.0, path: bytes(e.drop.data) },
-        T::KEY_DOWN | T::KEY_UP => Input::Key {
-            down: kind == T::KEY_DOWN,
-            scancode: e.key.scancode.0,
-            key: e.key.key.0,
-            numlock: e.key.r#mod.0 & sdl::SDL_Keymod::NUM.0 != 0,
-        },
-        T::TEXT_INPUT => Input::TextInput(bytes(e.text.text)),
-        T::TEXT_EDITING => Input::TextEditing {
-            text: bytes(e.edit.text),
-            start: e.edit.start,
-            length: e.edit.length,
-        },
-        T::MOUSE_BUTTON_DOWN | T::MOUSE_BUTTON_UP => Input::MouseButton {
-            window: e.button.windowID.0,
-            down: kind == T::MOUSE_BUTTON_DOWN,
-            button: e.button.button,
-            x: e.button.x,
-            y: e.button.y,
-            clicks: e.button.clicks,
-        },
-        T::MOUSE_MOTION => Input::MouseMotion {
-            window: e.motion.windowID.0,
-            x: e.motion.x,
-            y: e.motion.y,
-            xrel: e.motion.xrel,
-            yrel: e.motion.yrel,
-        },
-        T::MOUSE_WHEEL => Input::MouseWheel { x: e.wheel.x, y: e.wheel.y },
-        T::FINGER_DOWN | T::FINGER_UP | T::FINGER_MOTION => Input::Finger {
-            window: e.tfinger.windowID.0,
-            kind: match kind {
-                T::FINGER_DOWN => FingerKind::Down,
-                T::FINGER_UP => FingerKind::Up,
-                _ => FingerKind::Motion,
-            },
-            x: e.tfinger.x,
-            y: e.tfinger.y,
-            dx: e.tfinger.dx,
-            dy: e.tfinger.dy,
-            finger: e.tfinger.fingerID.0,
-        },
-        T::WILL_ENTER_FOREGROUND => Input::EnteringForeground,
-        T::DID_ENTER_FOREGROUND => Input::EnteredForeground,
-        T::WILL_ENTER_BACKGROUND => Input::EnteringBackground,
-        T::DID_ENTER_BACKGROUND => Input::EnteredBackground,
-        _ if e.r#type >= FIRST_TYPE => {
-            Input::Custom(Custom {
-                event_type: e.r#type, code: e.user.code,
-                data1: e.user.data1 as usize, payload: None,
-            })
-        }
-        _ => Input::Other,
-    }
-}
-
 
 // --------------------------------------------------------------- the Lua side
 
