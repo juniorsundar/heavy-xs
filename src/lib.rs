@@ -6,6 +6,7 @@
 compile_error!("Lite XL is Linux-only");
 
 pub mod app;
+mod clipboard;
 mod custom_events;
 mod font;
 mod renderer;

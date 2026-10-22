@@ -294,25 +294,25 @@ function system.get_fs_type(path) end
 
 
 ---
----Retrieve the text currently stored on the clipboard.
+---Retrieve the text currently stored on the clipboard, or an empty string if unavailable.
 ---
----@return string?
+---@return string
 function system.get_clipboard() end
 
 ---
----Set the content of the clipboard.
+---Set UTF-8 clipboard text up to the first NUL. Invalid UTF-8 leaves it unchanged.
 ---
 ---@param text string
 function system.set_clipboard(text) end
 
 ---
----Retrieve the text currently stored in the primary selection.
+---Retrieve primary-selection text, or an empty string if unavailable.
 ---
 ---@return string
 function system.get_primary_selection() end
 
 ---
----Set the content of the primary selection.
+---Set UTF-8 primary-selection text up to the first NUL. Invalid UTF-8 leaves it unchanged.
 ---
 ---@param text string
 function system.set_primary_selection(text) end
