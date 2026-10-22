@@ -20,7 +20,7 @@ use sdl3_sys::everything as sdl;
 
 use crate::font::Font;
 use crate::rencache::{RenColor, RenTab, FONT_FALLBACK_MAX};
-use crate::renwindow::{RenRect, RenSurface};
+use crate::renwindow::{rect_empty, rect_intersection, RenRect, RenSurface};
 
 // --------------------------------------------------------------- C constants
 
@@ -694,19 +694,18 @@ pub unsafe extern "C" fn ren_draw_text(
     color: RenColor,
     tab: RenTab,
 ) -> f64 {
-    let surface = (*rs).surface;
-    let mut clip = sdl::SDL_Rect::default();
-    sdl::SDL_GetSurfaceClipRect(surface, &mut clip);
+    let surface = &*rs;
+    let clip = surface.clip;
 
-    let surface_scale = (*rs).scale;
+    let surface_scale = surface.scale;
     let mut pen_x = (x * surface_scale as f32) as f64;
     let original_pen_x = pen_x;
     let y = y * surface_scale; // scaled below; `y / surface_scale` recovers the point value
     let end = (text as *const u8).add(len);
     let mut p = text as *const u8;
-    let destination_pixels = (*surface).pixels as *mut u8;
-    let clip_end_x = clip.x + clip.w;
-    let clip_end_y = clip.y + clip.h;
+    let destination_pixels = surface.pixels;
+    let clip_end_x = clip.x + clip.width;
+    let clip_end_y = clip.y + clip.height;
 
     // Glyph loading mutably borrows these fonts; do not retain a shared reference across it.
     let first = *fonts;
@@ -757,7 +756,6 @@ pub unsafe extern "C" fn ren_draw_text(
             && start_x < clip_end_x
         {
             let source_pixels = (*font_surface).pixels.as_ptr();
-            let format = sdl::SDL_GetPixelFormatDetails((*surface).format);
             let font_bytes_per_pixel = glyphformat_bytes_per_pixel((*metric).format as usize);
             let subpixel = (*metric).format as usize == EGLYPH_FORMAT_SUBPIXEL;
 
@@ -784,7 +782,7 @@ pub unsafe extern "C" fn ren_draw_text(
                 }
 
                 let mut destination_pixel = destination_pixels.offset(
-                    ((*surface).pitch * target_y + start_x * (*format).bytes_per_pixel as c_int)
+                    (surface.pitch * target_y + start_x * surface.bytes_per_pixel)
                         as isize,
                 ) as *mut u32;
                 let mut source_pixel = source_pixels.offset(
@@ -797,14 +795,10 @@ pub unsafe extern "C" fn ren_draw_text(
                     let destination_color = *destination_pixel;
                     // Not SDL_GetRGBA: the C unpacks manually for speed, and the value is
                     // truncated to a byte before blending.
-                    let dst_r =
-                        (((destination_color & (*format).Rmask) >> (*format).Rshift) as u8) as u32;
-                    let dst_g =
-                        (((destination_color & (*format).Gmask) >> (*format).Gshift) as u8) as u32;
-                    let dst_b =
-                        (((destination_color & (*format).Bmask) >> (*format).Bshift) as u8) as u32;
-                    let dst_a =
-                        (((destination_color & (*format).Amask) >> (*format).Ashift) as u8) as u32;
+                    let dst_r = (surface.r.get(destination_color) as u8) as u32;
+                    let dst_g = (surface.g.get(destination_color) as u8) as u32;
+                    let dst_b = (surface.b.get(destination_color) as u8) as u32;
+                    let dst_a = (surface.a.get(destination_color) as u8) as u32;
 
                     let src_r;
                     let src_g;
@@ -834,10 +828,10 @@ pub unsafe extern "C" fn ren_draw_text(
                         + 32767)
                         / 65025;
 
-                    *destination_pixel = (dst_a << (*format).Ashift)
-                        | (r << (*format).Rshift)
-                        | (g << (*format).Gshift)
-                        | (b << (*format).Bshift);
+                    *destination_pixel = (dst_a << surface.a.shift)
+                        | (r << surface.r.shift)
+                        | (g << surface.g.shift)
+                        | (b << surface.b.shift);
                     destination_pixel = destination_pixel.add(1);
                     cursor += 1;
                 }
@@ -896,30 +890,37 @@ pub unsafe extern "C" fn ren_draw_rect(rs: *mut RenSurface, rect: RenRect, color
         return;
     }
 
-    let surface = (*rs).surface;
-    let surface_scale = (*rs).scale;
-    let dest_rect = sdl::SDL_Rect {
+    let surface = &*rs;
+    let surface_scale = surface.scale;
+    let dest_rect = RenRect {
         x: rect.x * surface_scale,
         y: rect.y * surface_scale,
-        w: rect.width * surface_scale,
-        h: rect.height * surface_scale,
+        width: rect.width * surface_scale,
+        height: rect.height * surface_scale,
     };
+    // SDL_FillSurfaceRect intersects with the clip itself; the blend path clipped manually
+    // because scaled blits clip differently. Either way: SDL's rect intersection.
+    let Some(clipped) = rect_intersection(dest_rect, surface.clip).filter(|r| !rect_empty(*r)) else {
+        return;
+    };
+    if surface.w == 0 || surface.h == 0 || surface.pixels.is_null() {
+        return;
+    }
+    let row = |y: c_int| surface.pixels.offset((surface.pitch * y) as isize) as *mut u32;
 
     if color.a == 0xff {
-        let translated = sdl::SDL_MapSurfaceRGB(surface, color.r, color.g, color.b);
-        sdl::SDL_FillSurfaceRect(surface, &dest_rect, translated);
-    } else {
-        // SDL does not clip scaled blits the way we expect, so clip manually.
-        let mut clip = sdl::SDL_Rect::default();
-        sdl::SDL_GetSurfaceClipRect(surface, &mut clip);
-        let mut clipped = sdl::SDL_Rect::default();
-        if !sdl::SDL_GetRectIntersection(&clip, &dest_rect, &mut clipped) {
-            return;
+        // `SDL_MapSurfaceRGB` for an 8-bit-per-channel format: alpha opaque under its mask.
+        let pixel = ((color.r as u32) << surface.r.shift)
+            | ((color.g as u32) << surface.g.shift)
+            | ((color.b as u32) << surface.b.shift)
+            | ((0xff << surface.a.shift) & surface.a.mask);
+        for y in clipped.y..clipped.y + clipped.height {
+            std::slice::from_raw_parts_mut(row(y).offset(clipped.x as isize), clipped.width as usize)
+                .fill(pixel);
         }
-
+    } else {
         // SDL stretched a 1x1 blended pixel here; stretching a single colour is that colour,
         // so only its per-channel blend (`ALPHA_BLEND_CHANNEL`, SDL_blit.h) remains.
-        let format = &*sdl::SDL_GetPixelFormatDetails((*surface).format);
         let a = color.a as u32;
         let blend = |s: u32, d: u32| {
             let mut x = (s.wrapping_sub(d).wrapping_mul(a).wrapping_add((d << 8) - d)) & 0xffff;
@@ -927,18 +928,18 @@ pub unsafe extern "C" fn ren_draw_rect(rs: *mut RenSurface, rect: RenRect, color
             x += x >> 8;
             (x >> 8) & 0xff
         };
-        let channel = |p: u32, mask: u32, shift: u8| (p & mask) >> shift;
-        for row in clipped.y..clipped.y + clipped.h {
-            let line = ((*surface).pixels as *mut u8).offset(((*surface).pitch * row) as isize)
-                as *mut u32;
-            for col in clipped.x..clipped.x + clipped.w {
-                let pixel = line.offset(col as isize);
+        for y in clipped.y..clipped.y + clipped.height {
+            for pixel in std::slice::from_raw_parts_mut(
+                row(y).offset(clipped.x as isize),
+                clipped.width as usize,
+            ) {
                 let d = *pixel;
-                let mut out = (blend(color.r as u32, channel(d, format.Rmask, format.Rshift)) << format.Rshift)
-                    | (blend(color.g as u32, channel(d, format.Gmask, format.Gshift)) << format.Gshift)
-                    | (blend(color.b as u32, channel(d, format.Bmask, format.Bshift)) << format.Bshift);
-                if format.Amask != 0 {
-                    out |= blend(255, channel(d, format.Amask, format.Ashift)) << format.Ashift;
+                let (r, g, b, al) = (surface.r, surface.g, surface.b, surface.a);
+                let mut out = (blend(color.r as u32, r.get(d)) << r.shift)
+                    | (blend(color.g as u32, g.get(d)) << g.shift)
+                    | (blend(color.b as u32, b.get(d)) << b.shift);
+                if al.mask != 0 {
+                    out |= blend(255, al.get(d)) << al.shift;
                 }
                 *pixel = out;
             }
