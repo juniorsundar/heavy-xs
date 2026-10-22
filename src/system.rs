@@ -10,11 +10,11 @@
 //!
 //! Deviations from the C are noted next to the code and listed in docs/rust-port/PLAN.md.
 
-use std::ffi::{c_char, c_void, CStr, CString};
+use std::ffi::{c_void, CStr, CString};
 use std::os::unix::ffi::OsStrExt;
 
 use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
-use sdl3_sys::everything as sdl;
+use crate::clipboard::{self, Kind as ClipboardKind};
 
 // ------------------------------------------------------------- argument glue
 
@@ -433,40 +433,24 @@ mod sandbox_tests {
 
 // ----------------------------------------------------------------- clipboard
 
-/// A string SDL allocated, copied into Lua and freed. `None` for NULL.
-fn take_sdl_text(text: *mut c_char) -> Option<Vec<u8>> {
-    if text.is_null() {
-        return None;
-    }
-    let bytes = unsafe { CStr::from_ptr(text) }.to_bytes().to_vec();
-    unsafe { sdl::SDL_free(text as *mut c_void) };
-    Some(bytes)
-}
-
-/// `f_get_clipboard`: zero values when SDL has no text.
-fn get_clipboard(lua: &Lua, _: Variadic<Value>) -> LuaResult<MultiValue> {
-    match take_sdl_text(unsafe { sdl::SDL_GetClipboardText() }) {
-        Some(text) => Ok(multi(vec![str_value(lua, &text)?])),
-        None => Ok(MultiValue::new()),
-    }
+/// Always one string; ordinary failures and unavailable/non-text selections are empty.
+fn get_clipboard(lua: &Lua, _: Variadic<Value>) -> LuaResult<LuaString> {
+    lua.create_string(clipboard::get(ClipboardKind::Clipboard))
 }
 
 fn set_clipboard(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
-    let text = cstr(&bytes_of(&check_string(lua, &args, 0, "set_clipboard")?));
-    unsafe { sdl::SDL_SetClipboardText(text.as_ptr()) };
+    let text = check_string(lua, &args, 0, "set_clipboard")?;
+    clipboard::set(ClipboardKind::Clipboard, &text.as_bytes());
     Ok(())
 }
 
-fn get_primary_selection(lua: &Lua, _: Variadic<Value>) -> LuaResult<MultiValue> {
-    match take_sdl_text(unsafe { sdl::SDL_GetPrimarySelectionText() }) {
-        Some(text) => Ok(multi(vec![str_value(lua, &text)?])),
-        None => Ok(MultiValue::new()),
-    }
+fn get_primary_selection(lua: &Lua, _: Variadic<Value>) -> LuaResult<LuaString> {
+    lua.create_string(clipboard::get(ClipboardKind::Primary))
 }
 
 fn set_primary_selection(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
-    let text = cstr(&bytes_of(&check_string(lua, &args, 0, "set_primary_selection")?));
-    unsafe { sdl::SDL_SetPrimarySelectionText(text.as_ptr()) };
+    let text = check_string(lua, &args, 0, "set_primary_selection")?;
+    clipboard::set(ClipboardKind::Primary, &text.as_bytes());
     Ok(())
 }
 
