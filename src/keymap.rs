@@ -1,7 +1,7 @@
 //! Maps winit keyboard input onto the SDL 3 scancodes/keycodes the editor's Lua API exposes.
 //! Numbers come from SDL3/SDL_scancode.h and SDL3/SDL_keycode.h.
 
-use winit::keyboard::{Key, KeyCode, NamedKey, PhysicalKey};
+use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey, PhysicalKey};
 
 /// SDL keycodes for named keys carry `SDL_SCANCODE_MASK` when the key has no character.
 const SCANCODE_MASK: u32 = 1 << 30;
@@ -315,6 +315,49 @@ pub fn keycode(key_without_modifiers: &Key) -> u32 {
     }
 }
 
+/// SDL keypad scancodes: the `SDL_SCANCODE_KP_*` block in SDL_scancode.h.
+fn is_keypad_scancode(scancode: i32) -> bool {
+    matches!(scancode, 84..=99 | 103 | 133 | 176..=221)
+}
+
+/// SDL keycode for a side-agnostic modifier named key on the right side of the keyboard.
+fn right_modifier_keycode(named: NamedKey) -> Option<u32> {
+    let code = match named {
+        NamedKey::Control => KeyCode::ControlRight,
+        NamedKey::Shift => KeyCode::ShiftRight,
+        NamedKey::Alt => KeyCode::AltRight,
+        NamedKey::Super => KeyCode::SuperRight,
+        _ => return None,
+    };
+    Some(scancode(PhysicalKey::Code(code)) as u32 | SCANCODE_MASK)
+}
+
+/// One winit key event as the SDL codes the Lua API exposes: `(scancode, keycode, numlock)`.
+///
+/// Keycodes come from the layout (`key_without_modifiers`), except where only the event knows
+/// better: a keypad physical key keeps its physical scancode keycode whatever the layout types,
+/// and a right-side modifier gets the right-side code. `numlock` is the effective keypad level,
+/// not a lock-state query (the user-approved rule for unusual XKB keypad variants).
+pub fn key_event_codes(
+    physical_key: PhysicalKey,
+    location: KeyLocation,
+    key_without_modifiers: &Key,
+    logical_key: &Key,
+) -> (i32, u32, bool) {
+    let scancode = scancode(physical_key);
+    let keycode = match (location, key_without_modifiers) {
+        (KeyLocation::Numpad, _) if is_keypad_scancode(scancode) => scancode as u32 | SCANCODE_MASK,
+        // AltGraph is already AltRight, which right_modifier_keycode does not shift again.
+        (KeyLocation::Right, Key::Named(named)) => {
+            right_modifier_keycode(*named).unwrap_or_else(|| keycode(key_without_modifiers))
+        }
+        _ => keycode(key_without_modifiers),
+    };
+    // shortcut: winit omits NumLock state; revisit this inference if it exposes locked modifiers.
+    let numlock = location == KeyLocation::Numpad && matches!(logical_key, Key::Character(_));
+    (scancode, keycode, numlock)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -621,5 +664,122 @@ mod tests {
             assert_eq!(keycode(&Key::Character(text.into())), expected, "{text:?}");
         }
         assert_eq!(keycode(&Key::Dead(Some('`'))), 0);
+    }
+
+    #[test]
+    fn keypad_digits_report_effective_numlock_codes() {
+        let keypad = [
+            (KeyCode::Numpad1, 89, "1", NamedKey::End, "end"),
+            (KeyCode::Numpad2, 90, "2", NamedKey::ArrowDown, "down"),
+            (KeyCode::Numpad3, 91, "3", NamedKey::PageDown, "pagedown"),
+            (KeyCode::Numpad4, 92, "4", NamedKey::ArrowLeft, "left"),
+            (KeyCode::Numpad5, 93, "5", NamedKey::Clear, ""),
+            (KeyCode::Numpad6, 94, "6", NamedKey::ArrowRight, "right"),
+            (KeyCode::Numpad7, 95, "7", NamedKey::Home, "home"),
+            (KeyCode::Numpad8, 96, "8", NamedKey::ArrowUp, "up"),
+            (KeyCode::Numpad9, 97, "9", NamedKey::PageUp, "pageup"),
+            (KeyCode::Numpad0, 98, "0", NamedKey::Insert, "ins"),
+            (KeyCode::NumpadDecimal, 99, ".", NamedKey::Delete, "delete"),
+        ];
+        for (code, sc, digit, nav, nav_name) in keypad {
+            // Linux winit uses XKB level zero even when NumLock is on; KP_Begin is unidentified.
+            let unmodified = if code == KeyCode::Numpad5 {
+                Key::Unidentified(winit::keyboard::NativeKey::Unidentified)
+            } else {
+                Key::Named(nav)
+            };
+            for (logical, expected, numlock) in [
+                (Key::Character(digit.into()), format!("keypad {digit}"), true),
+                (unmodified.clone(), nav_name.to_owned(), false),
+            ] {
+                let codes = key_event_codes(PhysicalKey::Code(code), KeyLocation::Numpad, &unmodified, &logical);
+                assert_eq!(codes, (sc, SCANCODE_MASK | sc as u32, numlock), "{code:?}");
+                assert_eq!(crate::keynames::key_name(codes.0, codes.1, codes.2), expected, "{code:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn keypad_operators_use_physical_codes() {
+        let operators = [
+            (KeyCode::NumpadDivide, 84, Key::Character("/".into()), "keypad /"),
+            (KeyCode::NumpadMultiply, 85, Key::Character("*".into()), "keypad *"),
+            (KeyCode::NumpadSubtract, 86, Key::Character("-".into()), "keypad -"),
+            (KeyCode::NumpadAdd, 87, Key::Character("+".into()), "keypad +"),
+            (KeyCode::NumpadEnter, 88, Key::Named(NamedKey::Enter), "keypad enter"),
+            (KeyCode::NumpadEqual, 103, Key::Character("=".into()), "keypad ="),
+            (KeyCode::NumpadComma, 133, Key::Character(",".into()), "keypad ,"),
+        ];
+        for (code, sc, key, name) in operators {
+            let codes = key_event_codes(PhysicalKey::Code(code), KeyLocation::Numpad, &key, &key);
+            assert_eq!((codes.0, codes.1), (sc, SCANCODE_MASK | sc as u32), "{code:?}");
+            assert_eq!(crate::keynames::key_name(codes.0, codes.1, codes.2), name, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn right_side_modifiers_use_the_right_code() {
+        let modifiers = [
+            (KeyCode::ControlLeft, KeyLocation::Left, NamedKey::Control, 224, "left ctrl"),
+            (KeyCode::ControlRight, KeyLocation::Right, NamedKey::Control, 228, "right ctrl"),
+            (KeyCode::ShiftLeft, KeyLocation::Left, NamedKey::Shift, 225, "left shift"),
+            (KeyCode::ShiftRight, KeyLocation::Right, NamedKey::Shift, 229, "right shift"),
+            (KeyCode::AltLeft, KeyLocation::Left, NamedKey::Alt, 226, "left alt"),
+            (KeyCode::AltRight, KeyLocation::Right, NamedKey::Alt, 230, "right alt"),
+            (KeyCode::AltRight, KeyLocation::Right, NamedKey::AltGraph, 230, "right alt"),
+            (KeyCode::SuperLeft, KeyLocation::Left, NamedKey::Super, 227, "left gui"),
+            (KeyCode::SuperRight, KeyLocation::Right, NamedKey::Super, 231, "right gui"),
+        ];
+        for (code, location, named, sc, name) in modifiers {
+            let key = Key::Named(named);
+            let codes = key_event_codes(PhysicalKey::Code(code), location, &key, &key);
+            assert_eq!(codes, (sc, SCANCODE_MASK | sc as u32, false), "{code:?}");
+            assert_eq!(crate::keynames::key_name(codes.0, codes.1, codes.2), name, "{code:?}");
+        }
+    }
+
+    #[test]
+    fn layout_decides_non_keypad_keycodes() {
+        for (code, plain, shifted, sc) in [
+            (KeyCode::KeyA, "a", "A", 4), // Shift/Caps do not change the key's plain name.
+            (KeyCode::Digit1, "1", "!", 30),
+            (KeyCode::KeyY, "z", "Z", 28), // Layout remap, not QWERTY physical identity.
+        ] {
+            let codes = key_event_codes(
+                PhysicalKey::Code(code), KeyLocation::Standard,
+                &Key::Character(plain.into()), &Key::Character(shifted.into()),
+            );
+            assert_eq!(codes, (sc, plain.as_bytes()[0] as u32, false));
+            assert_eq!(crate::keynames::key_name(codes.0, codes.1, codes.2), plain);
+        }
+    }
+
+    #[test]
+    fn unknown_physical_keys_fall_back_to_the_layout() {
+        let unknown = PhysicalKey::Unidentified(winit::keyboard::NativeKeyCode::Xkb(9));
+        let key = Key::Character("x".into());
+        assert_eq!(key_event_codes(unknown, KeyLocation::Standard, &key, &key), (0, 'x' as u32, false));
+
+        let key = Key::Named(NamedKey::F25);
+        assert_eq!(
+            key_event_codes(PhysicalKey::Code(KeyCode::F25), KeyLocation::Standard, &key, &key),
+            (0, 0, false),
+        );
+    }
+
+    #[test]
+    fn standard_navigation_keys_stay_named_keys() {
+        for (code, sc, named, key, name) in [
+            (KeyCode::Home, 74, NamedKey::Home, SCANCODE_MASK | 74, "home"),
+            (KeyCode::End, 77, NamedKey::End, SCANCODE_MASK | 77, "end"),
+            (KeyCode::PageUp, 75, NamedKey::PageUp, SCANCODE_MASK | 75, "pageup"),
+            (KeyCode::ArrowDown, 81, NamedKey::ArrowDown, SCANCODE_MASK | 81, "down"),
+            (KeyCode::Delete, 76, NamedKey::Delete, 0x7F, "delete"),
+        ] {
+            let named = Key::Named(named);
+            let codes = key_event_codes(PhysicalKey::Code(code), KeyLocation::Standard, &named, &named);
+            assert_eq!(codes, (sc, key, false), "{code:?}");
+            assert_eq!(crate::keynames::key_name(codes.0, codes.1, codes.2), name, "{code:?}");
+        }
     }
 }
