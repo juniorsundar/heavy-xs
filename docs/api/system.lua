@@ -25,7 +25,7 @@ system = {}
 ---@field public default_location? string
 ---@field public title? string
 ---@field public accept_label? string
----@field public cancel_label? string
+---@field public cancel_label? string Accepted for compatibility; the desktop portal chooses the Cancel label.
 
 ---@class (exact) system.dialogoptions._open : system.dialogoptions._base
 ---@field public allow_many? boolean
@@ -61,6 +61,9 @@ system = {}
 --- * "textinput" -> text
 --- * "textediting" -> text, start, length
 ---
+---Letter keys are named by their plain letter ("a"-"z") on every layout. Keypad digit and
+---decimal names follow the key's effective digit or navigation meaning for that event.
+---
 ---Mouse events:
 --- * "mousepressed" -> button_name, x, y, amount_of_clicks
 --- * "mousereleased" -> button_name, x, y
@@ -83,7 +86,8 @@ system = {}
 function system.poll_event() end
 
 ---
----Wait for pending input without consuming it. An internal backend wake alone is not input.
+---Wait for pending input without consuming it. An internal backend wake alone is not input,
+---so this returns false once the queue has been drained and nothing new arrives.
 ---
 ---@param timeout? number Amount of seconds, also supports fractions
 ---of a second, eg: 0.01. If not provided, waits forever.
