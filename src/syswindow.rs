@@ -1,45 +1,36 @@
 //! Window, cursor, text-input and message-box functions from `src/api/system.c`.
 //!
 //! These take a `RenWindow` userdata, which in C is `RenWindow **` created by
-//! `src/api/renwindow.c`. This file only ever needs the `SDL_Window *` inside it, which
-//! `ren_get_sdl_window` returns, so the struct stays opaque to Rust.
+//! `src/api/renwindow.c`. Window state now lives in the native winit owner: a `RenWindow`
+//! carries only the registry id, and `crate::native` resolves it to the live window.
 //!
 //! Raw `lua_CFunction`s, like `sysevents.rs`: argument checking uses the real
 //! `luaL_check*` so type errors read exactly as before ("bad argument #1 to ...").
 
-use std::cell::UnsafeCell;
-use std::ffi::{c_char, c_int, c_void};
+use std::ffi::{c_char, c_int, CStr};
 
 use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushstring, lua_toboolean,
     luaL_checknumber, luaL_checkoption, luaL_checkstring, luaL_checkudata,
 };
 use sdl3_sys::everything as sdl;
+use winit::dpi::{LogicalPosition, LogicalSize};
+use winit::window::{CursorIcon, Fullscreen};
 
-use crate::hit;
-
-extern "C" {
-    fn ren_get_sdl_window(window: *mut c_void) -> *mut sdl::SDL_Window;
-    fn ren_resize_window(window: *mut c_void);
-}
+use crate::native;
+use crate::renwindow::{ren_get_window_id, ren_resize_window, RenWindow};
 
 /// `luaL_checkudata(L, 1, "RenWindow")`, dereferenced: the `RenWindow *`. The C does
 /// not check it for NULL either, except `text_input`, which returns quietly.
-unsafe fn check_window(l: *mut lua_State) -> *mut c_void {
-    *(luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut c_void)
+unsafe fn check_window(l: *mut lua_State) -> *mut RenWindow {
+    *(luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut RenWindow)
 }
 
-unsafe fn check_sdl_window(l: *mut lua_State) -> *mut sdl::SDL_Window {
-    ren_get_sdl_window(check_window(l))
+unsafe fn window_id(l: *mut lua_State) -> u32 {
+    ren_get_window_id(check_window(l))
 }
 
 // ----------------------------------------------------------------- cursor
-
-/// One cache slot per system cursor, never freed (SDL owns them until exit).
-struct CursorCache(UnsafeCell<[*mut sdl::SDL_Cursor; 6]>);
-// Lua runs on one thread; the cache is only touched from `set_cursor`.
-unsafe impl Sync for CursorCache {}
-static CURSORS: CursorCache = CursorCache(UnsafeCell::new([std::ptr::null_mut(); 6]));
 
 pub unsafe extern "C-unwind" fn set_cursor(l: *mut lua_State) -> c_int {
     const NAMES: [*const c_char; 6] = [
@@ -50,33 +41,27 @@ pub unsafe extern "C-unwind" fn set_cursor(l: *mut lua_State) -> c_int {
         c"hand".as_ptr(),
         std::ptr::null(),
     ];
-    // Indexed by the option, like the C's cursor_enums.
-    const CURSORS_BY_OPTION: [sdl::SDL_SystemCursor; 5] = [
-        sdl::SDL_SystemCursor::DEFAULT,
-        sdl::SDL_SystemCursor::TEXT,
-        sdl::SDL_SystemCursor::EW_RESIZE,
-        sdl::SDL_SystemCursor::NS_RESIZE,
-        sdl::SDL_SystemCursor::POINTER,
+    const ICONS: [CursorIcon; 5] = [
+        CursorIcon::Default,
+        CursorIcon::Text,
+        CursorIcon::EwResize,
+        CursorIcon::NsResize,
+        CursorIcon::Pointer,
     ];
     let option = luaL_checkoption(l, 1, c"arrow".as_ptr(), NAMES.as_ptr()) as usize;
-    let kind = CURSORS_BY_OPTION[option];
-
-    // The C indexes cursor_cache by the SDL enum value; this indexes by option, which is
-    // the same one-to-one mapping and keeps the array at the five slots actually used.
-    let cache = &mut *CURSORS.0.get();
-    if cache[option].is_null() {
-        cache[option] = sdl::SDL_CreateSystemCursor(kind);
-    }
-    sdl::SDL_SetCursor(cache[option]);
+    native::set_cursor(ICONS[option]);
     0
 }
 
 // ----------------------------------------------------------------- window
 
 pub unsafe extern "C-unwind" fn set_window_title(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    let title = luaL_checkstring(l, 2);
-    sdl::SDL_SetWindowTitle(window, title);
+    let id = window_id(l);
+    let title = CStr::from_ptr(luaL_checkstring(l, 2)).to_string_lossy();
+    let window = native::window(id);
+    if let Some(window) = window {
+        window.set_title(&title);
+    }
     0
 }
 
@@ -93,47 +78,71 @@ pub unsafe extern "C-unwind" fn set_window_mode(l: *mut lua_State) -> c_int {
     const MAXIMIZED: c_int = 2;
     const FULLSCREEN: c_int = 3;
 
-    let window = check_sdl_window(l);
+    let id = window_id(l);
     let mode = luaL_checkoption(l, 2, c"normal".as_ptr(), NAMES.as_ptr());
-    sdl::SDL_SetWindowFullscreen(window, mode == FULLSCREEN);
+    let window = native::window(id);
+    let Some(window) = window else { return 0 };
+    window.set_fullscreen(if mode == FULLSCREEN {
+        Some(Fullscreen::Borderless(None))
+    } else {
+        None
+    });
     if mode == NORMAL {
-        sdl::SDL_RestoreWindow(window);
+        window.set_minimized(false);
+        window.set_maximized(false);
     }
     if mode == MAXIMIZED {
-        sdl::SDL_MaximizeWindow(window);
+        window.set_maximized(true);
     }
     if mode == MINIMIZED {
-        sdl::SDL_MinimizeWindow(window);
+        window.set_minimized(true);
     }
     0
 }
 
 pub unsafe extern "C-unwind" fn get_window_mode(l: *mut lua_State) -> c_int {
-    let flags = sdl::SDL_GetWindowFlags(check_sdl_window(l));
-    let name: &[u8] = if flags & sdl::SDL_WINDOW_FULLSCREEN != 0 {
-        b"fullscreen\0"
-    } else if flags & sdl::SDL_WINDOW_MINIMIZED != 0 {
-        b"minimized\0"
-    } else if flags & sdl::SDL_WINDOW_MAXIMIZED != 0 {
-        b"maximized\0"
-    } else {
-        b"normal\0"
+    let Some(window) = native::window(window_id(l)) else {
+        lua_pushstring(l, c"normal".as_ptr());
+        return 1;
     };
-    lua_pushstring(l, name.as_ptr() as *const c_char);
+    let name = if window.fullscreen().is_some() {
+        c"fullscreen"
+    } else if window.is_minimized() == Some(true) {
+        c"minimized"
+    } else if window.is_maximized() {
+        c"maximized"
+    } else {
+        c"normal"
+    };
+    drop(window);
+    lua_pushstring(l, name.as_ptr());
     1
 }
 
 pub unsafe extern "C-unwind" fn set_window_bordered(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    sdl::SDL_SetWindowBordered(window, lua_toboolean(l, 2) != 0);
+    let window = native::window(window_id(l));
+    let bordered = lua_toboolean(l, 2) != 0;
+    if let Some(window) = window {
+        window.set_decorations(bordered);
+    }
     0
 }
 
 pub unsafe extern "C-unwind" fn get_window_size(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    let (mut w, mut h, mut x, mut y) = (0, 0, 0, 0);
-    sdl::SDL_GetWindowSize(window, &mut w, &mut h);
-    sdl::SDL_GetWindowPosition(window, &mut x, &mut y);
+    let id = window_id(l);
+    let (w, h) = native::logical_size(id);
+    // winit reports the position in physical pixels; SDL's API is in window points.
+    let (x, y) = native::window(id)
+        .and_then(|window| {
+            let scale = window.scale_factor();
+            window.inner_position().ok().map(|pos| {
+                (
+                    (pos.x as f64 / scale).round() as c_int,
+                    (pos.y as f64 / scale).round() as c_int,
+                )
+            })
+        })
+        .unwrap_or((0, 0));
     lua_pushinteger(l, w as i64);
     lua_pushinteger(l, h as i64);
     lua_pushinteger(l, x as i64);
@@ -143,68 +152,53 @@ pub unsafe extern "C-unwind" fn get_window_size(l: *mut lua_State) -> c_int {
 
 pub unsafe extern "C-unwind" fn set_window_size(l: *mut lua_State) -> c_int {
     let renwindow = check_window(l);
-    let window = ren_get_sdl_window(renwindow);
-    // Doubles in the C, truncated by the int parameters of the SDL calls.
-    let (w, h) = (luaL_checknumber(l, 2), luaL_checknumber(l, 3));
-    let (x, y) = (luaL_checknumber(l, 4), luaL_checknumber(l, 5));
-    sdl::SDL_SetWindowSize(window, w as c_int, h as c_int);
-    sdl::SDL_SetWindowPosition(window, x as c_int, y as c_int);
-    ren_resize_window(renwindow);
+    // Doubles in the C, truncated to int for the SDL calls; winit wants logical points.
+    let (w, h) = (luaL_checknumber(l, 2) as c_int, luaL_checknumber(l, 3) as c_int);
+    let (x, y) = (luaL_checknumber(l, 4) as c_int, luaL_checknumber(l, 5) as c_int);
+    if let Some(window) = native::window(ren_get_window_id(renwindow)) {
+        let _ = window.request_inner_size(LogicalSize::new(w as f64, h as f64));
+        window.set_outer_position(LogicalPosition::new(x as f64, y as f64));
+        ren_resize_window(renwindow);
+    }
     0
 }
 
 pub unsafe extern "C-unwind" fn window_has_focus(l: *mut lua_State) -> c_int {
-    let flags = sdl::SDL_GetWindowFlags(check_sdl_window(l));
-    lua_pushboolean(l, (flags & sdl::SDL_WINDOW_INPUT_FOCUS != 0) as c_int);
+    let focused = native::window(window_id(l)).is_some_and(|window| window.has_focus());
+    lua_pushboolean(l, focused as c_int);
     1
 }
 
 pub unsafe extern "C-unwind" fn raise_window(l: *mut lua_State) -> c_int {
-    sdl::SDL_RaiseWindow(check_sdl_window(l));
+    if let Some(window) = native::window(window_id(l)) {
+        window.focus_window();
+    }
     0
 }
 
 pub unsafe extern "C-unwind" fn set_window_opacity(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    let opacity = luaL_checknumber(l, 2);
-    // shortcut: the C does `int r = SDL_SetWindowOpacity(...); push(r > -1)`, left over from
-    // SDL2's 0/-1 return. SDL3 returns bool, so r is 0 or 1 and this is always true, even when
-    // the call failed. Kept bug-compatible; flip to the real result once callers need it.
-    sdl::SDL_SetWindowOpacity(window, opacity as f32);
+    // Whole-window opacity is an intentional no-op with the historical true return.
+    // Keep checking both arguments so Lua errors and call sites behave unchanged.
+    let _ = native::window(window_id(l));
+    let _ = luaL_checknumber(l, 2);
     lua_pushboolean(l, 1);
     1
 }
 
 // ------------------------------------------------------------ hit testing
 
-/// The three numbers `hit_test` reads. One global shared by every window: the C keeps a
-/// single `window_hit_info[1]`, so the last `set_window_hit_test` wins.
-struct HitInfo(UnsafeCell<[c_int; 3]>);
-unsafe impl Sync for HitInfo {}
-static HIT_INFO: HitInfo = HitInfo(UnsafeCell::new([0; 3]));
-
-unsafe extern "C" fn hit_test(
-    window: *mut sdl::SDL_Window,
-    point: *const sdl::SDL_Point,
-    data: *mut c_void,
-) -> sdl::SDL_HitTestResult {
-    let info = *(data as *const [c_int; 3]);
-    let (mut w, mut h) = (0, 0);
-    sdl::SDL_GetWindowSize(window, &mut w, &mut h);
-    sdl::SDL_HitTestResult(hit::classify((*point).x, (*point).y, w, h, info[0], info[1], info[2]))
-}
-
 pub unsafe extern "C-unwind" fn set_window_hit_test(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    if lua_gettop(l) == 1 {
-        sdl::SDL_SetWindowHitTest(window, None, std::ptr::null_mut());
-        return 0;
-    }
-    let info = &mut *HIT_INFO.0.get();
-    info[0] = luaL_checknumber(l, 2) as c_int;
-    info[1] = luaL_checknumber(l, 3) as c_int;
-    info[2] = luaL_checknumber(l, 4) as c_int;
-    sdl::SDL_SetWindowHitTest(window, Some(hit_test), info.as_mut_ptr() as *mut c_void);
+    let id = window_id(l);
+    let info = if lua_gettop(l) == 1 {
+        None
+    } else {
+        Some([
+            luaL_checknumber(l, 2) as c_int,
+            luaL_checknumber(l, 3) as c_int,
+            luaL_checknumber(l, 4) as c_int,
+        ])
+    };
+    native::set_hit_test(id, info);
     0
 }
 
@@ -216,29 +210,24 @@ pub unsafe extern "C-unwind" fn text_input(l: *mut lua_State) -> c_int {
     if renwindow.is_null() {
         return 0;
     }
-    let window = ren_get_sdl_window(renwindow);
-    if lua_toboolean(l, 2) != 0 {
-        sdl::SDL_StartTextInput(window);
-    } else {
-        sdl::SDL_StopTextInput(window);
-    }
+    native::set_text_input(ren_get_window_id(renwindow), lua_toboolean(l, 2) != 0);
     0
 }
 
 pub unsafe extern "C-unwind" fn set_text_input_rect(l: *mut lua_State) -> c_int {
-    let window = check_sdl_window(l);
-    let rect = sdl::SDL_Rect {
-        x: luaL_checknumber(l, 2) as c_int,
-        y: luaL_checknumber(l, 3) as c_int,
-        w: luaL_checknumber(l, 4) as c_int,
-        h: luaL_checknumber(l, 5) as c_int,
-    };
-    sdl::SDL_SetTextInputArea(window, &rect, 0);
+    let id = window_id(l);
+    let rect = [
+        luaL_checknumber(l, 2) as c_int,
+        luaL_checknumber(l, 3) as c_int,
+        luaL_checknumber(l, 4) as c_int,
+        luaL_checknumber(l, 5) as c_int,
+    ];
+    native::set_ime_rect(id, rect);
     0
 }
 
 pub unsafe extern "C-unwind" fn clear_ime(l: *mut lua_State) -> c_int {
-    sdl::SDL_ClearComposition(check_sdl_window(l));
+    native::clear_ime(window_id(l));
     0
 }
 

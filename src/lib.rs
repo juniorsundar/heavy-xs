@@ -8,6 +8,9 @@ compile_error!("Lite XL is Linux-only");
 pub mod app;
 mod clipboard;
 mod custom_events;
+mod native;
+mod native_input;
+mod services;
 mod font;
 mod renderer;
 mod renderer_api;
@@ -16,9 +19,7 @@ mod renwindow;
 mod renwindow_api;
 mod dirmonitor;
 mod hit;
-#[allow(dead_code)] // consumed by the winit producer
 mod clicks;
-#[allow(dead_code)] // consumed by the winit producer
 mod keymap;
 mod keynames;
 mod platform;

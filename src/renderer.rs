@@ -14,9 +14,6 @@
 use core::ffi::{c_char, c_int};
 use std::ffi::{CStr, CString};
 use std::ptr;
-use std::sync::atomic::{AtomicBool, Ordering};
-
-use sdl3_sys::everything as sdl;
 
 use crate::font::Font;
 use crate::rencache::{RenColor, RenTab, FONT_FALLBACK_MAX};
@@ -945,32 +942,6 @@ pub unsafe extern "C" fn ren_draw_rect(rs: *mut RenSurface, rect: RenRect, color
             }
         }
     }
-}
-
-// --------------------------------------------------------------- init / teardown
-
-/// `video_init`.
-#[no_mangle]
-pub unsafe extern "C" fn video_init() -> c_int {
-    static REN_INITED: AtomicBool = AtomicBool::new(false);
-    if !REN_INITED.load(Ordering::SeqCst) {
-        if !sdl::SDL_InitSubSystem(sdl::SDL_INIT_VIDEO) {
-            return -1;
-        }
-        sdl::SDL_EnableScreenSaver();
-        sdl::SDL_SetHint(
-            sdl::SDL_HINT_VIDEO_X11_NET_WM_BYPASS_COMPOSITOR,
-            c"0".as_ptr(),
-        );
-        sdl::SDL_SetHint(sdl::SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, c"1".as_ptr());
-        sdl::SDL_SetHint(sdl::SDL_HINT_IME_IMPLEMENTED_UI, c"1".as_ptr());
-        // Respect borderless windows as normal windows, and allow resizing/aero-snap.
-        sdl::SDL_SetHint(c"SDL_BORDERLESS_WINDOWED_STYLE".as_ptr(), c"1".as_ptr());
-        sdl::SDL_SetHint(c"SDL_BORDERLESS_RESIZABLE_STYLE".as_ptr(), c"1".as_ptr());
-        sdl::SDL_SetHint(sdl::SDL_HINT_MOUSE_DOUBLE_CLICK_RADIUS, c"4".as_ptr());
-        REN_INITED.store(true, Ordering::SeqCst);
-    }
-    0
 }
 
 #[cfg(test)]

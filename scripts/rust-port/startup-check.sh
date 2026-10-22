@@ -3,7 +3,7 @@
 # start.lua, the restart loop (Lua state recreated, window kept), exit codes and error.txt.
 # Runs the staged binary left behind by verify.sh (or BIN with its STAGE_DIR) against throwaway
 # runtimes, each a fresh process in a runner-owned environment (private-display.sh).
-#   STARTUP_PROFILE  dummy (default: SDL's dummy driver) | xvfb (private Xvfb) for restart and quit;
+#   STARTUP_PROFILE  xvfb (default) for native restart and quit;
 #                    the startup-failure case always runs with no display at all
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
@@ -16,11 +16,15 @@ share=$stage/share/lite-xl
 [ -x "$bin" ] && [ -d "$share" ] || { echo "run scripts/rust-port/verify.sh first"; exit 1; }
 
 work=$(mktemp -d)
+quit_pid=
 # The runtimes below live in the staged install; remove them even on interrupt.
-cleanup() { pd_profile_stop; rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua" "$share/startup_sandbox.lua"; }
+cleanup() { if [ -n "$quit_pid" ]; then kill -KILL "$quit_pid" 2>/dev/null || true; wait "$quit_pid" 2>/dev/null || true; fi; pd_profile_stop; rm -rf "$work" "$share/startup_restart.lua" "$share/startup_broken.lua" "$share/startup_sandbox.lua"; }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
-pd_profile_start "${STARTUP_PROFILE:-dummy}" "$work/display"
+case ${STARTUP_PROFILE:-xvfb} in
+  xvfb) pd_profile_start xvfb "$work/display" ;;
+  *) echo "STARTUP_PROFILE must be xvfb for native windows" >&2; exit 2 ;;
+esac
 pd_describe
 fail=0
 check() { if [ "$2" = "$3" ]; then echo "OK   $1"; else echo "FAIL $1: expected [$3] got [$2]"; fail=1; fi; }
@@ -48,9 +52,7 @@ function M.run() end
 function M.on_error(e) say("error", tostring(e)) end
 return M
 LUA
-# SDL's "dummy" video driver, not "offscreen": the persisted window is never destroyed (by design),
-# and exiting with a live window under "offscreen" segfaults in SDL_Quit. Upstream's C build does
-# the same (checked at 234fa099, 10/10), so it is not part of this port.
+# The persistent native window is retained across the real Lua restart.
 out=$work/restart.log
 ( cd "$work" && pd_run LITE_PREFIX="$stage" LITE_XL_RUNTIME=startup_restart timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" extra-arg >"$out" 2>&1 ) && rc=0 || rc=$?
 check "restart: exit code" "$rc" 0
@@ -101,7 +103,7 @@ check "failure: exit code" "$rc" 1
 check "failure: error.txt names the error" "$(grep -c 'deliberate startup failure' "$work/error.txt" 2>/dev/null || echo 0)" 1
 check "failure: stdout has traceback" "$(grep -c 'stack traceback' "$out")" 1
 
-# --- quit: Ctrl-C (SIGINT, which SDL turns into a quit event) removes every project in core.exit, and
+# --- quit: the native SIGINT/SIGTERM bridge requests normal core.exit, which removes projects, and
 # core.run stops after that step. The step must not update or draw in between, or any plugin that
 # calls core.root_project() during update/draw raises (seen with lintplus and lsp).
 mkdir -p "$work/quituser" "$work/quitproj"
@@ -121,21 +123,25 @@ core.add_thread(function()
   io.stderr:write("QUIT ready\n")
 end)
 LUA
-out=$work/quit.log
+for sig in INT TERM; do
+out=$work/quit.$sig.log
 # A non-interactive shell starts background jobs with SIGINT ignored, and the editor would inherit
 # that (it then only ends at the timeout's SIGTERM); --default-signal gives it a terminal's Ctrl-C.
-( cd "$work/quitproj" && pd_exec=1 && pd_run env --default-signal=INT \
+( cd "$work/quitproj" && pd_exec=1 && pd_run env --default-signal=INT --default-signal=TERM \
   LITE_USERDIR="$work/quituser" LITE_PREFIX="$stage" "$bin" "$work/quitproj/a.lua" >"$out" 2>&1 ) &
 pid=$!
+quit_pid=$pid
 i=0; while [ $i -lt 100 ] && ! grep -q '^QUIT ready' "$out" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
-kill -INT "$pid"
+kill -"$sig" "$pid"
 # Must end on its own well before any timeout would.
 i=0; while [ $i -lt 50 ] && kill -0 "$pid" 2>/dev/null; do sleep 0.1; i=$((i + 1)); done
 if kill -0 "$pid" 2>/dev/null; then kill -KILL "$pid"; fi
 wait "$pid" && rc=0 || rc=$?
-check "quit: SIGINT reached a running editor" "$(grep -c '^QUIT ready' "$out")" 1
-check "quit: exits 0 within 5s of SIGINT" "$rc" 0
+quit_pid=
+check "quit: SIG$sig reached a running editor" "$(grep -c '^QUIT ready' "$out")" 1
+check "quit: exits 0 within 5s of SIG$sig" "$rc" 0
 check "quit: no update/draw after projects removed" "$(grep -c '^QUIT .* without a project' "$out")" 0
 check "quit: exits cleanly" "$([ -e "$work/quituser/error.txt" ] && echo error.txt || echo clean)" clean
 
+done
 exit $fail

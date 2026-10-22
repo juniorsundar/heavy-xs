@@ -33,6 +33,18 @@ fn main() {
     println!("cargo:rustc-env=LITE_ARCH_TUPLE={arch}");
 
     window_icon();
+    // Cargo binaries need the same dlopen providers that Nix retains in postFixup.
+    for variable in ["PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"] {
+        println!("cargo:rerun-if-env-changed={variable}");
+    }
+    let libraries = Command::new("pkg-config")
+        .args(["--variable=libdir", "xkbcommon-x11", "wayland-client", "x11", "xcb", "xcursor", "xi"])
+        .output().expect("pkg-config for native runtime providers");
+    assert!(libraries.status.success(), "missing native runtime providers: {}", String::from_utf8_lossy(&libraries.stderr));
+    let paths = String::from_utf8(libraries.stdout).expect("native library directories");
+    for path in paths.split_whitespace() {
+        println!("cargo:rustc-link-arg=-Wl,-rpath,{path}");
+    }
 }
 
 /// The window icon lives in `icon.inl` (a C byte array kept from upstream); extract its RGBA bytes.

@@ -1,14 +1,9 @@
-//! The owned-input queue `poll_event`/`wait_event` read.
-//!
-//! Every input reaches Lua through here as an owned Rust [`Input`] record that points into no
-//! producer's memory, so no allocator is shared and no payload outlives its producer's rules.
-//!
-//! shortcut: SDL is still the native producer (`sysevents::next_input` converts one event per
-//! poll) and carries custom events as plain integer tokens, which keeps today's ordering and
-//! cross-thread wake-ups; the winit cutover replaces both with a native pump and proxy wake.
-
+//! Owned input, process quit requests and cross-thread wake state. No producer calls Lua.
 use std::collections::VecDeque;
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
+use tokio::sync::Notify;
+use winit::event_loop::EventLoopProxy;
 
 /// A custom event's owned payload: a finished dialog's paths (native bytes) or error message.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,6 +31,7 @@ pub enum FingerKind {
 /// One owned input record. Window ids are the producer's; coordinates are in window points
 /// (as SDL reports them) and are scaled by the consumer with the window's current scale.
 #[derive(Debug, Clone, PartialEq)]
+#[allow(dead_code)] // Historical lifecycle records remain injectable; Linux winit has no mobile lifecycle.
 pub enum Input {
     Quit,
     Resized { window: u32, w: i32, h: i32 },
@@ -65,53 +61,188 @@ pub enum Input {
     Other,
 }
 
-static QUEUE: Mutex<VecDeque<Input>> = Mutex::new(VecDeque::new());
 
-/// Appends a record (main thread: producers convert at the pump).
-pub fn push(input: Input) {
-    QUEUE.lock().unwrap().push_back(input);
+struct Queued { input: Input, process_quit: bool }
+struct State {
+    queue: VecDeque<Queued>,
+    pending_quit: bool,
+    quit_queued: bool,
+    error: Option<String>,
+    proxy: Option<EventLoopProxy<crate::native::Wake>>,
+    generation: u64,
+    closed: bool,
+}
+static STATE: Mutex<State> = Mutex::new(State {
+    queue: VecDeque::new(), pending_quit: false, quit_queued: false,
+    error: None, proxy: None, generation: 0, closed: false,
+});
+static NOTIFY: Notify = Notify::const_new();
+
+fn wake() {
+    NOTIFY.notify_one();
+    let proxy = STATE.lock().unwrap().proxy.clone();
+    if let Some(proxy) = proxy { let _ = proxy.send_event(crate::native::Wake); }
+}
+
+pub fn publish_proxy(proxy: EventLoopProxy<crate::native::Wake>) {
+    {
+        let mut state = STATE.lock().unwrap();
+        if state.closed { return; }
+        state.proxy = Some(proxy);
+    }
+    // Recheck after publishing: a producer may have arrived before there was a proxy.
+    if ready() { wake(); }
+}
+
+pub fn push(input: Input) { let _ = post(input); }
+
+pub fn post(input: Input) -> bool {
+    post_inner(None, input)
+}
+
+pub fn generation() -> u64 { STATE.lock().unwrap().generation }
+
+pub fn post_for_generation(generation: u64, input: Input) -> bool {
+    post_inner(Some(generation), input)
+}
+
+fn post_inner(generation: Option<u64>, input: Input) -> bool {
+    let notify = {
+        let mut state = STATE.lock().unwrap();
+        if state.closed || generation.is_some_and(|g| g != state.generation) { return false; }
+        let notify = state.queue.is_empty();
+        state.queue.push_back(Queued { input, process_quit: false });
+        notify
+    };
+    if notify { wake(); }
+    true
+}
+
+pub fn request_quit() {
+    {
+        let mut state = STATE.lock().unwrap();
+        if state.closed || state.pending_quit { return; }
+        state.pending_quit = true;
+    }
+    wake();
+}
+
+pub fn report_error(error: String) {
+    {
+        let mut state = STATE.lock().unwrap();
+        if state.closed { return; }
+        state.error.get_or_insert(error);
+    }
+    wake();
+}
+
+pub fn take_error() -> Option<String> { STATE.lock().unwrap().error.take() }
+
+fn admit_quit(state: &mut State) {
+    if state.pending_quit && !state.quit_queued {
+        state.queue.push_back(Queued { input: Input::Quit, process_quit: true });
+        state.quit_queued = true;
+    }
 }
 
 pub fn pop() -> Option<Input> {
-    QUEUE.lock().unwrap().pop_front()
+    let mut state = STATE.lock().unwrap();
+    if state.closed { return None; }
+    admit_quit(&mut state);
+    let queued = state.queue.pop_front()?;
+    if queued.process_quit {
+        state.pending_quit = false;
+        state.quit_queued = false;
+    }
+    Some(queued.input)
 }
 
+#[cfg(test)]
 pub fn is_empty() -> bool {
-    QUEUE.lock().unwrap().is_empty()
+    let state = STATE.lock().unwrap();
+    state.queue.is_empty() && !state.pending_quit
 }
 
-/// `SDL_FlushEvent`: removes every queued record `f` matches, keeping the rest in order.
+pub fn ready() -> bool {
+    let state = STATE.lock().unwrap();
+    !state.closed && (!state.queue.is_empty() || state.pending_quit || state.error.is_some())
+}
+
 pub fn remove_all(f: impl Fn(&Input) -> bool) {
-    QUEUE.lock().unwrap().retain(|input| !f(input));
+    STATE.lock().unwrap().queue.retain(|q| q.process_quit || !f(&q.input));
 }
 
-/// The SDL_PeepEvents coalescing loop: removes every queued motion record of `first`'s kind,
-/// wherever it sits, folding each in order into `first` (last position, summed deltas; the
-/// first record's window and finger id are kept, as SDL kept its event).
+/// Retire Lua-owned inputs before destroying its state; process quit survives.
+pub fn retire_generation() {
+    let mut state = STATE.lock().unwrap();
+    state.generation += 1;
+    state.queue.retain(|q| q.process_quit);
+}
+
+pub fn close() {
+    let mut state = STATE.lock().unwrap();
+    state.closed = true;
+    state.proxy = None;
+    state.queue.clear();
+    state.pending_quit = false;
+    state.quit_queued = false;
+    state.error = None;
+}
+
 pub fn coalesce(first: &mut Input) {
-    let mut queue = QUEUE.lock().unwrap();
-    queue.retain(|next| {
-        match (&mut *first, next) {
+    let mut state = STATE.lock().unwrap();
+    state.queue.retain(|next| {
+        match (&mut *first, &next.input) {
             (
                 Input::MouseMotion { x, y, xrel, yrel, .. },
                 Input::MouseMotion { x: x2, y: y2, xrel: dx, yrel: dy, .. },
             ) => {
                 (*x, *y) = (*x2, *y2);
-                *xrel += *dx;
-                *yrel += *dy;
+                *xrel += *dx; *yrel += *dy;
             }
             (
                 Input::Finger { kind: FingerKind::Motion, x, y, dx, dy, .. },
                 Input::Finger { kind: FingerKind::Motion, x: x2, y: y2, dx: ddx, dy: ddy, .. },
             ) => {
                 (*x, *y) = (*x2, *y2);
-                *dx += *ddx;
-                *dy += *ddy;
+                *dx += *ddx; *dy += *ddy;
             }
             _ => return true,
         }
         false
     });
+}
+
+/// A display-free wait uses the same runtime as signals; registration precedes rechecking.
+fn wait_before_loop(timeout: Option<Duration>) -> Result<bool, String> {
+    let runtime = crate::services::runtime()?;
+    Ok(runtime.block_on(async {
+        let deadline = timeout.map(|d| tokio::time::Instant::now() + d);
+        loop {
+            let notified = NOTIFY.notified();
+            tokio::pin!(notified);
+            notified.as_mut().enable();
+            if ready() { return true; }
+            match deadline {
+                Some(end) => if tokio::time::timeout_at(end, notified).await.is_err() { return ready(); },
+                None => notified.await,
+            }
+        }
+    }))
+}
+
+/// Non-consuming readiness with one deadline across backend-internal/spurious wakes.
+pub fn wait(timeout: Option<Duration>) -> Result<bool, String> {
+    if ready() { return Ok(true); }
+    if !crate::native::initialized() { return wait_before_loop(timeout); }
+    let deadline = timeout.map(|d| Instant::now() + d);
+    loop {
+        if ready() { return Ok(true); }
+        let remaining = deadline.map(|end| end.saturating_duration_since(Instant::now()));
+        crate::native::pump(remaining)?;
+        if ready() { return Ok(true); }
+        if deadline.is_some_and(|end| Instant::now() >= end) { return Ok(false); }
+    }
 }
 
 #[cfg(test)]
@@ -142,5 +273,57 @@ mod tests {
         assert_eq!(first, Input::MouseMotion { window: 1, x: 30.0, y: 30.0, xrel: 6.0, yrel: -6.0 });
         assert_eq!(pop(), Some(Input::Quit));
         assert!(is_empty());
+
+        // A process request stays pending until consumption, across generation retirement.
+        let old = generation();
+        push(Input::TextInput(b"old".to_vec()));
+        request_quit();
+        request_quit();
+        assert!(ready());
+        retire_generation();
+        assert!(!post_for_generation(old, Input::Other));
+        assert!(ready());
+        assert_eq!(pop(), Some(Input::Quit));
+        assert_eq!(pop(), None);
+
+        // Admit at the tail; neither a readiness check nor queue filtering consumes the quit.
+        push(Input::TextInput(b"first".to_vec()));
+        request_quit();
+        assert_eq!(pop(), Some(Input::TextInput(b"first".to_vec())));
+        remove_all(|_| true);
+        assert!(ready());
+        assert_eq!(pop(), Some(Input::Quit));
+        assert!(!ready());
+
+        // A pre-loop notifier wakes the main thread without creating a display.
+        let worker = std::thread::spawn(|| {
+            std::thread::sleep(Duration::from_millis(20));
+            report_error("test driver failure".into());
+        });
+        assert!(wait(Some(Duration::from_secs(2))).unwrap());
+        worker.join().unwrap();
+        assert_eq!(take_error().as_deref(), Some("test driver failure"));
+        assert!(!ready());
+
+        // Stale/internal notifications cannot invent readiness or extend the one deadline.
+        let worker = std::thread::spawn(|| {
+            for _ in 0..10 {
+                wake();
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        });
+        let start = Instant::now();
+        assert!(!wait(Some(Duration::from_millis(30))).unwrap());
+        assert!(start.elapsed() >= Duration::from_millis(20));
+        assert!(start.elapsed() < Duration::from_secs(1));
+        worker.join().unwrap();
+
+        request_quit();
+        report_error("late failure".into());
+        close();
+        assert!(!ready());
+        assert!(pop().is_none());
+        assert!(!post(Input::Other));
+        assert!(take_error().is_none());
     }
 }

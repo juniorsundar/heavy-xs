@@ -1,7 +1,7 @@
 //! `src/renwindow.c`, plus the window-management block of `src/renderer.c`.
 //!
-//! A `RenWindow` is the per-window state: the SDL window (drawn through its window surface), the
-//! scale between window points and surface pixels, and the frame's command buffer that
+//! A `RenWindow` owns a native registry id, an opaque packed Rust pixel store, the
+//! scale between window points and physical pixels, and the frame's command buffer that
 //! `rencache.rs` fills. The struct lives here and is opaque across the `ren_*` interface used
 //! by `renderer.rs`, `rencache.rs` and the Lua bindings; callers must not mirror it in a header.
 //!
@@ -12,7 +12,6 @@
 use std::ffi::c_int;
 use std::sync::Mutex;
 
-use sdl3_sys::everything as sdl;
 
 /// `RenRect` from `src/renderer.h`.
 #[repr(C)]
@@ -96,7 +95,10 @@ pub fn rect_intersection(a: RenRect, b: RenRect) -> Option<RenRect> {
 
 /// `struct RenWindow`.
 pub struct RenWindow {
-    window: *mut sdl::SDL_Window,
+    window: u32,
+    pixels: Vec<u32>,
+    width: i32,
+    height: i32,
     /// The frame's command buffer, allocated by `rencache` through `command_buf_reserve`.
     pub command_buf: *mut u8,
     pub command_buf_idx: usize,
@@ -113,7 +115,7 @@ struct State {
     target: *mut RenWindow,
 }
 
-// Single-threaded: Lua and SDL events all run on the main thread.
+// Single-threaded: Lua and native events run on the main thread.
 unsafe impl Send for State {}
 static STATE: Mutex<Option<State>> = Mutex::new(None);
 
@@ -126,12 +128,13 @@ fn with_state<R>(f: impl FnOnce(&mut State) -> R) -> R {
 /// `ren_create`: allocate, initialise the surface and command buffer, add to the list.
 ///
 /// # Safety
-/// `win` is a window from `SDL_CreateWindow` that is not already owned by a `RenWindow`.
+/// `win` is a live native registry id not already owned by a `RenWindow`.
 #[no_mangle]
-pub unsafe extern "C" fn ren_create(win: *mut sdl::SDL_Window) -> *mut RenWindow {
-    assert!(!win.is_null());
+pub unsafe extern "C" fn ren_create(win: u32) -> *mut RenWindow {
+    assert_ne!(win, 0);
     let ren = Box::into_raw(Box::new(RenWindow {
         window: win,
+        pixels: Vec::new(), width: 0, height: 0,
         command_buf: std::ptr::null_mut(),
         command_buf_idx: 0,
         command_buf_size: 0,
@@ -156,6 +159,7 @@ pub unsafe extern "C" fn ren_destroy(ren: *mut RenWindow) {
         if let Some(index) = state.list.iter().position(|w| *w == ren) {
             state.list.remove(index);
         }
+        if state.target == ren { state.target = std::ptr::null_mut(); }
     });
     free_surface(ren);
     free_command_buffer(ren);
@@ -175,22 +179,10 @@ pub unsafe extern "C" fn ren_get_window_list(window_list_dest: *mut *mut *mut Re
     })
 }
 
-/// `ren_find_window`.
-///
-/// # Safety
-/// `window` is NULL or a live SDL window.
+/// Find a live app-owned window, never a producer's pointer.
 #[no_mangle]
-pub unsafe extern "C" fn ren_find_window(window: *mut sdl::SDL_Window) -> *mut RenWindow {
-    with_state(|state| {
-        state.list.iter().copied().find(|w| (**w).window == window).unwrap_or(std::ptr::null_mut())
-    })
-}
-
-/// `ren_find_window_from_id`.
-#[no_mangle]
-pub unsafe extern "C" fn ren_find_window_from_id(id: sdl::SDL_WindowID) -> *mut RenWindow {
-    let window = sdl::SDL_GetWindowFromID(id);
-    ren_find_window(window)
+pub unsafe extern "C" fn ren_find_window_from_id(id: u32) -> *mut RenWindow {
+    with_state(|state| state.list.iter().copied().find(|w| (**w).window == id).unwrap_or(std::ptr::null_mut()))
 }
 
 #[no_mangle]
@@ -205,7 +197,7 @@ pub unsafe extern "C" fn ren_set_target_window(window: *mut RenWindow) {
     with_state(|state| state.target = window);
 }
 
-/// `ren_get_size`: the surface size, in points.
+/// `ren_get_size`: the physical draw-target size (as in the previous SDL surface path).
 ///
 /// # Safety
 /// `ren` is a live `RenWindow`; `x` and `y` are valid pointers.
@@ -216,7 +208,7 @@ pub unsafe extern "C" fn ren_get_size(ren: *mut RenWindow, x: *mut c_int, y: *mu
     *y = rs.h;
 }
 
-/// `ren_resize_window`: SDL resizes the window surface itself, so only the scale is redone.
+/// `ren_resize_window`: synchronize the owned pixel store and point-to-pixel scale.
 ///
 /// # Safety
 /// `ren` is a live `RenWindow`.
@@ -231,13 +223,7 @@ pub unsafe extern "C" fn ren_resize_window(ren: *mut RenWindow) {
 /// `rects` points to `count` `RenRect`s.
 #[no_mangle]
 pub unsafe extern "C" fn ren_update_rects(ren: *mut RenWindow, rects: *mut RenRect, count: c_int) {
-    static INITIAL_FRAME: Mutex<bool> = Mutex::new(true);
     update_rects(ren, rects, count);
-    let mut initial = INITIAL_FRAME.lock().unwrap();
-    if *initial {
-        show_window(ren);
-        *initial = false;
-    }
 }
 
 // --------------------------------------------------------------- the Rust API
@@ -269,97 +255,66 @@ pub unsafe extern "C" fn ren_get_scale_y(ren: *mut RenWindow) -> f32 {
 /// # Safety
 /// `ren` is a live `RenWindow`.
 #[no_mangle]
-pub unsafe extern "C" fn ren_get_sdl_window(ren: *mut RenWindow) -> *mut sdl::SDL_Window {
+pub unsafe extern "C" fn ren_get_window_id(ren: *mut RenWindow) -> u32 {
     (*ren).window
 }
 
 // ------------------------------------------------------------- surface handling
 
-unsafe fn init_surface(ren: *mut RenWindow) {
-    (*ren).scale_x = 1.0;
-    (*ren).scale_y = 1.0;
-}
+unsafe fn init_surface(ren: *mut RenWindow) { update_scale(ren); }
 
-unsafe fn free_surface(ren: *mut RenWindow) {
-    sdl::SDL_DestroyWindow((*ren).window);
-    (*ren).window = std::ptr::null_mut();
-}
+unsafe fn free_surface(ren: *mut RenWindow) { crate::native::destroy((*ren).window); }
 
-/// The window surface, drawn into directly; its coordinates are already pixels (scale 1).
+/// A fresh view is acquired after every resize; no pointer into the store crosses a pump.
 unsafe fn get_surface(ren: *mut RenWindow) -> RenSurface {
-    let surface = sdl::SDL_GetWindowSurface((*ren).window);
-    if surface.is_null() {
-        eprintln!("Error getting window surface: {}", sdl_error());
-        std::process::exit(1);
-    }
-    let surface = &*surface;
-    let format = &*sdl::SDL_GetPixelFormatDetails(surface.format);
-    // shortcut: drawing writes whole u32 pixels (as the text blend always did), so only 4-byte
-    // 8-bit-per-channel window formats are supported; the Rust 0xFFRRGGBB store removes this.
-    debug_assert_eq!(format.bytes_per_pixel, 4);
-    let channel = |mask: u32, shift: u8| Channel { mask, shift: shift as u32 };
+    update_scale(ren);
+    let ren = &mut *ren;
     RenSurface {
-        pixels: surface.pixels as *mut u8,
-        w: surface.w,
-        h: surface.h,
-        pitch: surface.pitch,
-        bytes_per_pixel: format.bytes_per_pixel as c_int,
-        r: channel(format.Rmask, format.Rshift),
-        g: channel(format.Gmask, format.Gshift),
-        b: channel(format.Bmask, format.Bshift),
-        a: channel(format.Amask, format.Ashift),
-        clip: RenRect { x: 0, y: 0, width: surface.w, height: surface.h },
-        scale: 1,
+        pixels: ren.pixels.as_mut_ptr() as *mut u8, w: ren.width, h: ren.height,
+        pitch: ren.width * 4, bytes_per_pixel: 4,
+        r: Channel { mask: 0xff0000, shift: 16 },
+        g: Channel { mask: 0xff00, shift: 8 },
+        b: Channel { mask: 0xff, shift: 0 },
+        a: Channel { mask: 0xff000000, shift: 24 },
+        clip: RenRect { x: 0, y: 0, width: ren.width, height: ren.height }, scale: 1,
     }
 }
 
 fn scaled_rect(rect: RenRect, scale: c_int) -> RenRect {
-    RenRect {
-        x: rect.x * scale,
-        y: rect.y * scale,
-        width: rect.width * scale,
-        height: rect.height * scale,
-    }
+    RenRect { x: rect.x * scale, y: rect.y * scale, width: rect.width * scale, height: rect.height * scale }
 }
 
 unsafe fn update_scale(ren: *mut RenWindow) {
-    let surface = sdl::SDL_GetWindowSurface((*ren).window);
-    let mut window_w = 0;
-    let mut window_h = 0;
-    sdl::SDL_GetWindowSize((*ren).window, &mut window_w, &mut window_h);
-    (*ren).scale_x = (*surface).w as f32 / window_w as f32;
-    (*ren).scale_y = (*surface).h as f32 / window_h as f32;
+    let (w, h) = crate::native::physical_size((*ren).window);
+    let ren = &mut *ren;
+    if (ren.width, ren.height) != (w, h) {
+        // Rows remain tightly packed; resize invalidates the whole cache through its size check.
+        let length = (w.max(0) as usize).checked_mul(h.max(0) as usize).expect("pixel store size overflow");
+        assert!(w <= i32::MAX / 4, "pixel store pitch overflow");
+        ren.pixels = vec![0xff000000; length];
+        ren.width = w; ren.height = h;
+    }
+    ren.scale_x = crate::native::scale(ren.window);
+    ren.scale_y = ren.scale_x;
 }
 
-unsafe fn show_window(ren: *mut RenWindow) {
-    sdl::SDL_ShowWindow((*ren).window);
-}
-
-unsafe fn update_rects(ren: *mut RenWindow, rects: *mut RenRect, count: c_int) {
-    sdl::SDL_UpdateWindowSurfaceRects((*ren).window, rects as *const sdl::SDL_Rect, count);
-}
-
-/// `renderer.c`'s `ren_refresh_after_foreground`: the reaction to
-/// `SDL_EVENT_{WILL,DID}_ENTER_FOREGROUND`.
-#[no_mangle]
-pub extern "C" fn ren_refresh_after_foreground() {
-    unsafe {
-        let mut list: *mut *mut RenWindow = std::ptr::null_mut();
-        let mut count = ren_get_window_list(&mut list);
-        while count > 0 {
-            count -= 1;
-            sdl::SDL_UpdateWindowSurface((**list.add(count)).window);
-        }
+unsafe fn update_rects(ren: *mut RenWindow, _rects: *mut RenRect, _count: c_int) {
+    let ren = &*ren;
+    if let Err(error) = crate::native::present(ren.window, &ren.pixels, ren.width, ren.height, true) {
+        crate::platform::report_error(error);
     }
 }
 
-pub(crate) fn sdl_error() -> String {
-    unsafe {
-        let message = sdl::SDL_GetError();
-        if message.is_null() {
-            String::new()
-        } else {
-            std::ffi::CStr::from_ptr(message).to_string_lossy().into_owned()
+/// Replay the persistent store after foreground restoration, without retaining a platform borrow.
+#[no_mangle]
+pub extern "C" fn ren_refresh_after_foreground() {
+    let windows = with_state(|state| state.list.clone());
+    for ren in windows {
+        unsafe {
+            let ren = &*ren;
+            if let Err(error) = crate::native::present(ren.window, &ren.pixels, ren.width, ren.height, false) {
+                crate::platform::report_error(error);
+            }
         }
     }
 }
@@ -410,7 +365,7 @@ mod command_buffer {
 
     fn bare_window() -> RenWindow {
         RenWindow {
-            window: std::ptr::null_mut(),
+            window: 0, pixels: Vec::new(), width: 0, height: 0,
             command_buf: std::ptr::null_mut(),
             command_buf_idx: 0,
             command_buf_size: 0,

@@ -213,6 +213,8 @@ return function(rec)
   push { type = "text_input", text = "w2" }
   rec("wait_event no timeout", try(system.wait_event))
   drain()
+  -- Test coercion against actual queued input, not SDL\'s backend poll-cycle readiness.
+  push { type = "text_input", text = "argument-check" }
   rec("wait_event string number", try(system.wait_event, "0.01"))
   rec("wait_event bad arg", try(system.wait_event, "x"))
   rec("wait_event table arg", try(system.wait_event, {}))
