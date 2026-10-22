@@ -84,12 +84,26 @@ fn wake() {
     if let Some(proxy) = proxy { let _ = proxy.send_event(crate::native::Wake::Input); }
 }
 
+#[cfg(test)]
+pub(crate) static PUBLISH_GATE: Mutex<Option<(bool, std::sync::Arc<std::sync::Barrier>)>> = Mutex::new(None);
+
+#[cfg(test)]
+fn pause_publication(after_store: bool) {
+    let gate = PUBLISH_GATE.lock().unwrap().as_ref()
+        .filter(|(after, _)| *after == after_store).map(|(_, gate)| gate.clone());
+    if let Some(gate) = gate { gate.wait(); gate.wait(); }
+}
+
 pub fn publish_proxy(proxy: EventLoopProxy<crate::native::Wake>) {
+    #[cfg(test)]
+    pause_publication(false);
     {
         let mut state = STATE.lock().unwrap();
         if state.closed { return; }
         state.proxy = Some(proxy);
     }
+    #[cfg(test)]
+    pause_publication(true);
     // Recheck after publishing: a producer may have arrived before there was a proxy.
     if ready() { wake(); }
 }
@@ -260,7 +274,7 @@ mod tests {
 
     #[test]
     fn queue_keeps_order_flushes_and_coalesces() {
-        // The queue is process-global; this is the only test that touches it.
+        // The queue is process-global; other stateful subjects run in separate processes.
         while pop().is_some() {}
         push(Input::Key { down: true, scancode: 43, key: 9, numlock: false });
         push(Input::TextInput(b"a".to_vec()));
@@ -329,6 +343,8 @@ mod tests {
         assert!(!ready());
         assert!(pop().is_none());
         assert!(!post(Input::Other));
+        assert!(!post_for_generation(generation(), Input::Other));
+        assert!(!accepts(generation()));
         assert!(take_error().is_none());
     }
 }
