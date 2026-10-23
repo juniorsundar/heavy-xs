@@ -1,5 +1,5 @@
 //! Lua event packing from the shared owned-input queue. Native callbacks never enter Lua.
-use std::ffi::{c_char, c_int, c_void, CStr};
+use std::ffi::{c_char, c_int, CStr};
 use std::time::Duration;
 use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushlstring, lua_pushnumber,
@@ -8,15 +8,8 @@ use mlua::ffi::{
 use crate::custom_events::get_custom_event_callback_by_type;
 use crate::platform::{self, Custom, FingerKind, Input};
 
-extern "C" {
-    fn ren_find_window_from_id(id: u32) -> *mut c_void;
-    fn ren_resize_window(window: *mut c_void);
-    fn ren_get_scale_x(window: *mut c_void) -> f32;
-    fn ren_get_scale_y(window: *mut c_void) -> f32;
-    fn ren_get_window_id(window: *mut c_void) -> u32;
-    fn ren_refresh_after_foreground();
-    fn rencache_invalidate();
-}
+use crate::rencache::rencache_invalidate;
+use crate::renwindow::{self, refresh_after_foreground};
 
 pub fn post_custom(custom: Custom) -> bool { platform::post(Input::Custom(custom)) }
 
@@ -57,8 +50,19 @@ macro_rules! event {
     }};
 }
 
-unsafe fn window_of(id: u32) -> *mut c_void {
-    ren_find_window_from_id(id)
+/// The point-to-pixel scale of the app-owned window with this native id, or `None` if there is
+/// none. Read straight away: no window reference is held while values are pushed.
+fn scale_of(id: u32) -> Option<(f32, f32)> {
+    renwindow::find(id).map(|window| {
+        let window = window.borrow();
+        (window.scale_x(), window.scale_y())
+    })
+}
+
+fn resize(id: u32) {
+    if let Some(window) = renwindow::find(id) {
+        window.borrow_mut().resize();
+    }
 }
 
 /// `f_poll_event`.
@@ -77,19 +81,11 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             Input::Quit => event!(l, "quit"),
 
             Input::Resized { window, w, h } => {
-                let window = window_of(window);
-                if !window.is_null() {
-                    ren_resize_window(window);
-                }
+                resize(window);
                 // The size is in points.
                 event!(l, "resized", lua_pushinteger(l, w as i64), lua_pushinteger(l, h as i64))
             }
-            Input::Rescaled { window } => {
-                let window = window_of(window);
-                if !window.is_null() {
-                    ren_resize_window(window);
-                }
-            }
+            Input::Rescaled { window } => resize(window),
 
             Input::Exposed => {
                 rencache_invalidate();
@@ -107,14 +103,9 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             }
 
             Input::FileDropped { window, ref path } => {
-                let window = window_of(window);
-                let (mx, my) = if window.is_null() { (0.0, 0.0) } else { crate::native::pointer(ren_get_window_id(window)) };
                 // A drag into the dock can arrive before a window exists.
-                let (sx, sy) = if window.is_null() {
-                    (0.0, 0.0)
-                } else {
-                    (ren_get_scale_x(window), ren_get_scale_y(window))
-                };
+                let (sx, sy) = scale_of(window).unwrap_or((0.0, 0.0));
+                let (mx, my) = if scale_of(window).is_some() { crate::native::pointer(window) } else { (0.0, 0.0) };
                 event!(
                     l,
                     "filedropped",
@@ -142,11 +133,9 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             ),
 
             Input::MouseButton { window, down, button, x, y, clicks } => {
-                let window = window_of(window);
-                if window.is_null() {
+                let Some((sx, sy)) = scale_of(window) else {
                     continue;
-                }
-                let (sx, sy) = (ren_get_scale_x(window), ren_get_scale_y(window));
+                };
                 let name = button_name(button).as_ptr();
                 if down {
                     event!(
@@ -171,11 +160,9 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
                 // Coalesce queued motion: keep the last position, sum the deltas.
                 platform::coalesce(&mut input);
                 let Input::MouseMotion { window, x, y, xrel, yrel } = input else { unreachable!() };
-                let window = window_of(window);
-                if window.is_null() {
+                let Some((sx, sy)) = scale_of(window) else {
                     continue;
-                }
-                let (sx, sy) = (ren_get_scale_x(window), ren_get_scale_y(window));
+                };
                 event!(
                     l,
                     "mousemoved",
@@ -199,11 +186,10 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
                     platform::coalesce(&mut input);
                 }
                 let Input::Finger { window, x, y, dx, dy, finger, .. } = input else { unreachable!() };
-                let window = window_of(window);
-                if window.is_null() {
+                if scale_of(window).is_none() {
                     continue;
                 }
-                let (w, h) = crate::native::logical_size(ren_get_window_id(window));
+                let (w, h) = crate::native::logical_size(window);
                 let (w, h) = (w as f32, h as f32);
                 match kind {
                     FingerKind::Down | FingerKind::Up => {
@@ -228,11 +214,11 @@ pub unsafe extern "C-unwind" fn poll_event(l: *mut lua_State) -> c_int {
             }
 
             Input::EnteringForeground => {
-                ren_refresh_after_foreground();
+                refresh_after_foreground();
                 event!(l, "enteringforeground")
             }
             Input::EnteredForeground => {
-                ren_refresh_after_foreground();
+                refresh_after_foreground();
                 event!(l, "enteredforeground")
             }
             Input::EnteringBackground => event!(l, "enteringbackground"),
