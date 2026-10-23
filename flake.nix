@@ -3,9 +3,13 @@
 
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    fenix = {
+      url = "github:nix-community/fenix";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
-  outputs = { self, nixpkgs }:
+  outputs = { self, nixpkgs, fenix }:
     let
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
@@ -118,10 +122,16 @@
       devShells = forAllSystems (system:
         let
           pkgs = nixpkgs.legacyPackages.${system};
+          rustToolchain = fenix.packages.${system}.combine [
+            fenix.packages.${system}.stable.cargo
+            fenix.packages.${system}.stable.rustc
+            fenix.packages.${system}.stable.clippy
+            fenix.packages.${system}.stable.rust-src
+            fenix.packages.${system}.stable.rustfmt
+            fenix.packages.${system}.stable.rust-analyzer
+          ];
           shell = extra: pkgs.mkShell {
-            packages = pkgs.lib.unique (platformDeps pkgs ++ waylandDeps pkgs ++ extra) ++ (with pkgs; [
-              cargo
-              rustc
+            packages = pkgs.lib.unique (platformDeps pkgs ++ waylandDeps pkgs ++ extra) ++ [ rustToolchain ] ++ (with pkgs; [
               stdenv.cc # vendored Lua and the contract plugin fixtures
               git # build.rs embeds the commit in debug builds, optional
               lua5_4 # scripts/rust-port/gen-plugin-syms.lua
