@@ -1,7 +1,7 @@
--- W4 robustness: inputs that stress the C's pointer arithmetic. The Rust port
--- panics (aborting the editor, since panic = "abort") on any out-of-bounds slice
--- or integer overflow, so every one of these must come back as a clean result or
--- a Lua error. Recorded from the C build, status plus results only.
+-- utf8extra robustness: inputs that stressed the C build's pointer arithmetic. The port
+-- panics (aborting the editor, since panic = "abort") on any out-of-bounds slice or integer
+-- overflow, so every one of these must come back as a clean result or a Lua error. Status plus
+-- results only.
 local utf8 = require "utf8extra"
 
 local function val(fn, ...)

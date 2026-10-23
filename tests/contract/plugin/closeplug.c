@@ -1,10 +1,7 @@
-/* lua_closethread is in the plugin header but not in the C resolver's table. */
+/* Asks the XL resolver for a fixed list of names, including lua_closethread (in the plugin
+ * header, but missing from the C build's resolver table), and returns name -> resolved. */
 #define LITE_XL_PLUGIN_ENTRYPOINT
 #include "lite_xl_plugin_api.h"
-static int p_resolves(lua_State *L) {
-  lua_pushboolean(L, 1);
-  return 1;
-}
 int luaopen_lite_xl_closeplug(lua_State *L, void *XL) {
   void *(*resolve)(const char *) = XL;
   lite_xl_plugin_init(XL);
@@ -15,6 +12,5 @@ int luaopen_lite_xl_closeplug(lua_State *L, void *XL) {
     lua_pushboolean(L, resolve(names[i]) != NULL);
     lua_settable(L, -3);
   }
-  (void) p_resolves;
   return 1;
 }

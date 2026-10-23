@@ -1,6 +1,4 @@
--- W5 contract suite, part 1: the pure / filesystem / environment half of `system`
--- (src/api/system.c). Baseline recorded from the C build before any function is
--- overridden from Rust.
+-- The pure / filesystem / environment half of `system` (src/system.rs).
 --
 -- Machine-specific values (mtime of something we did not create, the filesystem a
 -- temp dir lives on, the pid) are reduced to a type or to a comparison, so the

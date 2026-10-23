@@ -1,10 +1,9 @@
--- W2 contract suite: the `dirmonitor` module (src/api/dirmonitor.c + the inotify
--- backend), including its worker thread, which pushes the "dirmonitor" custom event.
+-- The `dirmonitor` module (src/dirmonitor.rs), including its worker thread, which pushes the
+-- "dirmonitor" custom event.
 --
--- Baseline is recorded from the C build. The C inotify walker steps 16 bytes at a
--- time through variable-length events, so for ordinary file names it also reports
--- garbage watch ids made of name bytes. dirwatch ignores them (reverse_watched has
--- no such key), so the suite only records ids that were really handed out.
+-- The golden came from the C build, whose inotify walker also reported garbage watch ids made
+-- of file-name bytes (dirwatch ignores unknown ids), so the suite records only ids that were
+-- really handed out.
 
 local system = require "system"
 
@@ -62,7 +61,7 @@ return function(rec)
   rec("check idle (no watches)", tostring(m:check(function() end)))
   rec("check returns 1 value", status(m.check, m, function() end))
 
-  -- Watch ids. inotify_add_watch numbers from 1 and the C pushes a float.
+  -- Watch ids. inotify_add_watch numbers from 1, and they reach Lua as floats.
   rec("watch missing path", tostring(m:watch(ROOT .. "/nope")))
   local wa = m:watch(ROOT .. "/a")
   local wb = m:watch(ROOT .. "/b")
@@ -175,8 +174,8 @@ return function(rec)
   rec("reentrant: unwatch", (tostring(rearm.unwatch):gsub("%d+%.%d+", "<id>")))
   rec("reentrant: watch", (tostring(rearm.watch):gsub("%d+%.%d+", "<id>")))
   rec("reentrant: mode", tostring(rearm.mode))
-  -- A `check` from inside the callback is deliberately not recorded: the C re-reads the same
-  -- unconsumed buffer (recursively), the Rust takes it first. Nothing calls check re-entrantly.
+  -- A `check` from inside the callback is deliberately not recorded: the C build re-read the
+  -- same unconsumed buffer, the port takes it first. Nothing calls check re-entrantly.
   settle(m)
   -- unwatch removed wa's watch in the callback; restore it for the steps below.
   wa = m:watch(ROOT .. "/a")

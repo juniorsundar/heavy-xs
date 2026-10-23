@@ -1,9 +1,8 @@
--- W5/W6 contract suite: the renderer command cache (src/rencache.c).
+-- The renderer command cache (src/rencache.rs).
 --
 -- rencache batches a frame's drawing commands, hashes them into a grid of 96x96 cells, and
 -- redraws only the cells that changed since the previous frame. The dirty rect list is the
--- observable that matters: it decides what gets repainted, and it must be identical between the
--- C and Rust implementations for the same scene.
+-- observable that matters: it decides what gets repainted, so the golden pins it for each scene.
 --
 -- A cell is 96x96 and the grid is 80x50 cells. The window below is 800x480 points, so the grid
 -- covers 9x6 cells. Every rect here is chosen to land on a known cell boundary so the baseline

@@ -25,8 +25,7 @@ fail                                         false:plugin error 42
 lua_version                                  1,float:504.0
 lua_typename                                 1,number 1,string 1,table 1,no value
 userdata __gc ran                            25
-resolver                                     <empty>=false LUA_pushinteger=false api_load_libs=true luaL_checkversion_=true lua_=false lua_pushinteger=true lua_resetthread=true luaopen_base=true no_such_symbol=false
-resolver knows lua_closethread (C: false, Rust: true; see PLAN.md) n/a
+resolver                                     <empty>=false LUA_pushinteger=false api_load_libs=true luaL_checkversion_=true lua_=false lua_closethread=true lua_pushinteger=true lua_resetthread=true luaopen_base=true no_such_symbol=false
 plain luaopen_ fallback                      true
 plain plugin registered                      table
 entrypoint returns 0                         false:entrypoint must return a value

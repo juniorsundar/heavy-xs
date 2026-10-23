@@ -2,12 +2,11 @@
 //!
 //! Compiled only with the `test_hooks` cargo feature; shipping builds have no
 //! injection surface (a plugin could otherwise forge input), which
-//! `scripts/rust-port/normal-build-check.sh` checks. The event goldens are historical
-//! C recordings: that implementation is gone and nothing in this binary selects it.
+//! `scripts/rust-port/normal-build-check.sh` checks.
 //!
-//! `lxl_test.push_event{ type = "key_down", ... }` pushes one event through
-//! the shared owned-input queue after decoding the historical numeric event fixtures.
-//! Native capture is validated separately; this is not OS-input evidence.
+//! `lxl_test.push_event{ type = "key_down", ... }` posts one named `platform::Input` to the
+//! shared owned-input queue, exactly where the native producer posts. Native capture is validated
+//! separately (native-check.sh); this is not OS-input evidence.
 
 use std::ffi::c_int;
 
@@ -160,54 +159,6 @@ fn window_id(t: &Table) -> LuaResult<u32> {
     }
 }
 
-/// The historical fixtures' numeric event types: SDL 3's values, which the recorded goldens and
-/// `lxl_test.EVENT_*` constants still use. Only the types a fixture can name are listed.
-mod etype {
-    pub const QUIT: u32 = 0x100;
-    pub const TERMINATING: u32 = 0x101;
-    pub const WILL_ENTER_BACKGROUND: u32 = 0x103;
-    pub const DID_ENTER_BACKGROUND: u32 = 0x104;
-    pub const WILL_ENTER_FOREGROUND: u32 = 0x105;
-    pub const DID_ENTER_FOREGROUND: u32 = 0x106;
-    pub const WINDOW_SHOWN: u32 = 0x202;
-    pub const WINDOW_EXPOSED: u32 = 0x204;
-    pub const WINDOW_RESIZED: u32 = 0x206;
-    pub const WINDOW_PIXEL_SIZE_CHANGED: u32 = 0x207;
-    pub const WINDOW_MINIMIZED: u32 = 0x209;
-    pub const WINDOW_MAXIMIZED: u32 = 0x20A;
-    pub const WINDOW_RESTORED: u32 = 0x20B;
-    pub const WINDOW_MOUSE_LEAVE: u32 = 0x20D;
-    pub const WINDOW_FOCUS_GAINED: u32 = 0x20E;
-    pub const WINDOW_FOCUS_LOST: u32 = 0x20F;
-    pub const WINDOW_DISPLAY_SCALE_CHANGED: u32 = 0x214;
-}
-
-/// SDL's NumLock bit in the fixtures' `mod` field.
-const KMOD_NUM: u16 = 0x1000;
-
-/// A window, lifecycle or other event named by its numeric type. Window events carry the window
-/// and data1/data2; user-range types become an unregistered custom event with no data.
-fn numbered(ty: u32, window: u32, data1: i32, data2: i32) -> Input {
-    match ty {
-        etype::QUIT => Input::Quit,
-        etype::WINDOW_RESIZED => Input::Resized { window, w: data1, h: data2 },
-        etype::WINDOW_DISPLAY_SCALE_CHANGED | etype::WINDOW_PIXEL_SIZE_CHANGED => Input::Rescaled { window },
-        etype::WINDOW_EXPOSED => Input::Exposed,
-        etype::WINDOW_MINIMIZED => Input::Minimized,
-        etype::WINDOW_MAXIMIZED => Input::Maximized,
-        etype::WINDOW_RESTORED => Input::Restored,
-        etype::WINDOW_MOUSE_LEAVE => Input::MouseLeft,
-        etype::WINDOW_FOCUS_LOST => Input::FocusLost,
-        etype::WINDOW_FOCUS_GAINED => Input::FocusGained,
-        etype::WILL_ENTER_FOREGROUND => Input::EnteringForeground,
-        etype::DID_ENTER_FOREGROUND => Input::EnteredForeground,
-        etype::WILL_ENTER_BACKGROUND => Input::EnteringBackground,
-        etype::DID_ENTER_BACKGROUND => Input::EnteredBackground,
-        _ if ty >= FIRST_TYPE => Input::Custom(Custom { event_type: ty, code: 0, data1: 0, payload: None }),
-        _ => Input::Other,
-    }
-}
-
 fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
     let kind: String = spec.raw_get("type")?;
     let text = spec.raw_get::<Option<mlua::LuaString>>("text")?.map(|s| s.as_bytes().to_vec()).unwrap_or_default();
@@ -221,7 +172,7 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
             down: kind == "key_down",
             scancode: num(&spec, "scancode")? as i32,
             key: num(&spec, "key")? as u32,
-            numlock: num(&spec, "mod")? as u16 & KMOD_NUM != 0,
+            numlock: spec.raw_get::<Option<bool>>("numlock")?.unwrap_or(false),
         },
         "text_input" => Input::TextInput(text),
         "text_editing" => Input::TextEditing {
@@ -259,16 +210,28 @@ fn push_event(_: &Lua, spec: Table) -> LuaResult<bool> {
             finger: num(&spec, "finger")? as u64,
         },
         "drop_file" => Input::FileDropped { window, path: text },
-        "window" => {
-            // The historical producer rejected window notifications without a registered window.
-            if window == 0 {
-                return Ok(true);
-            }
-            let (data1, data2) = (num(&spec, "data1")? as i32, num(&spec, "data2")? as i32);
-            numbered(num(&spec, "etype")? as u32, window, data1, data2)
-        }
-        // Foreground / background lifecycle events and anything else, by numeric type.
-        "app" | "other" => numbered(num(&spec, "etype")? as u32, 0, 0, 0),
+        "minimized" => Input::Minimized,
+        "maximized" => Input::Maximized,
+        "restored" => Input::Restored,
+        "mouse_left" => Input::MouseLeft,
+        "focus_lost" => Input::FocusLost,
+        "focus_gained" => Input::FocusGained,
+        "exposed" => Input::Exposed,
+        "resized" => Input::Resized { window, w: num(&spec, "w")? as i32, h: num(&spec, "h")? as i32 },
+        "rescaled" => Input::Rescaled { window },
+        "entering_background" => Input::EnteringBackground,
+        "entered_background" => Input::EnteredBackground,
+        "entering_foreground" => Input::EnteringForeground,
+        "entered_foreground" => Input::EnteredForeground,
+        // A custom event of the type `offset` past the first one, with no data.
+        "custom" => Input::Custom(Custom {
+            event_type: FIRST_TYPE.wrapping_add(num(&spec, "offset")? as u32),
+            code: 0,
+            data1: 0,
+            payload: None,
+        }),
+        // Something the platform reports that Lua never sees.
+        "other" => Input::Other,
         "dialog_finished" => {
             // A forged `dialogfinished` event: what dialog_callback pushes when a dialog
             // ends, with the same owned payload.
@@ -302,26 +265,5 @@ pub fn install(lua: &Lua) -> LuaResult<()> {
     hooks.raw_set("custom_type", lua.create_function(custom_type)?)?;
     hooks.raw_set("custom_name", lua.create_function(custom_name)?)?;
     hooks.raw_set("custom_has_callback", lua.create_function(custom_has_callback)?)?;
-    for (name, ty) in [
-        ("EVENT_WINDOW_SHOWN", etype::WINDOW_SHOWN),
-        ("EVENT_WINDOW_EXPOSED", etype::WINDOW_EXPOSED),
-        ("EVENT_WINDOW_RESIZED", etype::WINDOW_RESIZED),
-        ("EVENT_WINDOW_MINIMIZED", etype::WINDOW_MINIMIZED),
-        ("EVENT_WINDOW_MAXIMIZED", etype::WINDOW_MAXIMIZED),
-        ("EVENT_WINDOW_RESTORED", etype::WINDOW_RESTORED),
-        ("EVENT_WINDOW_MOUSE_LEAVE", etype::WINDOW_MOUSE_LEAVE),
-        ("EVENT_WINDOW_FOCUS_GAINED", etype::WINDOW_FOCUS_GAINED),
-        ("EVENT_WINDOW_FOCUS_LOST", etype::WINDOW_FOCUS_LOST),
-        ("EVENT_WINDOW_PIXEL_SIZE_CHANGED", etype::WINDOW_PIXEL_SIZE_CHANGED),
-        ("EVENT_WINDOW_DISPLAY_SCALE_CHANGED", etype::WINDOW_DISPLAY_SCALE_CHANGED),
-        ("EVENT_WILL_ENTER_BACKGROUND", etype::WILL_ENTER_BACKGROUND),
-        ("EVENT_DID_ENTER_BACKGROUND", etype::DID_ENTER_BACKGROUND),
-        ("EVENT_WILL_ENTER_FOREGROUND", etype::WILL_ENTER_FOREGROUND),
-        ("EVENT_DID_ENTER_FOREGROUND", etype::DID_ENTER_FOREGROUND),
-        ("EVENT_USER", FIRST_TYPE),
-        ("EVENT_TERMINATING", etype::TERMINATING),
-    ] {
-        hooks.raw_set(name, ty as i64)?;
-    }
     lua.globals().set("lxl_test", hooks)
 }

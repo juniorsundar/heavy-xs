@@ -1,4 +1,4 @@
--- W9 contract suite: the native-plugin ABI. tests/contract/plugin/apiplug.c is a real plugin,
+-- The native-plugin ABI. tests/contract/plugin/apiplug.c is a real plugin,
 -- compiled against the shipped lite_xl_plugin_api.h without linking Lua, that calls (nearly)
 -- every function of the API through the XL resolver. The baseline is recorded from the upstream
 -- C build, so it pins what third-party plugins actually see: each call's return values and Lua

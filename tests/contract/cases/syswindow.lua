@@ -1,5 +1,5 @@
--- W5 contract suite, part 3: window, cursor, text-input and message-box functions of
--- `system`. Needs a window: it runs under the offscreen driver or a private Xvfb.
+-- Window, cursor, text-input and message-box functions of `system` (src/syswindow.rs). Needs
+-- a window: verify.sh runs it on a private Xvfb.
 --
 -- What a window reports (focus, positions after a move, whether maximize is honoured) is the
 -- window manager's business, not ours. Where that varies, the suite records an invariant that
@@ -159,7 +159,7 @@ return function(rec)
   rec("show_fatal_error one arg", try(system.show_fatal_error, "title"))
   rec("show_fatal_error tables", try(system.show_fatal_error, {}, {}))
 
-  -- A window is a userdata: wrong types must be rejected before SDL is touched ------------------
+  -- A window is a userdata: wrong types must be rejected before the native window is touched ---
   for _, fn in ipairs { "get_window_size", "get_window_mode", "window_has_focus", "raise_window", "clear_ime" } do
     rec(fn .. " string window", try(system[fn], "window"))
     rec(fn .. " no window", try(system[fn]))

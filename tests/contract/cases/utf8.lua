@@ -1,4 +1,4 @@
--- W4: utf8extra. Baseline recorded from the C implementation.
+-- utf8extra (src/utf8.rs).
 --
 -- Two kinds of observation:
 --   * curated cases covering every exported function;
@@ -6,10 +6,9 @@
 --     tables (generated into src/unidata.rs from upstream's C unidata.h).
 --
 -- Every case goes through `val`, which records the pcall status and, on success,
--- the results. Error messages are deliberately not recorded: the C core raises
--- strings while mlua raises userdata, so message text is a known deviation
--- (see PLAN.md). Using pcall everywhere also means one unexpected raise cannot
--- abort the suite and silently truncate the baseline.
+-- the results. Error messages are deliberately not recorded: they differ from the C build's
+-- (see PLAN.md). Using pcall everywhere also means one unexpected raise cannot abort the suite
+-- and silently truncate the baseline.
 
 local utf8 = require "utf8extra"
 
