@@ -83,6 +83,15 @@ struct Coverage {
     h: c_int,
 }
 
+impl Coverage {
+    /// `count` pixels of atlas row `line`, starting `first` pixels in, or `None` if that is not
+    /// inside the surface.
+    fn span(&self, line: u32, first: usize, count: usize, bytes_per_pixel: usize) -> Option<&[u8]> {
+        let start = line as usize * self.pitch as usize + first * bytes_per_pixel;
+        self.pixels.get(start..start + count * bytes_per_pixel)
+    }
+}
+
 /// One atlas surface: its coverage plus the bottom (`y1`) of the last glyph placed in it. The C
 /// keeps a pointer to that glyph's metric in an SDL property and reads only its `y1`, which never
 /// changes once the glyph is placed.
@@ -608,26 +617,92 @@ fn font_get_xadvance(
     adv
 }
 
+/// One glyph of a [`GlyphRun`]: the codepoint, what the cache has for it, and where the pen is.
+struct RunGlyph {
+    codepoint: u32,
+    glyph: Glyph,
+    /// The pen before this glyph, in the run's own units (including the run's origin).
+    pen: f64,
+    /// How far this glyph moves the pen.
+    advance: f32,
+    /// This was the last glyph of the text (a sequence cut short does not count).
+    at_end: bool,
+}
+
+/// The one traversal of a text: decode, pick the font, take its metric (and, when drawing, its
+/// coverage), and advance the pen. Measuring and drawing walk the same glyphs the same way, so
+/// what is drawn is where it was measured.
+///
+/// The pen is only advanced past a glyph when the next one is asked for, so a caller that stops
+/// at a glyph reads the pen as it was before that glyph.
+struct GlyphRun<'a> {
+    fonts: &'a FontGroup,
+    text: &'a [u8],
+    p: usize,
+    origin: f64,
+    pen: f64,
+    pending: f64,
+    tab: RenTab,
+    /// Drawing: load coverage, and choose the subpixel bitmap from the pen's fraction. Measuring
+    /// needs neither and always uses the first subpixel bitmap.
+    drawing: bool,
+}
+
+impl<'a> GlyphRun<'a> {
+    fn measure(fonts: &'a FontGroup, text: &'a [u8], tab: RenTab) -> Self {
+        Self { fonts, text, p: 0, origin: 0.0, pen: 0.0, pending: 0.0, tab, drawing: false }
+    }
+
+    /// `origin` is the pen's start, which tab stops are measured from.
+    fn draw(fonts: &'a FontGroup, text: &'a [u8], origin: f64, tab: RenTab) -> Self {
+        Self { fonts, text, p: 0, origin, pen: origin, pending: 0.0, tab, drawing: true }
+    }
+
+    /// The pen before the glyph last returned, or after the last glyph once the run is done.
+    fn pen(&self) -> f64 {
+        self.pen
+    }
+}
+
+impl Iterator for GlyphRun<'_> {
+    type Item = RunGlyph;
+
+    fn next(&mut self) -> Option<RunGlyph> {
+        self.pen += self.pending;
+        self.pending = 0.0;
+        if self.p >= self.text.len() {
+            return None;
+        }
+        let (codepoint, next) = utf8_to_codepoint(self.text, self.p);
+        self.p = next;
+        let subpixel_idx = if self.drawing { (self.pen % 1.0 * SUBPIXEL_BITMAPS_CACHED as f64) as c_int } else { 0 };
+        let glyph = font_group_get_glyph(self.fonts, codepoint, subpixel_idx, self.drawing);
+        let advance = font_get_xadvance(
+            &self.fonts.first().borrow(),
+            codepoint,
+            glyph.metric.as_ref(),
+            self.pen - self.origin,
+            self.tab,
+        );
+        self.pending = advance as f64;
+        Some(RunGlyph { codepoint, glyph, pen: self.pen, advance, at_end: next == self.text.len() })
+    }
+}
+
 /// `ren_font_group_get_width`. `x_offset`, when asked for, receives the first glyph's
 /// `bitmap_left` (or 0).
 pub fn ren_font_group_get_width(fonts: &FontGroup, text: &[u8], tab: RenTab, x_offset: Option<&mut c_int>) -> f64 {
-    let mut width = 0.0f64;
+    let mut run = GlyphRun::measure(fonts, text, tab);
     let mut first_left: Option<c_int> = None;
-    let mut p = 0;
-
-    while p < text.len() {
-        let (codepoint, next) = utf8_to_codepoint(text, p);
-        p = next;
-        let metric = font_group_get_glyph(fonts, codepoint, 0, false).metric;
-        width += font_get_xadvance(&fonts.first().borrow(), codepoint, metric.as_ref(), width, tab) as f64;
+    for placed in run.by_ref() {
         if first_left.is_none() {
-            first_left = metric.map(|m| m.bitmap_left);
+            first_left = placed.glyph.metric.map(|m| m.bitmap_left);
         }
     }
     if let Some(x_offset) = x_offset {
         *x_offset = first_left.unwrap_or(0);
     }
-    width
+    run.pen()
 }
 
 // --------------------------------------------------------------- text drawing
@@ -645,10 +720,7 @@ pub fn ren_draw_text(
     let clip = rs.clip;
 
     let surface_scale = rs.scale;
-    let mut pen_x = (x * surface_scale as f32) as f64;
-    let original_pen_x = pen_x;
     let y = y * surface_scale; // scaled below; `y / surface_scale` recovers the point value
-    let mut p = 0;
     let clip_end_x = clip.x + clip.width;
     let clip_end_y = clip.y + clip.height;
 
@@ -660,13 +732,8 @@ pub fn ren_draw_text(
         (first.style & FONT_STYLE_UNDERLINE != 0, first.style & FONT_STYLE_STRIKETHROUGH != 0, first.baseline)
     };
 
-    while p < text.len() {
-        let (codepoint, next) = utf8_to_codepoint(text, p);
-        p = next;
-        // The C's `p == end`: a sequence cut short steps past the end, which does not count.
-        let at_end = p == text.len();
-        let subpixel_idx = (pen_x % 1.0 * SUBPIXEL_BITMAPS_CACHED as f64) as c_int;
-        let glyph = font_group_get_glyph(fonts, codepoint, subpixel_idx, true);
+    let mut run = GlyphRun::draw(fonts, text, (x * surface_scale as f32) as f64, tab);
+    for RunGlyph { codepoint, glyph, pen: pen_x, advance: adv, at_end } in run.by_ref() {
         let Some(metric) = glyph.metric else {
             break;
         };
@@ -727,8 +794,7 @@ pub fn ren_draw_text(
                 // Both ranges lie inside their stores: the clip is inside the surface and the
                 // glyph inside its atlas row. A miss would be a bug; skip the row, never crash.
                 let count = (glyph_end - glyph_start) as usize;
-                let source_start = line as usize * coverage.pitch as usize + glyph_start as usize * font_bytes_per_pixel;
-                let Some(source) = coverage.pixels.get(source_start..source_start + count * font_bytes_per_pixel) else {
+                let Some(source) = coverage.span(line, glyph_start as usize, count, font_bytes_per_pixel) else {
                     continue;
                 };
                 let Some(destination) = rs.row(target_y, start_x, count) else {
@@ -745,8 +811,6 @@ pub fn ren_draw_text(
                 }
             }
         }
-
-        let adv = font_get_xadvance(&first.borrow(), codepoint, Some(&metric), pen_x - original_pen_x, tab);
 
         match last {
             None => last = Some(glyph.font),
@@ -773,11 +837,9 @@ pub fn ren_draw_text(
             }
             Some(_) => {}
         }
-
-        pen_x += adv as f64;
     }
 
-    pen_x / surface_scale as f64
+    run.pen() / surface_scale as f64
 }
 
 /// One glyph pixel over `destination`: coverage `src_*` of `color`, per channel. Not
@@ -889,6 +951,102 @@ mod tests {
         let err = ren_font_copy(&font, 16.0, -1, -1, -1).err().expect("a vanished font must fail");
         assert!(err.contains(tmp.to_str().unwrap()), "{err}");
     }
+
+    fn fixture_group(antialiasing: c_int) -> FontGroup {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("data/fonts");
+        let load = |name: &str| {
+            let path = CString::new(dir.join(name).to_str().unwrap()).unwrap();
+            let font = ren_font_load(&path, 16.0, antialiasing, 1, 0).ok().expect("fixture font loads");
+            Rc::new(RefCell::new(font))
+        };
+        FontGroup::new([load("JetBrainsMono-Regular.ttf"), load("icons.ttf")]).unwrap()
+    }
+
+    /// Everything the traversal decides, for `text`: measured width and offset, the pen after
+    /// drawing, and a hash of the pixels drawn (at a fractional x, clipped on both sides).
+    fn geometry_snapshot(antialiasing: c_int, text: &[u8], tab: RenTab) -> (f64, c_int, f64, u64) {
+        let fonts = fixture_group(antialiasing);
+        let mut x_offset = 0;
+        let width = ren_font_group_get_width(&fonts, text, tab, Some(&mut x_offset));
+        let (w, h) = (400, 40);
+        let mut pixels = vec![0xff20_2020u32; (w * h) as usize];
+        let mut rs = RenSurface {
+            pixels: &mut pixels,
+            w,
+            h,
+            clip: RenRect { x: 7, y: 2, width: 380, height: 36 },
+            scale: 1,
+        };
+        let color = RenColor { r: 230, g: 200, b: 90, a: 255 };
+        let pen = ren_draw_text(&mut rs, &fonts, text, 10.3, 5, color, tab);
+        let hash = pixels.iter().fold(0xcbf29ce484222325u64, |h, &p| (h ^ p as u64).wrapping_mul(0x100000001b3));
+        (width, x_offset, pen, hash)
+    }
+
+    const SAMPLES: &[&[u8]] = &[
+        b"fn main() { 1 + 1 }",
+        b"a\tbb\tccc\t d",
+        "caf\u{e9} \u{4e2d}\u{6587} \u{1f600}\u{3000}x".as_bytes(),
+        b"trailing cut \xc3",
+        b"\xff\xfe bad bytes",
+        b"",
+    ];
+
+    #[test]
+    fn text_geometry_is_unchanged() {
+        let mut out = String::new();
+        for aa in [FONT_ANTIALIASING_NONE, 1, FONT_ANTIALIASING_SUBPIXEL] {
+            for tab in [RenTab { offset: f64::NAN }, RenTab { offset: 3.5 }] {
+                for text in SAMPLES {
+                    let (w, o, p, h) = geometry_snapshot(aa, text, tab);
+                    out += &format!("{w:.4} {o} {p:.4} {h:016x}\n");
+                }
+            }
+        }
+        assert_eq!(out, GOLDEN);
+    }
+
+    /// Recorded from the traversal before it was shared between measuring and drawing: width,
+    /// first glyph offset, pen after drawing and a pixel hash, per antialiasing mode, tab mode
+    /// and sample.
+    const GOLDEN: &str = "\
+182.2812 0 192.5813 68cd600a7b0879a7
+134.3125 0 144.6125 9ca8495b764c07b5
+124.7500 0 135.0500 3dba89daaa87b63d
+134.3125 0 144.6125 6a980367ba6715f5
+92.7500 0 103.0500 3eee470d02951ab7
+0.0000 0 10.3000 f4102e5ca2a90525
+182.2812 0 192.5813 68cd600a7b0879a7
+130.8125 0 141.1125 8f4e58bf5b8a87d5
+124.7500 0 135.0500 3dba89daaa87b63d
+134.3125 0 144.6125 6a980367ba6715f5
+92.7500 0 103.0500 3eee470d02951ab7
+0.0000 0 10.3000 f4102e5ca2a90525
+182.2812 0 192.5813 cf2924af42dba23a
+134.3125 0 144.6125 4cd34bd5f1be8b6f
+124.7500 0 135.0500 924ceee8d4754040
+134.3125 0 144.6125 c5839d332e1076c2
+92.7500 0 103.0500 af4f8e1a01ca76f9
+0.0000 0 10.3000 f4102e5ca2a90525
+182.2812 0 192.5813 cf2924af42dba23a
+130.8125 0 141.1125 15804e644ec61f17
+124.7500 0 135.0500 924ceee8d4754040
+134.3125 0 144.6125 c5839d332e1076c2
+92.7500 0 103.0500 af4f8e1a01ca76f9
+0.0000 0 10.3000 f4102e5ca2a90525
+182.2812 0 192.5813 0028d9bddff21249
+134.3125 0 144.6125 437063705397adca
+124.7500 0 135.0500 7f4a49ed281067e4
+134.3125 0 144.6125 6f0e2d87500ff685
+92.7500 0 103.0500 a8af61bc851aa1f0
+0.0000 0 10.3000 f4102e5ca2a90525
+182.2812 0 192.5813 0028d9bddff21249
+130.8125 0 141.1125 08c871b526b62d5f
+124.7500 0 135.0500 7f4a49ed281067e4
+134.3125 0 144.6125 6f0e2d87500ff685
+92.7500 0 103.0500 a8af61bc851aa1f0
+0.0000 0 10.3000 f4102e5ca2a90525
+";
 
     #[test]
     fn utf8_reads_the_terminator_for_a_cut_sequence() {
