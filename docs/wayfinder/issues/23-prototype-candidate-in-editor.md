@@ -12,7 +12,7 @@ Blocked by: 18
 
 Does the per-glyph candidate composition from [Compare candidate font controls and rendering](18-compare-font-controls-and-rendering.md#resolution) hold up behind the real renderer, and which live differences does the user accept?
 
-Build a throwaway integration on an isolated prototype branch: Skrifa 0.48.0 parsing/metrics/hinting, Zeno 0.3.3 grayscale/subpixel, tiny-skia 0.12.0 non-AA mono, behind the existing renderer/cache/Lua API seam, with FreeType selectable for paired comparison. Styles: italic as a shear transform, bold and smoothing as a Zeno stroke-and-fill approximation, disclosed as a different algorithm from FreeType's outline embolden. Agree the workload manifest with the human before building.
+Build a prototype integration, kept off the main line: Skrifa 0.48.0 parsing/metrics/hinting, Zeno 0.3.3 grayscale/subpixel, tiny-skia 0.12.0 non-AA mono, behind the existing renderer/cache/Lua API seam, with FreeType selectable for paired comparison. Styles: italic as a shear transform, bold and smoothing as a Zeno stroke-and-fill approximation, disclosed as a different algorithm from FreeType's outline embolden. Agree the workload manifest with the human before building.
 
 Produce the evidence that [Define font compatibility and acceptance criteria](15-define-font-acceptance.md#resolution--confirmed-by-the-user) requires and the human can judge in a real window:
 
@@ -36,7 +36,7 @@ The user chose:
 
 ### Increment 1 — live-review build, awaiting the human's review
 
-Local throwaway branch `prototype/font-editor-candidate`, commit `07b93ca9` (from base `5bd90b47`; no push or merge). Report: `docs/wayfinder/assets/font-editor-prototype/README.md` on that commit.
+The candidate was integrated behind the existing renderer seam, with FreeType selectable for paired comparison, and built for live review.
 
 `LITE_FONT_BACKEND=candidate` swaps FreeType for Skrifa 0.48.0 + Zeno 0.3.3 + tiny-skia 0.12.0 at each FreeType touchpoint in the renderer (glyph id, advance, bitmap, face metrics, load). The atlas, glyph cache, fallback, tabs, blending, decorations and Lua API are shared. Styles: italic as the same shear; bold and smoothing as fill plus a 0.5 px stroke.
 
@@ -53,11 +53,11 @@ Pending: the user's side-by-side live review on the HiDPI panel (`review.sh`, co
 
 Live review: the user could not see synthetic bold on either backend, even zoomed in. Measured cause: FreeType thickens by a fixed 0.5 px regardless of size (Lilex at 15 px: 188 → 203 lit pixels for `test`).
 
-The user chose **stronger, size-scaled bold** for the candidate: thicken by `pixel_size / 20` (0.75 px at 15 px, 1.2 px at 24 px). Commit `b7b87900` on `prototype/font-editor-candidate`. For Lilex, the ink then lands close to the real Lilex Bold face (size 15: 122k vs 118k; size 24: 319k vs 281k), against FreeType's 94k. Advances are unchanged, so layout, wrapping and cursor placement do not move; the geometry probe output is byte-identical. This is an approved, recorded difference from FreeType's synthetic bold. Smoothing keeps FreeType's 0.5 px.
+The user chose **stronger, size-scaled bold** for the candidate: thicken by `pixel_size / 20` (0.75 px at 15 px, 1.2 px at 24 px). For Lilex, the ink then lands close to the real Lilex Bold face (size 15: 122k vs 118k; size 24: 319k vs 281k), against FreeType's 94k. Advances are unchanged, so layout, wrapping and cursor placement do not move; the geometry probe output is byte-identical. This is an approved, recorded difference from FreeType's synthetic bold. Smoothing keeps FreeType's 0.5 px.
 
 The user also asked about using a font's real Bold file. Automatically finding a sibling Bold file is font discovery, which this map rules out of scope. It is already possible through configuration (`style.syntax_fonts[...]` pointing at a Bold file), and works the same on both backends.
 
-For a like-for-like comparison, commit `bbe1b6d3` adds `LITE_FT_SCALED_BOLD=1`, which gives the FreeType path the same size-scaled strength (on both axes, as the candidate's stroke does). Measured ink then agrees within about 1–8% across sizes and the user's two fonts. Unset, FreeType output is unchanged and the contract suites still pass. The opt-in is a comparison aid only, not a proposed FreeType change.
+For a like-for-like comparison, an opt-in `LITE_FT_SCALED_BOLD=1` gives the FreeType path the same size-scaled strength (on both axes, as the candidate's stroke does). Measured ink then agrees within about 1–8% across sizes and the user's two fonts. Unset, FreeType output is unchanged and the contract suites still pass. The opt-in is a comparison aid only, not a proposed FreeType change.
 
 ### Human review — increment 1 live appearance
 
@@ -67,7 +67,7 @@ Still open on this ticket: paired performance and memory, malformed fonts, `sdl_
 
 ### Increment 2a — paired real-window frame timing (display mismatch)
 
-Commit `c9c40f76` on `prototype/font-editor-candidate` adds `frame-probe.lua` (per-frame active work and presentation, timed in Rust around `ren_update_rects`) and `frame-run.sh` (FreeType/candidate alternating over 3 rounds, the user's config and bundled fonts, plain-text copy of `src/renderer.rs`, editor fps 60). Raw TSVs are in `frames/`.
+A frame probe timed per-frame active work and presentation (in Rust around `ren_update_rects`), alternating FreeType and the candidate over 3 rounds with the user's config and the bundled fonts, on a plain-text copy of `src/renderer.rs` at 60 fps.
 
 The maximized windows opened at 2543x2033 on an **external 60 Hz monitor**, not the 165 Hz laptop panel, so the agreed 6.06 ms budget was not tested on its own display. One run (bundled candidate, round 1) was disturbed: 627 instead of about 1,080 scroll frames, with 29 ms presents. It is excluded below and needs a rerun.
 
@@ -94,7 +94,7 @@ Cold-start/first-glyph cost and a large-collection stress case were not separate
 
 ### Increment 2b — paired memory, awaiting the human's review
 
-Commit `b44b7914` on `prototype/font-editor-candidate`. The existing retention probe (`font-retention-classify.lua`, unchanged) ran for both backends: JetBrains Mono and the 32 MB Noto Sans CJK collection; variants `full` (load, set_size, copy, draw), `hold8` (eight fonts live at once), `draw` and `width`; 200 cycles each, two rounds, offscreen with framebuffer acceleration off and the glibc stats shim. Raw TSVs are in `memory/`.
+The existing retention probe (`font-retention-classify.lua`, unchanged) ran for both backends: JetBrains Mono and the 32 MB Noto Sans CJK collection; variants `full` (load, set_size, copy, draw), `hold8` (eight fonts live at once), `draw` and `width`; 200 cycles each, two rounds, offscreen with framebuffer acceleration off and the glibc stats shim.
 
 **Defect found and fixed:** the candidate copied each font file onto the heap (32 MB per Noto CJK load; 326 MB peak with eight fonts live). It now maps the file read-only, as FreeType streams it. Load-error wording is unchanged.
 
@@ -118,7 +118,7 @@ The user deferred the CJK peak-memory increase ("this can be touched later"). Re
 
 ### Increment 3 — malformed fonts
 
-Commit `9723a24b` on `prototype/font-editor-candidate` adds `malformed-run.mjs` and `malformed-probe.lua`. The corpus has 114 deterministic mutations: empty/zero/random/text files; truncation at 0.1–99%; 16/256/4096 random byte flips; and table-directory length/offset damage and 0xFF-filled `head`/`hhea`/`maxp`/`cmap`/`loca`/`glyf`/`hmtx`/`CFF `/`CFF2`/`OS/2`/`post`. The sources are bundled JetBrains Mono and Fira Sans, public TeX Gyre Heros CFF and the Noto Sans CJK CFF2 collection. Each case runs in its own process with 20 s wall, 30 s CPU and 2 GiB address-space limits. A successful load is then exercised with set_size 1–300, malformed UTF-8, fallback codepoints, 200-glyph lines and copies in all AA modes with bold+italic.
+A malformed-font run used a corpus of 114 deterministic mutations: empty/zero/random/text files; truncation at 0.1–99%; 16/256/4096 random byte flips; and table-directory length/offset damage and 0xFF-filled `head`/`hhea`/`maxp`/`cmap`/`loca`/`glyf`/`hmtx`/`CFF `/`CFF2`/`OS/2`/`post`. The sources are bundled JetBrains Mono and Fira Sans, public TeX Gyre Heros CFF and the Noto Sans CJK CFF2 collection. Each case runs in its own process with 20 s wall, 30 s CPU and 2 GiB address-space limits. A successful load is then exercised with set_size 1–300, malformed UTF-8, fallback codepoints, 200-glyph lines and copies in all AA modes with bold+italic.
 
 Result (`malformed/results.tsv`): **no crash, signal, timeout or Lua error on either backend**. Every case either failed to load with the existing `failed to load font:` prefix (FreeType 48, candidate 50) or loaded and drew safely. Eighteen cases differ only in which side of that line they land: for example, FreeType rejects a corrupt `maxp` while the candidate loads and draws, and the candidate rejects a corrupt `glyf`/`hmtx` length while FreeType loads. Both outcomes are acceptable under the failure policy, which preserves the error prefix, not FreeType-specific diagnostics.
 
@@ -139,7 +139,7 @@ The user chose to record the fractional-scale abort as an **inherited defect wit
 
 ## Resolution
 
-The candidate composition — **Skrifa 0.48.0 + Zeno 0.3.3 + tiny-skia 0.12.0** — works behind the existing renderer seam on throwaway branch `prototype/font-editor-candidate` (local only; commits `07b93ca9` through `9723a24b`, base `5bd90b47`). Atlas, glyph cache, fallback, tabs, blending, decorations and the Lua API are shared and unchanged. Evidence and the user's decisions:
+The candidate composition — **Skrifa 0.48.0 + Zeno 0.3.3 + tiny-skia 0.12.0** — works behind the existing renderer seam. Atlas, glyph cache, fallback, tabs, blending, decorations and the Lua API are shared and unchanged. Evidence and the user's decisions:
 
 | Gate | Result | Decision |
 |---|---|---|

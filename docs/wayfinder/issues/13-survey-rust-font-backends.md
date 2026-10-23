@@ -28,13 +28,13 @@ Context: [Inventory the observable font contract](12-inventory-font-contract.md)
 
 Claimed for isolated primary-source research. Intended context pointer: branch `research/freetype-backends`, report `docs/wayfinder/assets/freetype-backend-survey.md`. These are dispatch destinations, not a claim that findings already exist. The charting session owns recording the actual result or releasing the claim if dispatch returns no usable evidence.
 
-The delegation returned no findings, and no local research branch, worktree or report was observed afterward. The claim is released so another session can take the ticket. No completed survey or successful publication is claimed.
+The delegation returned no findings and produced no report. The claim is released so another session can take the ticket. No completed survey or successful publication is claimed.
 
 ### Research retry
 
 Credentials were refreshed and a reviewer call succeeded. This working session reclaims the independent survey and retries it in isolation; only verified report/branch results will be recorded as research evidence.
 
-The retry returned a partial source-cited report at `/tmp/freetype-backend-survey.md`, but could not access the local renderer or use git to create/publish the research branch. Its local-contract cross-check, complete transitive audit and several capability/version claims still need validation. No research branch, commit or publication is claimed. The claim is released; the survey remains open, independently of the resolved inventory.
+The retry returned only a partial source-cited report: it could not check the local renderer, and its local-contract cross-check, complete transitive audit and several capability/version claims still need validation. No survey is claimed. The claim is released; the survey remains open, independently of the resolved inventory.
 
 ### Verification and publication retry
 
@@ -42,7 +42,7 @@ Claimed by `pi-freetype-research` to verify the recovered report against primary
 
 ### Resolution
 
-Published the verified [Rust-native font backend survey](https://github.com/juniorsundar/lite-xl/blob/b8b9f40b3db851bdb26f3d135a94e23cc3616ef2/docs/wayfinder/assets/freetype-backend-survey.md) on [research/freetype-backends](https://github.com/juniorsundar/lite-xl/tree/research/freetype-backends), commit `b8b9f40b3db851bdb26f3d135a94e23cc3616ef2`. The branch contains only the public-source Markdown report over the already-published source base; no PR or merge was performed. The isolated worktree is `/tmp/freetype-backends-wt`.
+Published the verified [Rust-native font backend survey](https://github.com/juniorsundar/lite-xl/blob/b8b9f40b3db851bdb26f3d135a94e23cc3616ef2/docs/wayfinder/assets/freetype-backend-survey.md). It is a public-source Markdown report only; nothing was merged.
 
 Compared released Swash, Skrifa + Zeno, Fontdue and ab_glyph against the validated editor contract. Stock Swash fixes a hint target and AutoFallback policy rather than exposing the editor's forced-auto/slight/full/mono controls; direct Skrifa exposes the distinctions but needs a separate rasterizer and adapter. Fontdue does provide RGB subpixel rasterization, correcting the earlier draft. Mono rasterization, LCD filtering, synthetic-style equivalence, format behavior and metric/appearance trade-offs require candidate evidence, not conclusions from API names.
 

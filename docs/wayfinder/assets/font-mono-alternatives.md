@@ -64,9 +64,8 @@ exclusions.
 
 ## 3. Candidate B: any-coverage postprocessing of STORED hint-none data
 
-Project-specific code-path check: local archived prototype commit
-`c1949277`, `docs/wayfinder/assets/font-controls-prototype/src/main.rs`.
-That separate local prototype is not published by this research branch.
+Project-specific code-path check, from the font controls prototype
+([Compare candidate font controls and rendering](../issues/18-compare-font-controls-and-rendering.md)).
 Its runtime data is not a public library guarantee:
 
 - `hint == none` yields `target = None` regardless of `aa`, so BOTH the

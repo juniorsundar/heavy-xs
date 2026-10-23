@@ -22,7 +22,7 @@ Context: [Survey Rust-native platform crates](25-survey-rust-platform-crates.md)
 
 ### Progress — standalone probe ready; live service review pending
 
-Captured on local-only throwaway branch `prototype/sdl3-loop-probe`, commit `beaa9ae2` (base `f8dacae0` from the window probe; not pushed or merged). Locate its worktree with `git worktree list`. The source, pinned lockfile, launcher, `check-loop.sh`, optional visible-pixel check and README are under `docs/wayfinder/assets/sdl3-loop-probe/` in that worktree. Run `bash docs/wayfinder/assets/sdl3-loop-probe/run.sh --backend wayland`; repeat with `--backend x11` for X11-client evidence, explicitly labelling XWayland when appropriate. No editor code changed.
+A standalone probe, built on the window probe and separate from the editor, exercised the loop, clipboard and both dialog libraries on native Wayland and as an X11 client, with XWayland labelled explicitly. No editor code changed.
 
 The probe reuses the earlier drawing/input helper and keeps its experimental Wayland opaque-padding workaround explicitly unapproved. It drives winit 0.30.13 with main-thread zero-timeout poll followed by a bounded wait, handling native callbacks inline. Worker events and service results arrive through typed `EventLoopProxy` messages. This establishes no production-loop choice or full Lua event-translation result.
 
@@ -48,7 +48,7 @@ The user's first rfd F8 attempt showed no dialog and returned in 35 ms: rfd repo
 
 A test with no bus connection or GUI isolated the first failure: neither of rfd 0.17.2's dlopen names for libdbus resolved in the launcher environment, because the repository dev shell does not include dbus. The pinned rfd source reports exactly that failure, then returns no result. The probe's `check-loop.sh` now runs this loader test; it failed before the change and passes after it. The launcher enters the pinned repository dev shell plus `dbus` through a probe-only override, leaving the repository flake unchanged. rfd failure logs now name the failure stage without printing details.
 
-Fix snapshot: local throwaway commit `af90d33a` on the same branch, not pushed. Thirteen unit tests, the loader test and both private-Xvfb loop runs pass. Whether rfd's portal call now opens a dialog is unverified until the user retries. **Packaging fact for selection:** rfd's portal path needs the desktop's libdbus at runtime; the editor's packaging would have to provide it. This records no decision.
+After the fixes, thirteen unit tests, the loader test and both private-Xvfb loop runs pass. Whether rfd's portal call now opens a dialog is unverified until the user retries. **Packaging fact for selection:** rfd's portal path needs the desktop's libdbus at runtime; the editor's packaging would have to provide it. This records no decision.
 
 ### Retry — rfd accept path works on Wayland
 
@@ -62,7 +62,7 @@ The user reported that ashpd F8 worked once, after which no dialog opened. The l
 
 Cause, confirmed in the pinned sources and by a regression test: ashpd 0.13.13 caches its zbus connection for the whole process, and zbus runs that connection's background tasks on the Tokio runtime that created it. The probe created a fresh runtime per dialog and dropped it afterwards, so every request after the first waited forever. A test running three successive ashpd requests on a private bus with no portal hung on the second request before the fix; afterwards all three fail promptly. The probe now keeps one process-lifetime dialog runtime and logs ignored dialog keys. This was the probe's integration error, not evidence against ashpd. **Integration fact for selection:** ashpd needs a long-lived async runtime owned by the application.
 
-Fix snapshot: local throwaway commit `4b275ae7`, same branch, not pushed. Thirteen unit tests, the libdbus loader test, the ashpd repeat test and both private-Xvfb loop runs pass. The ashpd Wayland checks, plus rfd cancellation, filters and blocking, still need the user's retry.
+After the next fixes, thirteen unit tests, the libdbus loader test, the ashpd repeat test and both private-Xvfb loop runs pass. The ashpd Wayland checks, plus rfd cancellation, filters and blocking, still need the user's retry.
 
 ### Retry after the runtime fix
 
@@ -92,6 +92,6 @@ The user chose to **close this prototype as a success and fold its remaining che
 - **Dialogs: both APIs work.** rfd 0.17.2 and ashpd 0.13.13 Open, Save and Directory dialogs accepted, cancelled, showed filters, blocked the parent window and woke the loop on completion, on Wayland and under XWayland. rfd cannot tell cancellation from failure and falls back to Zenity silently; ashpd reports cancellation separately.
 - **Integration facts found by failures, for stack selection:** rfd's portal path dlopens the desktop's libdbus at runtime, which the editor's packaging must provide. ashpd caches one D-Bus connection per process and needs an async runtime that lives as long as the process; a per-dialog runtime hangs every request after the first. Both were probe errors, fixed and covered by tests.
 - **Sandbox detection:** `ashpd::is_sandboxed()` exists as a cached heuristic; no real sandbox was tested.
-- **Primary source:** local-only throwaway branch `prototype/sdl3-loop-probe`, commits `beaa9ae2` to `4b275ae7`, with source, launcher, `check-loop.sh` and README under `docs/wayfinder/assets/sdl3-loop-probe/` in its worktree. Not pushed or merged; no editor code changed. The inherited Wayland pixel-padding workaround is still owned by [Qualify Wayland CPU presentation without unsupported pixel padding](32-qualify-wayland-presentation.md).
+- **Source:** a standalone probe outside the editor; no editor code changed. The inherited Wayland pixel-padding workaround is still owned by [Qualify Wayland CPU presentation without unsupported pixel padding](32-qualify-wayland-presentation.md).
 
 **Moved, not waived:** native-X11-session clipboard, primary and dialog checks; sandboxed dialog behaviour; selection survival without a clipboard manager; and live runtime dependency traces for the service crates were moved to [Complete the outstanding window and input desktop checks](33-complete-platform-desktop-checks.md#resolution), whose resolution records their subsequent user-approved validation dispositions.

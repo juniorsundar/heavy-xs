@@ -17,7 +17,7 @@ Implements the user-approved [lean contract and bounded community audit](regex-p
 
 [Raw TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/regex-lean-workloads.tsv): each original record is prefixed `reference` or `lean`. Every cohort has one unmeasured warm-up and five correctness-checked actions, all with successful completion markers. Runs alternate reference/lean per workload on the same host, sequentially (not randomized), under the original 30 s watchdog / 20–25 s CPU / 2 GiB address-space envelope. No compilers run concurrently with measurements. Host load/governor, GUI behavior and tail latency remain uncontrolled/unmeasured.
 
-Reference: original base `4c02ffc8e116dc8bfbd3ba14592220a3f1a1a5ac`, original data staged in a detached disposable worktree, preserved release SHA-256 `4381b80219660a91c68c3f79926b6c2dddc616a41cdecadb54fa61a6127c6273`.
+Reference: original base `4c02ffc8e116dc8bfbd3ba14592220a3f1a1a5ac` and its preserved release SHA-256 `4381b80219660a91c68c3f79926b6c2dddc616a41cdecadb54fa61a6127c6273`.
 
 Lean shipping build (no test_hooks), SHA-256 `d0d59c73b3eaa6ee95bfdcb5b1fbf4d3fad12edbac1e554cfb94a7ac8e916d66`. Cargo.lock SHA-256 `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272`. TSV SHA-256 `4f2140089608763519feda1d62e37feb14e9064b918d9e107494a560420ba75f`. Data changes (including tokenizer caching) are part of the integration comparison, so improvements are not isolated engine-speed claims.
 
@@ -42,4 +42,4 @@ All observed ordinary segments fit 33.3 ms and all process peaks fit 64 MiB. Las
 
 ## Not certified
 
-No real-window latency study, every-plugin runtime exercise, exhaustive pattern equivalence or whole-operation deadline guarantee. Third-party saved PCRE2 searches/replacements/snippets can change meaning. Multi-selection replacement is not atomic. Native plugin coverage remains the existing purpose-built fixtures, and the optional SDL renderer configuration was not separately re-run for this regex change. The retired port plan and disposable spike remain historical records; do not merge the spike branch.
+No real-window latency study, every-plugin runtime exercise, exhaustive pattern equivalence or whole-operation deadline guarantee. Third-party saved PCRE2 searches/replacements/snippets can change meaning. Multi-selection replacement is not atomic. Native plugin coverage remains the existing purpose-built fixtures, and the optional SDL renderer configuration was not separately re-run for this regex change. The retired port plan and the spike remain historical records.

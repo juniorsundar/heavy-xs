@@ -34,4 +34,4 @@ The handoff was `docs/font-backend-handoff.md`. It was implemented in `b7413210`
 - the validation checklist: 16 suites in debug and release, the `sdl_renderer` build, the geometry probe against the prototype output, the inventory assertions, the 114-case malformed corpus, absence of FreeType from `cargo tree` and the binary, a headless user-config startup, the hit-test and startup checks;
 - stop conditions and four non-blocking follow-ups.
 
-The reference prototype branch `prototype/font-editor-candidate` (`9723a24b`) remains on `origin` without a PR. This ticket itself was planning only; the user authorized the implementation separately.
+The reference prototype was never merged. This ticket itself was planning only; the user authorized the implementation separately.

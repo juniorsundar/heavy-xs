@@ -7,14 +7,13 @@ Evidence for [Spike fancy-regex against the regex acceptance evidence](../issues
 ## Reproducible source and provenance
 
 - Base/reference: `4c02ffc8e116dc8bfbd3ba14592220a3f1a1a5ac`.
-- Disposable local branch: `spike/fancy-regex`, commit `effe6189bdcfb05318bb1139982d2633edcfa49b`, worktree `/tmp/lxl-spike`. **Never merge; not pushed.**
-- [Portable source patch](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-spike.patch) includes the complete candidate adapter, replacement interpreter/tests, nil-aware Lua helpers, pinned Cargo.lock, raw-engine example, primary API notes, frozen Lua inputs and `SPIKE.md` instructions. It applies to the base revision in another disposable worktree.
+- [Portable source patch](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-spike.patch) includes the complete candidate adapter, replacement interpreter/tests, nil-aware Lua helpers, pinned Cargo.lock, raw-engine example, primary API notes, frozen Lua inputs and `SPIKE.md` instructions. It applies to the base revision.
 - Reference release binary SHA-256: `4381b80219660a91c68c3f79926b6c2dddc616a41cdecadb54fa61a6127c6273`.
 - Candidate release binary SHA-256: `826b85739f179f32798b16f864b1869c80b3f2f699f72a142e3b17b20bcb049c`.
 - Candidate Cargo.lock SHA-256: `a79cd4091669cfc1f896b013d654166e88148bfa9fef7d6761b70e244ed03272`.
 - [Matched workload TSV](https://github.com/juniorsundar/heavy-xs/blob/be39cd26/docs/wayfinder/assets/fancy-regex-workloads.tsv) SHA-256: `ddd78b38d505c97f0f3b78be0ab00a8712e936bfc0f041d8651f4a1e02c0da1f`.
 
-Collected 2026-10-17 on the same Linux/i9-12900H machine and Nix toolchain as [the release baseline](regex-release-baseline.md), with the same public C source, deterministic synthetic fixtures and unmodified baseline runtime. Both use normal Cargo release optimizations (`panic=abort`, thin LTO), no extra Cargo features, dummy SDL, staged data and disposable user directories. Main-worktree production/build inputs and existing baselines were not changed. The candidate removes the `pcre2-sys` dependency and compiled binding module; symbol inspection finds no `pcre2_*` functions in its binary. SDL, FreeType and Lua remain native C dependencies.
+Collected 2026-10-17 on the same Linux/i9-12900H machine and Nix toolchain as [the release baseline](regex-release-baseline.md), with the same public C source, deterministic synthetic fixtures and unmodified baseline runtime. Both use normal Cargo release optimizations (`panic=abort`, thin LTO), no extra Cargo features, dummy SDL, staged data and disposable user directories. Production and build inputs and existing baselines were not changed. The candidate removes the `pcre2-sys` dependency and compiled binding module; symbol inspection finds no `pcre2_*` functions in its binary. SDL, FreeType and Lua remain native C dependencies.
 
 The adapter keeps Rust ownership of compilation, matching, iteration, substitution and limits. Compiled tables contain validated Rust userdata owning an `Rc`; no raw pointer fallback. Lua helpers preserve the newly agreed nil capture holes. No patterns or bundled syntax definitions were rewritten to make the trial pass. The finite replacement interpreter reparses templates per match and is not a completed/optimized PCRE2 replacement implementation.
 
@@ -99,13 +98,13 @@ The `\|` in this Markdown table escapes the column delimiter; the actual pattern
 
 Thus 100,000 or 1,000,000 and 1 MiB or the original 8 MiB are **experiment options for the reachable fixtures only**, not chosen defaults or proof that all ordinary/stress workloads fit. The lower native backtracking settings may suffice for these simple matches; the coupled outer call counter is what the failing sweeps measure.
 
-**Unresolved enforcement:** a backtrack counter is not a total instruction/time/output/allocation budget. Its public interface exposes no deadline/cancellation hook or shared operation-wide VM counter; delegated scans and compilation are separate paths. A one-MiB miss still runs successfully with work=1 in the probe. The wrapper counts engine calls, not their internal instruction cost, and substitution can repeat many individually bounded executions. Delegate memory settings are approximate per delegated expression, not a process peak guarantee. The observed small pathological set passing does not prove general stoppage within a second; the external watchdog kills a disposable process, not a running native call safely inside the editor.
+**Unresolved enforcement:** a backtrack counter is not a total instruction/time/output/allocation budget. Its public interface exposes no deadline/cancellation hook or shared operation-wide VM counter; delegated scans and compilation are separate paths. A one-MiB miss still runs successfully with work=1 in the probe. The wrapper counts engine calls, not their internal instruction cost, and substitution can repeat many individually bounded executions. Delegate memory settings are approximate per delegated expression, not a process peak guarantee. The observed small pathological set passing does not prove general stoppage within a second; the external watchdog kills a separate test process, not a running native call safely inside the editor.
 
 Pinned primary references: [builder](https://docs.rs/fancy-regex/0.19.2/fancy_regex/struct.RegexBuilder.html), [options/limit definitions](https://docs.rs/fancy-regex/0.19.2/fancy_regex/struct.RegexOptionsBuilder.html), [input controls](https://docs.rs/fancy-regex/0.19.2/fancy_regex/struct.RegexInput.html), [runtime errors](https://docs.rs/fancy-regex/0.19.2/fancy_regex/enum.RuntimeError.html). The patch includes the focused advisory notes; host experiments, not undocumented API assumptions, establish the reported outcomes.
 
 ## Reproduce / hand back to design
 
-Create a detached disposable worktree at the local spike commit, or replay the portable patch on the base revision (never on the production worktree):
+Replay the portable patch on the base revision, in a separate checkout:
 
 ```sh
 root=$PWD

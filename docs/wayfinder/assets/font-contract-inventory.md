@@ -118,7 +118,7 @@ Color, bitmap, variable and other format behavior remains unclassified until inv
 From repo root (fresh isolated target/stage; original baselines only compared):
 
 ```sh
-run=$(mktemp -d /tmp/lxl-font-validation.XXXXXX)
+run=$(mktemp -d)
 mkdir -p "$run/userdir" "$run/home"
 export TARGET_DIR="$run/target" LITE_USERDIR="$run/userdir" LITE_OS_HOME="$run/home"
 nix develop --command scripts/rust-port/verify.sh renderer,rencache
@@ -129,4 +129,4 @@ SDL_VIDEODRIVER=offscreen LITE_PREFIX="$TARGET_DIR/stage/usr/local" \
 LITE_XL_RUNTIME=font-contract-check timeout -k 2 60 "$TARGET_DIR/debug/lite-xl"
 ```
 
-Observed local validation artifacts: `/tmp/lxl-font-validation.7QbCld` (temporary, not a portable dependency). Portable evidence is the scripts, committed reference baselines, raw probe output and identities above. Release/optional-renderer variants and full application regression suites were not rerun for this documentation-only inventory.
+The evidence is the scripts, committed reference baselines, raw probe output and identities above. Release/optional-renderer variants and full application regression suites were not rerun for this documentation-only inventory.

@@ -68,7 +68,7 @@ The screen cannot prove real editor cursor alignment, fallback/tab/clipping poli
 
 ### First native feasibility screen — artifact, not resolution
 
-Captured on **local-only** throwaway branch `prototype/font-controls`, commit `c1949277074d3915ca80731e25ee6f9f00521c76`; no push or merge. Primary artifact: `docs/wayfinder/assets/font-controls-prototype/README.md` on that commit, with native contact sheets, raw metric/routing tables, provenance, lockfile, scripts and reproduction instructions. Retrieve it with `git show prototype/font-controls:docs/wayfinder/assets/font-controls-prototype/README.md` or open that branch in a worktree. The prototype snapshot deliberately preserves older tracker versions from its source base; this live ticket is the approval record.
+A standalone harness rendered the agreed cases natively and produced contact sheets and raw metric and routing tables. The results it established are below; this ticket is the approval record.
 
 - Fresh reference source inputs remain `5bd90b47`; default offscreen surface/density 1 with acceleration off. Exact candidate versions are Skrifa 0.48.0 and Zeno 0.3.3, built in the same release/compiler environment with a separate lockfile.
 - Both sides execute all **189 cases** (seven fonts × nine AA/hint combinations × three positions), with full repeats matching. Real slight/full output differs for grayscale/subpixel on these samples; the existing mono slight/full equivalence is retained. Unhinted metrics are mode-independent; sampled integer heights match and advance deltas are at most 0.007813 pixels per glyph.
@@ -99,11 +99,11 @@ That research is now [resolved](21-investigate-mono-rendering-alternatives.md#re
 
 The user chose **“Run the saved-data screen”**: seven existing baseline fonts × three fractional positions = **21 cases**, size 16, **hint none only**. Apply `alpha > 0 → 255`, otherwise `0`, to the saved grayscale coverage. Compare it with current FreeType mono, the rejected 50% conversion as a negative control, and unchanged grayscale context.
 
-This authorizes only derived native-pixel inspection artifacts on an isolated throwaway branch: no new dependency, font-backend build or capture, no hinted-mono substitution, and no production or golden change. Label the new rule any-coverage mono conversion, not native-mono equivalence. The user has not approved its appearance, weight, geometry or suitability; all qualification gates remain intact.
+This authorizes only derived native-pixel inspection artifacts: no new dependency, font-backend build or capture, no hinted-mono substitution, and no production or golden change. Label the new rule any-coverage mono conversion, not native-mono equivalence. The user has not approved its appearance, weight, geometry or suitability; all qualification gates remain intact.
 
 ### Any-coverage screen — captured, awaiting human verdict
 
-Local-only throwaway branch `prototype/font-mono-any-coverage`, commit `e029c1121b1c79ff0ed47e2bc865774f6f6c1a78`, captures the 21-case artifact. Primary report: `docs/wayfinder/assets/font-controls-prototype/any-coverage/README.md` on that commit. It includes seven four-column contact sheets, 21 native-size derived PNGs, source/output hashes, counts, and a compact 63-input pixel bundle for replay without the original external font environment. No push or merge.
+The 21-case artifact produced seven four-column contact sheets and 21 native-size derived images, with source and output hashes and counts.
 
 All 63 source hashes match the first screen. Reapplying the rejected 50% rule to the saved grayscale reproduced its mono pixels byte-for-byte in **21/21 cases**. The any-coverage outputs retain every positive quantized sample; bundle-only replays are deterministic on this host. Independent checks verified all 21 native PNGs and all 84 contact tiles against the exact derived/source pixels, with captions outside the retained-ink crop. Focused source/data review passed.
 
@@ -115,13 +115,13 @@ The 50% construction stays **rejected**. Any-coverage remains **unapproved**, un
 
 The user chose to follow the recommendation and **run the non-AA experiment**, adding that they cannot make a sound judgement from the glyph images. This authorizes trying the next raster path, not appearance acceptance or delegation/waiver of the existing live-editor review gates. Do not ask the human to infer correctness from pixel counts; provide a technical assessment and, if a candidate survives, use actual editor text for subsequent usability review.
 
-Reuse the bounded slice: **seven baseline fonts × three phases = 21 cases, size 16, hint none only**, with unchanged Skrifa 0.48.0 outlines/metrics and placement. Add pinned **tiny-skia 0.12.0 only to an isolated throwaway crate**, using its existing non-antialiased fill (`anti_alias = false`; the equivalent explicit `Mask::fill_path` flag is acceptable) rather than thresholding Zeno coverage. Record the dependency graph, routing, binary and source identity, native output and repeats. Compare against the frozen FreeType mono and prior constructions without claiming fresh matched-reference qualification.
+Reuse the bounded slice: **seven baseline fonts × three phases = 21 cases, size 16, hint none only**, with unchanged Skrifa 0.48.0 outlines/metrics and placement. Add pinned **tiny-skia 0.12.0 only to a separate experiment crate**, using its existing non-antialiased fill (`anti_alias = false`; the equivalent explicit `Mask::fill_path` flag is acceptable) rather than thresholding Zeno coverage. Record the dependency graph, routing, binary and source identity, native output and repeats. Compare against the frozen FreeType mono and prior constructions without claiming fresh matched-reference qualification.
 
 No production/dependency adoption, custom rasterizer, forced hinting, synthetic-weight repair, layout change, optional-renderer/performance qualification or format exclusion. The 50% conversion stays rejected; any-coverage is not selected for adoption. The trial and its appearance remain unapproved pending evidence and further decision.
 
 ### tiny-skia non-AA trial — captured, technically unsuitable for CFF2 mono
 
-Local-only throwaway branch `prototype/font-mono-tiny-skia`, commit `fc143432`, report `docs/wayfinder/assets/font-controls-prototype/tiny-skia/README.md` on that commit. No push or merge. tiny-skia `=0.12.0` (`default-features = false`, `std` + `simd`; no `links`, two Rust build-script crates) was added only to the throwaway crate. Recorded Skrifa unhinted outlines were converted verb-for-verb and rasterized with `Mask::fill_path(.., FillRule::Winding, false, identity)`; no Zeno raster, threshold, hinter or emboldening ran on that path.
+tiny-skia `=0.12.0` (`default-features = false`, `std` + `simd`; no `links`, two Rust build-script crates) was added only to the experiment crate. Recorded Skrifa unhinted outlines were converted verb-for-verb and rasterized with `Mask::fill_path(.., FillRule::Winding, false, identity)`; no Zeno raster, threshold, hinter or emboldening ran on that path.
 
 All 21 cases ran twice with byte-identical output; output is binary and inside the crop; widths/height equal the frozen candidate in 21/21 cases; all 63 frozen inputs and seven font hashes verified. A fresh locked rebuild in another target directory regenerated all 32 artifacts byte-identically.
 
@@ -143,7 +143,7 @@ The user approved the next trial: the same seven fonts × three phases at size 1
 
 ### Hinted mono trial — captured, strokes retained
 
-Local-only branch `prototype/font-mono-tiny-skia`, commit `07d96bee`, report `docs/wayfinder/assets/font-controls-prototype/tiny-skia-hinted/README.md`. No push or merge. Skrifa `Engine::Auto(None)` + `Target::Mono` hinted outlines, rasterized by the accepted tiny-skia 0.12.0 non-AA fill; advances unhinted.
+Skrifa `Engine::Auto(None)` + `Target::Mono` hinted outlines, rasterized by the accepted tiny-skia 0.12.0 non-AA fill; advances unhinted.
 
 42/42 cases ran twice byte-identical, with binary output inside the crop and widths/height equal to the frozen candidate. Hinting slight and full produce identical images in 21/21 pairs, preserving the editor's mono slight = full equivalence. The 84 FreeType/rejected inputs are frozen captures hash-checked against the published table, not a fresh paired run.
 
@@ -153,7 +153,7 @@ CFF2 中/国/A: FreeType `51/83/26` at every phase; tiny-skia hinted `51/83/17`,
 
 The user chose:
 
-- **Next experiment:** a throwaway in-editor integration, because glyph sheets do not let them judge readability.
+- **Next experiment:** an in-editor prototype integration, because glyph sheets do not let them judge readability.
 - **Ticket structure:** resolve this ticket on per-glyph decisions; move live review, geometry, performance, memory, malformed-input, `sdl_renderer` and HiDPI evidence to a new in-editor prototype ticket.
 - **Format gaps:** research first. Skrifa 0.48.0 outlines are only Glyf/Cff/Cff2/Varc, so BDF and Type 1/PFB (both working under FreeType today) have no candidate path; bitmap strikes are readable by Skrifa but untested. No exclusion is approved.
 - **Synthetic bold/smoothing:** try a Zeno stroke-and-fill approximation in the editor prototype, disclosed as a different algorithm from FreeType's outline embolden. Italic is a shear transform.
@@ -169,6 +169,6 @@ Per-glyph outcome for **Skrifa 0.48.0 + Zeno 0.3.3 + tiny-skia 0.12.0** (no back
 - **Styles:** italic = shear; bold/smoothing = Zeno stroke-and-fill approximation, to be tried in the editor prototype.
 - **Formats:** BDF and Type 1/PFB have no candidate path yet; EBDT/CBDT strikes are readable by Skrifa but unexercised. Facts go to [Investigate Rust-native paths for legacy and bitmap font formats](22-investigate-rust-native-legacy-and-bitmap-formats.md); dispositions belong to [Select the Rust-native font backend](16-select-rust-font-backend.md).
 
-Evidence lives on local throwaway branches (no push or merge): `prototype/font-controls` at `c1949277` (189-case screen), `prototype/font-mono-any-coverage` at `e029c112`, `prototype/font-mono-tiny-skia` at `fc143432` (unhinted) and `07d96bee` (hinted).
+Evidence: the 189-case native screen, the any-coverage conversion artifact, and the unhinted and hinted tiny-skia mono comparisons, all described above.
 
 Everything in the question beyond per-glyph behavior (live normal/HiDPI review, geometry/cursor, fallback/tabs, performance, memory, malformed input, both renderer paths) is **not** resolved here; it moved, unchanged, to the in-editor prototype ticket. No acceptance gate is relaxed, no production code changed, and backend selection stays blocked on the two new tickets.

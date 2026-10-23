@@ -187,7 +187,7 @@ No acceleration, 100 cycles. The **malloc in-use bytes** column is the net live-
 ## Reproduce
 
 ```sh
-T=/tmp/lxl-font-retention   # any isolated directory
+T=$(mktemp -d)   # any isolated directory
 cargo build --release --features test_hooks --target-dir "$T/target"
 scripts/install-linux.sh "$T/target/release/lite-xl" "$T/target/stage"
 cp docs/wayfinder/assets/font-retention-classify.lua "$T/target/stage/usr/local/share/lite-xl/"

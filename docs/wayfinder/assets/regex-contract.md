@@ -140,4 +140,4 @@ rm -rf "$userdir"
 test "$rc" = 0
 ```
 
-Use the project's Nix development shell for the build prerequisites. The executed verification run sourced the already-generated `/tmp/devenv.sh`. Startup replaces Lua's package paths, so copying the runtime into a temporary user directory is intentional; setting `LUA_PATH` alone did not load it. Neither the user's real configuration nor the contract baselines are modified.
+Use the project's Nix development shell for the build prerequisites. The verification ran in that shell. Startup replaces Lua's package paths, so copying the runtime into a temporary user directory is intentional; setting `LUA_PATH` alone did not load it. Neither the user's real configuration nor the contract baselines are modified.

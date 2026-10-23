@@ -22,7 +22,7 @@ Context: [Survey Rust-native platform crates](25-survey-rust-platform-crates.md)
 
 ### Progress — runnable probe; human review pending
 
-A standalone native probe is captured locally on throwaway branch `prototype/sdl3-window-probe`, commit `7436e4e1` (base `f52aa273`; not pushed or merged). Source, pinned Cargo.lock, launcher and README are at `docs/wayfinder/assets/sdl3-window-probe/` **in that branch's worktree**, not the main tree. Use `git worktree list` to locate it; run `bash docs/wayfinder/assets/sdl3-window-probe/run.sh --backend wayland --borderless` there. Repeat with `--backend x11` for X11-client evidence, distinguishing XWayland from a native X11 session.
+A standalone native probe, separate from the editor, was built for the user to run on native Wayland (borderless) and as an X11 client, distinguishing XWayland from a native X11 session.
 
 The CPU-drawn window shows one-physical-pixel grid lines, scale and physical/logical dimensions, a preedit/committed-text field and candidate rectangle, plus click-triggered drag/resize regions. It logs keys/modifiers, focus, file-drop basenames and touch. Its small text helper reuses Skrifa and Zeno; this is not an editor widget or shaping implementation. Logs can contain the typed test text and filenames; use nonprivate samples.
 
@@ -40,7 +40,7 @@ Changing only the unused XRGB high byte to `0xff` restored the visible grid, lab
 
 Separately, repeated cursor-area updates caused empty-preedit notifications and repeated redraws. Caching the last area (including scale and reset on IME enable/disable), and suppressing redraws for unchanged preedit, reduced a six-second idle reproduction from 179 frames to 2. This is diagnostic evidence, not acceptance of calibrated performance.
 
-Fix snapshot: local throwaway commit `f8dacae0`, same branch/worktree (not pushed or merged). Seven unit tests, format/shell checks, both Xvfb smoke modes and independent light review pass. The new `check-visible.sh` captures the active probe only with the desktop idle, checks capture dimensions and green-strip RGB against the presented window, and rejects a blank frame or idle redraw storm. A final native Wayland capture at the actual scale 1.25 (1261×754) passed with two frames in six seconds; the image reader confirmed it shows the probe, not KRunner, and no blank region. Screenshots and raw logs remain local, not committed.
+After the fixes, seven unit tests, format/shell checks, both Xvfb smoke modes and independent light review pass. The new `check-visible.sh` captures the active probe only with the desktop idle, checks capture dimensions and green-strip RGB against the presented window, and rejects a blank frame or idle redraw storm. A final native Wayland capture at the actual scale 1.25 (1261×754) passed with two frames in six seconds; the image reader confirmed it shows the probe, not KRunner, and no blank region.
 
 ### User feedback — corrected Wayland probe
 
@@ -62,7 +62,7 @@ The user explicitly chose **“Close with blocking follow-ups”**: record succe
 
 - **User-reviewed success:** the corrected native Wayland probe at fractional scale 1.25 passed appearance/grid, borderless drag/resize, ordinary typing, and IME composition/candidate-popup placement. Under XWayland, the user confirmed composition, popup placement after refocusing and comparable editing behaviour. This is X11-client evidence under a Wayland compositor, not native X11-session acceptance.
 - **Automated evidence:** seven unit tests, format/shell checks, decorated/borderless Xvfb smoke checks, the native visible-pixel/idle regression check and independent review passed. The six-second idle check showed two drawn frames, not a calibrated editor performance pass. Dependency-audit limits remain as recorded above.
-- **Primary source:** local-only throwaway branch `prototype/sdl3-window-probe`, commit `f8dacae0` (initial snapshot `7436e4e1`), with source, launcher, visible-pixel check and README under `docs/wayfinder/assets/sdl3-window-probe/` in its worktree. No prototype code was merged or pushed, and no editor code changed.
+- **Source:** a standalone probe outside the editor, with a visible-pixel check; no editor code changed.
 - **Presentation compatibility remains open:** [Qualify Wayland CPU presentation without unsupported pixel padding](32-qualify-wayland-presentation.md) owns explaining/replacing the opaque-padding workaround with a supported, demonstrated route or an explicitly approved alternative disposition. Closing this ticket does not approve the workaround for production.
 - **Desktop coverage remains open:** [Complete the outstanding window and input desktop checks](33-complete-platform-desktop-checks.md) owns native X11, real 1× and the remaining unreported checks and runtime audit. Missing checks are pending, not passed or waived; the minimal field's absent arrow navigation is not an editor regression or an arrow-event delivery result.
 

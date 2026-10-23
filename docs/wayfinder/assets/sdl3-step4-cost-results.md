@@ -4,8 +4,8 @@ Unattended paired runs of the native cutover against SDL, 2026-10-22 18:02–22:
 
 ## Identities and deviations
 
-- **SDL (A):** `prototype/sdl3-cost-baseline` at `4b131a63` (the baseline branch's later commit, which only adds an unused allocation-count hook), binary SHA-256 `5f7dfb65f8a0…`, system SDL 3.4.14.
-- **Candidate (B):** `d25d4768` plus the same presentation-time hook, local throwaway branch `prototype/sdl3-cost-candidate`. Default (X11) build `17a878e7f519…` for XWayland; `--features wayland` build `b20769cf1913…` for native Wayland.
+- **SDL (A):** the calibration baseline's measurement build (with an extra, unused allocation-count hook), binary SHA-256 `5f7dfb65f8a0…`, system SDL 3.4.14.
+- **Candidate (B):** `d25d4768` plus the same presentation-time hook, in a separate measurement build. Default (X11) build `17a878e7f519…` for XWayland; `--features wayland` build `b20769cf1913…` for native Wayland.
 - **Display: not the calibrated one.** The laptop panel (eDP-1, 1.25×, 165 Hz) was disabled. Runs used DP-8, 3440×1440 at 60 Hz, scale 1, with DP-7 also connected. The editor drew full screen at 3440×1440 for frames, idle and memory on both builds.
 - **Probe changes, applied to both builds:**
   - The driver clears `LD_LIBRARY_PATH`: the dev shell's newer alsa-lib needs glibc 2.43, and the SDL build runs on 2.42.
@@ -13,7 +13,7 @@ Unattended paired runs of the native cutover against SDL, 2026-10-22 18:02–22:
   - The first full-screen request waits 0.5 s. KWin (with Krohnkite) drops a full-screen request made while a restored maximized state is still being applied, and SDL drops one made before the first frame too.
   - The memory timeout is doubled for the 200-cycle run.
 - **Sleep and lock** were inhibited for the run. Nothing else was running on the desktop.
-- Raw TSVs were left in the session scratchpad under `/tmp`, so they won't survive a reboot. The numbers below are copied from them.
+- The raw per-run files were not kept; the tables below are the record.
 
 ## Gate verdicts
 
@@ -37,7 +37,7 @@ SDL still fails accumulation: about 30 MiB over the last 30 cycles, and about 35
 ## Explanations for the over-limit results
 
 1. **Typing presentation.** On every changed frame the candidate copies the whole visible frame (3440×1440). SDL updated only the dirty rectangles. A one-character edit therefore costs a full copy: the typing median rises from about 1.3 to 2.6–2.8 ms. The same design makes scroll presentation faster than SDL. This is the full-copy, no-buffer-age design selected in [Choose SDL-free pixel storage and presentation conversion](../issues/34-choose-sdl-free-pixel-storage.md#resolution). Recovering the cost needs damage-region copies with buffer-age tracking, which is a design change and has not been made.
-2. **Scroll active work (+1–2 ms at p95).** Not the native event pump (about 0.01 ms per frame, measured with a pump timer on `prototype/sdl3-cost-pumptime`). Profiling found the Rust rectangle drawing 3–4× slower than SDL's SIMD routines; see the profiling follow-up below.
+2. **Scroll active work (+1–2 ms at p95).** Not the native event pump (about 0.01 ms per frame, measured with a pump timer in a diagnostic build). Profiling found the Rust rectangle drawing 3–4× slower than SDL's SIMD routines; see the profiling follow-up below.
 3. **Focused idle CPU (+0.8–1.1 pp).** The editor's own polling loop (out of scope, reproduced unchanged) makes 700–1,000 non-blocking `wait_event` calls a second, each one event-loop pass. The candidate uses more CPU at about the same call rate, so each winit pass costs a few microseconds more than SDL's. The handoff forbids changing timeout behaviour or the loop rate.
 4. **XWayland memory step.** RSS rises in single steps (cycles 1, 2, 55, and in one of two 200-cycle runs 162) and is otherwise flat, consistent with the allocator reserving a larger block, not a per-cycle leak. On the literal rule, one of the two adjudication runs fails.
 

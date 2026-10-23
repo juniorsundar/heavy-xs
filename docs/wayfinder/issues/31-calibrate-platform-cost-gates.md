@@ -24,7 +24,7 @@ Context: [Define platform compatibility and acceptance criteria](26-define-platf
 
 The user answered “yes to all” to the following. These fix *how* SDL is measured; no tolerance is chosen yet.
 
-1. **Presentation split.** Re-add a presentation-time counter (as in the font prototype) on a throwaway branch only; `rust-port` stays unchanged. Active work and presentation are reported separately.
+1. **Presentation split.** Re-add a presentation-time counter (as in the font prototype) in a separate measurement build only; the main line stays unchanged. Active work and presentation are reported separately.
 2. **Workloads**, each under both the bundled config and the user's own config (fonts, theme, plugins), on a plain-text document so no language server attaches:
    - **Startup:** launch to first presented frame, then exit.
    - **Scrolling and typing:** the font work's frame probe, editor window maximised.
@@ -46,7 +46,7 @@ Next: collect the SDL baseline with the user's desktop idle, then put tolerances
 
 ### SDL baseline — Wayland (native SDL backend)
 
-Collected unattended (user away, desktop idle, lock and notifications inhibited for the run) on 2026-10-19, 17:32–18:42. Identity: throwaway branch `prototype/sdl3-cost-baseline` at `02bac055` (base `f52aa273`), release build with only the presentation-time hook added, binary SHA-256 `8214856800d6…`; system SDL 3.4.14; laptop panel eDP-1 only, 2560×1600 at scale 1.25, 165 Hz. Three rounds of A/B/B/A with A and B the **same build**, both configs, 360 runs, **no failures**, no focused-idle run lost focus. The B−A column is run-to-run noise.
+Collected unattended (user away, desktop idle, lock and notifications inhibited for the run) on 2026-10-19, 17:32–18:42. Identity: a release build of `f52aa273` with only the presentation-time hook added, binary SHA-256 `8214856800d6…`; system SDL 3.4.14; laptop panel eDP-1 only, 2560×1600 at scale 1.25, 165 Hz. Three rounds of A/B/B/A with A and B the **same build**, both configs, 360 runs, **no failures**, no focused-idle run lost focus. The B−A column is run-to-run noise.
 
 Medians across the three rounds (A / B):
 
@@ -125,4 +125,4 @@ Only p95 frame times and medians for startup and idle are gated; frame medians a
 
 **SDL itself fails the accumulation gate** (about 21 MiB over the last 30 cycles, from its framebuffer-acceleration path on fullscreen toggles); this stays a finding, not a relaxation. The idle-loop spin is ruled out of scope on the map. Cold-cache startup is unavailable without root and stays pending, not waived.
 
-**Primary source:** local-only throwaway branch `prototype/sdl3-cost-baseline`, commits `02bac055` and `4b131a63` (presentation-time hook, `cost-probe.lua`, `cost-run.sh`, `cost-summary.mjs` under `docs/wayfinder/assets/sdl3-cost-baseline/` in its worktree). The raw Wayland results and the SDL-only leak reproduction live in `/tmp/lxl-sdl3-cost.JdT3Ny` only. Neither is pushed or merged; no editor code changed. These tolerances feed [Define the SDL3 replacement handoff](28-plan-sdl3-migration.md).
+**Source:** a measurement build of the main line with only a presentation-time hook, driven by a probe script with A/B/B/A scheduling and a summary script; the SDL-only leak was reproduced with a small standalone C program. No editor code changed. These tolerances feed [Define the SDL3 replacement handoff](28-plan-sdl3-migration.md).
