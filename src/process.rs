@@ -14,11 +14,16 @@
 //!     real fd, so writing to a closed stdin writes to fd 0 instead of failing;
 //!   * a negative read size, an out-of-range stream index, a `REDIRECT_DEFAULT`
 //!     stream value and an empty command all fail cleanly;
-//!   * an env block without `=` stops instead of dereferencing NULL.
+//!   * an env block without `=` stops instead of dereferencing NULL;
+//!   * the child is started by `std::process::Command`, which also resets SIGPIPE (ignored in
+//!     the editor) and the signal mask to their defaults in the child, and the pipes are
+//!     close-on-exec, so one child no longer inherits the pipes of children started before it.
 
 use std::collections::VecDeque;
-use std::ffi::{CStr, CString};
-use std::os::unix::io::RawFd;
+use std::ffi::OsStr;
+use std::os::fd::{AsFd, BorrowedFd, OwnedFd};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::process::CommandExt;
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
@@ -57,30 +62,25 @@ enum Signal {
 }
 
 impl Signal {
-    fn number(self) -> libc::c_int {
+    fn number(self) -> rustix::process::Signal {
         match self {
-            Signal::Interrupt => libc::SIGINT,
-            Signal::Term => libc::SIGTERM,
-            Signal::Kill => libc::SIGKILL,
+            Signal::Interrupt => rustix::process::Signal::INT,
+            Signal::Term => rustix::process::Signal::TERM,
+            Signal::Kill => rustix::process::Signal::KILL,
         }
     }
 }
 
-// ---------------------------------------------------------------- libc glue
-
-fn errno() -> i32 {
-    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
-}
+// ---------------------------------------------------------------- OS glue
 
 /// `strerror`, as `process.strerror` exposes it.
 fn strerror(err: i32) -> String {
-    unsafe { CStr::from_ptr(libc::strerror(err)) }
-        .to_string_lossy()
-        .into_owned()
+    crate::system::strerror(err)
 }
 
 /// `push_error`: the C's `"%s: %s (%d)"` message shape.
-fn error_message(extra: &str, err: i32) -> String {
+fn error_message(extra: &str, err: rustix::io::Errno) -> String {
+    let err = err.raw_os_error();
     format!("{}: {} ({})", extra, strerror(err), err)
 }
 
@@ -89,45 +89,42 @@ fn now_ms() -> i64 {
     START.get_or_init(Instant::now).elapsed().as_millis() as i64
 }
 
-fn close_fd(fd: &mut RawFd) {
-    if *fd >= 0 {
-        unsafe { libc::close(*fd) };
-        *fd = -1;
-    }
+fn pid_of(pid: i64) -> Option<rustix::process::Pid> {
+    rustix::process::Pid::from_raw(pid as i32)
 }
 
 /// `signal_process`: the child called `setpgid(0,0)` (or `setsid()`), so a
 /// negative pid signals its whole process group.
 fn signal_pid(pid: i64, sig: Signal) -> bool {
-    unsafe { libc::kill(-(pid as libc::pid_t), sig.number()) == 0 }
+    pid_of(pid).is_some_and(|pid| rustix::process::kill_process_group(pid, sig.number()).is_ok())
 }
 
 /// `process_handle_is_running`: `None` while the child runs, otherwise its exit
 /// status (reaping it as a side effect). Like the C this uses `WEXITSTATUS` on
-/// the raw status, so a child killed by a signal reports 0.
+/// the raw status, so a child killed by a signal reports 0, and so does a failed
+/// `waitpid` (status left at 0).
 fn try_wait(pid: i64) -> Option<i32> {
-    let mut status: libc::c_int = 0;
-    let waited = unsafe { libc::waitpid(pid as libc::pid_t, &mut status, libc::WNOHANG) };
-    if waited != 0 {
-        Some((status >> 8) & 0xff)
-    } else {
-        None
+    use rustix::process::{waitpid, WaitOptions};
+    match waitpid(pid_of(pid), WaitOptions::NOHANG) {
+        Ok(None) => None,
+        Ok(Some((_, status))) => Some((status.as_raw() >> 8) & 0xff),
+        Err(_) => Some(0),
     }
 }
 
 // ------------------------------------------------------------ the userdata
 
 /// `process_t`. Only the parent side of each pipe is kept; the C keeps both and
-/// closes the child's ends right after forking.
+/// closes the child's ends right after forking. `None` is a closed stream.
 struct Process {
     running: bool,
     detached: bool,
     returncode: i32,
     deadline: i64,
     pid: i64,
-    stdin_fd: RawFd,
-    stdout_fd: RawFd,
-    stderr_fd: RawFd,
+    stdin_fd: Option<OwnedFd>,
+    stdout_fd: Option<OwnedFd>,
+    stderr_fd: Option<OwnedFd>,
 }
 
 impl Process {
@@ -166,13 +163,14 @@ impl Process {
         true
     }
 
-    fn stream_fd(&self, stream: i64) -> RawFd {
+    fn stream_fd(&self, stream: i64) -> Option<BorrowedFd<'_>> {
         match stream {
-            STDIN_FD => self.stdin_fd,
-            STDOUT_FD => self.stdout_fd,
-            STDERR_FD => self.stderr_fd,
-            _ => -1,
+            STDIN_FD => self.stdin_fd.as_ref(),
+            STDOUT_FD => self.stdout_fd.as_ref(),
+            STDERR_FD => self.stderr_fd.as_ref(),
+            _ => None,
         }
+        .map(|fd| fd.as_fd())
     }
 }
 
@@ -190,9 +188,7 @@ impl Drop for Process {
                 }
             }
         }
-        close_fd(&mut self.stdin_fd);
-        close_fd(&mut self.stdout_fd);
-        close_fd(&mut self.stderr_fd);
+        // The pipe ends close with the fields.
     }
 }
 
@@ -371,11 +367,29 @@ fn arg_at<'a>(args: &'a [Value], i: usize) -> Option<&'a Value> {
     args.get(i).filter(|v| !matches!(v, Value::Nil))
 }
 
-/// A C string out of a Lua string, stopping at an embedded NUL the way
-/// `execvp` would.
-fn c_string(bytes: &[u8]) -> LuaResult<CString> {
-    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    CString::new(&bytes[..end]).map_err(|_| LuaError::runtime("invalid argument: embedded NUL"))
+/// The bytes a C string would see: up to an embedded NUL, the way `execvp` reads them.
+fn nul_cut(bytes: &[u8]) -> &[u8] {
+    &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
+}
+
+/// The child-side settings of an env block (`"K=V\0K=V\0\0"`), applied by the C with `setenv`
+/// over the inherited environment: stops at the empty entry or at an entry without `=`, and
+/// skips an empty name, which `setenv` refuses.
+fn env_pairs(block: &[u8]) -> Vec<(&[u8], &[u8])> {
+    let mut pairs = Vec::new();
+    for entry in block.split(|&b| b == 0) {
+        if entry.is_empty() {
+            break;
+        }
+        let Some(equals) = entry.iter().position(|&b| b == b'=') else {
+            // shortcut: the C writes through this NULL pointer.
+            break;
+        };
+        if equals > 0 {
+            pairs.push((&entry[..equals], &entry[equals + 1..]));
+        }
+    }
+    pairs
 }
 
 // ------------------------------------------------------------------ spawn
@@ -390,15 +404,13 @@ fn process_start(lua: &Lua, args: Variadic<Value>) -> LuaResult<Value> {
     };
 
     let argc = command.raw_len();
-    let mut argv_owned: Vec<CString> = Vec::with_capacity(argc);
+    let mut argv: Vec<Vec<u8>> = Vec::with_capacity(argc);
     for i in 1..=argc {
         let value: Value = command.raw_get(i)?;
         let string = coerce_string(lua, &value, 1, "process.start")?;
-        let bytes = string.as_bytes();
-        let bytes: &[u8] = &bytes;
-        argv_owned.push(c_string(bytes)?);
+        argv.push(nul_cut(&string.as_bytes()).to_vec());
     }
-    if argv_owned.is_empty() {
+    if argv.is_empty() {
         // shortcut: the C hands a NULL argv[0] to execvp, which kills the child
         // with a signal before it can report anything and makes `start` claim
         // success; report the failure it means instead.
@@ -407,14 +419,12 @@ fn process_start(lua: &Lua, args: Variadic<Value>) -> LuaResult<Value> {
             strerror(libc::ENOENT)
         )));
     }
-    let mut argv: Vec<*const libc::c_char> = argv_owned.iter().map(|a| a.as_ptr()).collect();
-    argv.push(std::ptr::null());
 
     let mut detach = false;
     let mut deadline = 10i64;
     let mut new_fds = [STDIN_FD, STDOUT_FD, STDERR_FD];
     let mut env_block: Option<Vec<u8>> = None;
-    let mut cwd: Option<CString> = None;
+    let mut cwd: Option<Vec<u8>> = None;
 
     if let Some(Value::Table(options)) = arg_at(&args, 1) {
         detach = truthy(&options.raw_get::<Value>("detach")?);
@@ -441,210 +451,103 @@ fn process_start(lua: &Lua, args: Variadic<Value>) -> LuaResult<Value> {
             let block = lua
                 .coerce_string(returned)?
                 .ok_or_else(|| LuaError::runtime("error: env must return a string"))?;
-            let bytes = block.as_bytes();
-            let bytes: &[u8] = &bytes;
-            let mut owned = bytes.to_vec();
-            owned.push(0); // the child walks it with strlen
-            env_block = Some(owned);
+            env_block = Some(block.as_bytes().to_vec());
         }
 
         if let Some(path) = lua.coerce_string(options.raw_get::<Value>("cwd")?)? {
-            let bytes = path.as_bytes();
-            let bytes: &[u8] = &bytes;
-            cwd = Some(c_string(bytes)?);
+            cwd = Some(nul_cut(&path.as_bytes()).to_vec());
         }
     }
 
-    // Make only the parent's ends non-blocking; the child's must block.
-    let mut pipes: [[RawFd; 2]; 3] = [[-1, -1], [-1, -1], [-1, -1]];
+    // One pipe per stream. Only the parent's ends are non-blocking; the child's must block.
+    // Both ends are close-on-exec: the child gets its ends through `Stdio`, which dup2s them.
+    let mut parent_ends: [Option<OwnedFd>; 3] = [None, None, None];
+    let mut child_ends: Vec<OwnedFd> = Vec::with_capacity(3);
+    for (stream, parent_end) in parent_ends.iter_mut().enumerate() {
+        use rustix::pipe::{pipe_with, PipeFlags};
+        let (read, write) = pipe_with(PipeFlags::CLOEXEC)
+            .map_err(|err| LuaError::runtime(error_message("cannot create pipe", err)))?;
+        let (parent, child) = if stream == 0 { (write, read) } else { (read, write) };
+        rustix::fs::fcntl_setfl(&parent, rustix::fs::OFlags::NONBLOCK)
+            .map_err(|err| LuaError::runtime(error_message("cannot create pipe", err)))?;
+        *parent_end = Some(parent);
+        child_ends.push(child);
+    }
+
+    let mut child = std::process::Command::new(OsStr::from_bytes(&argv[0]));
+    child.args(argv[1..].iter().map(|arg| OsStr::from_bytes(arg)));
+    // Each stream is its own pipe's child end, another stream's (`REDIRECT_STDOUT` and
+    // `REDIRECT_STDERR`), the editor's own (`REDIRECT_PARENT`), or closed (`REDIRECT_DISCARD`).
+    let mut discard = [false; 3];
     for stream in 0..3usize {
-        let mut fds: [RawFd; 2] = [-1, -1];
-        if unsafe { libc::pipe(fds.as_mut_ptr()) } != 0 {
-            let err = errno();
-            close_pipes(&mut pipes);
-            return Err(LuaError::runtime(error_message("cannot create pipe", err)));
-        }
-        pipes[stream] = fds;
-        let parent_side = if stream == 0 { 1 } else { 0 };
-        if unsafe { libc::fcntl(fds[parent_side], libc::F_SETFL, libc::O_NONBLOCK) } == -1 {
-            let err = errno();
-            close_pipes(&mut pipes);
-            return Err(LuaError::runtime(error_message("cannot create pipe", err)));
-        }
-    }
-
-    // A pipe whose write end the child holds until `exec` reports back whether
-    // `execvp` worked.
-    let mut control: [RawFd; 2] = [-1, -1];
-    if unsafe { libc::pipe(control.as_mut_ptr()) } == -1 {
-        let err = errno();
-        close_pipes(&mut pipes);
-        return Err(LuaError::runtime(format!(
-            "Error creating control pipe: {}",
-            strerror(err)
-        )));
-    }
-    if unsafe { libc::fcntl(control[1], libc::F_SETFD, libc::FD_CLOEXEC) } == -1 {
-        let err = errno();
-        unsafe {
-            libc::close(control[0]);
-            libc::close(control[1]);
-        }
-        close_pipes(&mut pipes);
-        return Err(LuaError::runtime(format!(
-            "Error setting FD_CLOEXEC: {}",
-            strerror(err)
-        )));
-    }
-
-    let pid = unsafe { libc::fork() };
-    if pid < 0 {
-        let err = errno();
-        unsafe {
-            libc::close(control[0]);
-            libc::close(control[1]);
-        }
-        close_pipes(&mut pipes);
-        return Err(LuaError::runtime(error_message("cannot create child process", err)));
-    }
-
-    if pid == 0 {
-        // Child: no allocation, no destructors, only libc calls.
-        unsafe {
-            child_exec(
-                detach,
-                new_fds,
-                pipes,
-                control[1],
-                argv.as_ptr(),
-                env_block.as_mut().map_or(std::ptr::null_mut(), |b| b.as_mut_ptr()),
-                cwd.as_ref().map_or(std::ptr::null(), |c| c.as_ptr()),
-            )
+        let stdio = match new_fds[stream] {
+            REDIRECT_PARENT => std::process::Stdio::inherit(),
+            REDIRECT_DISCARD => {
+                discard[stream] = true;
+                std::process::Stdio::inherit()
+            }
+            target => match child_ends[target as usize].try_clone() {
+                Ok(fd) => fd.into(),
+                Err(err) => {
+                    let err = rustix::io::Errno::from_io_error(&err).unwrap_or(rustix::io::Errno::MFILE);
+                    return Err(LuaError::runtime(error_message("cannot create pipe", err)));
+                }
+            },
+        };
+        match stream {
+            0 => child.stdin(stdio),
+            1 => child.stdout(stdio),
+            _ => child.stderr(stdio),
         };
     }
-
-    // Parent: drop the child's ends so reads see EOF when the child exits.
-    for stream in 0..3usize {
-        let child_side = if stream == 0 { 0 } else { 1 };
-        unsafe { libc::close(pipes[stream][child_side]) };
-        pipes[stream][child_side] = -1;
+    if let Some(block) = &env_block {
+        for (key, value) in env_pairs(block) {
+            child.env(OsStr::from_bytes(key), OsStr::from_bytes(value));
+        }
     }
-    unsafe { libc::close(control[1]) };
-    control[1] = -1;
-
-    // Either the child execs (CLOEXEC closes the write end, giving EOF) or it
-    // writes the errno that stopped it.
-    let mut reported = [0u8; 4];
-    let read_len = loop {
-        let n = unsafe {
-            libc::read(
-                control[0],
-                reported.as_mut_ptr() as *mut libc::c_void,
-                reported.len(),
-            )
+    if let Some(cwd) = &cwd {
+        child.current_dir(OsStr::from_bytes(cwd));
+    }
+    if !detach {
+        child.process_group(0);
+    }
+    if detach || discard.contains(&true) {
+        let pre_exec = move || {
+            for (stream, _) in discard.iter().enumerate().filter(|(_, d)| **d) {
+                // A closed stream, as the C leaves it, not /dev/null: a child writing to it fails.
+                // SAFETY: fds 0-2 belong to this child alone, and nothing here uses them again.
+                unsafe { libc::close(stream as libc::c_int) };
+            }
+            if detach {
+                rustix::process::setsid()?;
+            }
+            Ok(())
         };
-        if n >= 0 {
-            break n;
-        }
-        let err = errno();
-        if err == libc::EINTR {
-            continue;
-        }
-        unsafe { libc::close(control[0]) };
-        close_pipes(&mut pipes);
-        return Err(LuaError::runtime(format!(
-            "Error getting child process status: {}",
-            strerror(err)
-        )));
-    };
-    unsafe { libc::close(control[0]) };
-
-    if read_len != 0 {
-        let mut status: libc::c_int = 0;
-        unsafe { libc::waitpid(pid, &mut status, 0) };
-        close_pipes(&mut pipes);
-        return Err(LuaError::runtime(format!(
-            "Error creating child process: {}",
-            strerror(i32::from_ne_bytes(reported))
-        )));
+        // SAFETY: between fork and exec the closure only makes async-signal-safe calls
+        // (close, setsid) and does not allocate.
+        unsafe { child.pre_exec(pre_exec) };
     }
 
+    // std reports an exec failure (the C's control pipe) as the spawn error.
+    let spawned = child.spawn();
+    drop(child);
+    drop(child_ends);
+    let spawned = spawned.map_err(|err| {
+        LuaError::runtime(format!("Error creating child process: {}", crate::system::os_error_text(&err)))
+    })?;
+
+    let [stdin_fd, stdout_fd, stderr_fd] = parent_ends;
     let process = Process {
         running: true,
         detached: detach,
         returncode: 0,
         deadline,
-        pid: pid as i64,
-        stdin_fd: pipes[0][1],
-        stdout_fd: pipes[1][0],
-        stderr_fd: pipes[2][0],
+        pid: spawned.id() as i64,
+        stdin_fd,
+        stdout_fd,
+        stderr_fd,
     };
     Ok(Value::UserData(lua.create_userdata(process)?))
-}
-
-/// Between `fork()` and `execvp()`: redirect the standard streams, apply the
-/// environment block and the working directory, then exec or report the errno.
-unsafe fn child_exec(
-    detach: bool,
-    new_fds: [i64; 3],
-    pipes: [[RawFd; 2]; 3],
-    control_write: RawFd,
-    argv: *const *const libc::c_char,
-    mut env: *mut u8,
-    cwd: *const libc::c_char,
-) -> ! {
-    if !detach {
-        libc::setpgid(0, 0);
-    }
-    for stream in 0..3usize {
-        let child_side = if stream == 0 { 0 } else { 1 };
-        let parent_side = if stream == 0 { 1 } else { 0 };
-        match new_fds[stream] {
-            REDIRECT_DISCARD => {
-                libc::close(pipes[stream][child_side]);
-                libc::close(stream as RawFd);
-            }
-            REDIRECT_PARENT => {}
-            target => {
-                let target = target as usize;
-                let from = pipes[target][if target == 0 { 0 } else { 1 }];
-                libc::dup2(from, stream as RawFd);
-            }
-        }
-        libc::close(pipes[stream][parent_side]);
-    }
-
-    if !env.is_null() {
-        loop {
-            let len = libc::strlen(env as *const libc::c_char);
-            if len == 0 {
-                break;
-            }
-            let equals = libc::strchr(env as *const libc::c_char, b'=' as libc::c_int);
-            if equals.is_null() {
-                // shortcut: the C writes through this NULL pointer.
-                break;
-            }
-            *equals = 0;
-            libc::setenv(env as *const libc::c_char, equals.add(1), 1);
-            env = env.add(len + 1);
-        }
-    }
-
-    if (!detach || libc::setsid() != -1) && (cwd.is_null() || libc::chdir(cwd) != -1) {
-        libc::execvp(*argv, argv);
-    }
-    let err = errno();
-    libc::write(control_write, &err as *const i32 as *const libc::c_void, 4);
-    libc::_exit(-1)
-}
-
-fn close_pipes(pipes: &mut [[RawFd; 2]; 3]) {
-    for pair in pipes.iter_mut() {
-        for fd in pair.iter_mut() {
-            close_fd(fd);
-        }
-    }
 }
 
 // -------------------------------------------------------------- streams
@@ -657,7 +560,7 @@ fn g_read(lua: &Lua, process: &mut Process, stream: i64, read_size: i64) -> LuaR
             "error: redirect to handles, FILE* and paths are not supported",
         ));
     }
-    let fd = process.stream_fd(stream);
+    use rustix::io::Errno;
     let mut out: Vec<u8> = Vec::new();
     let mut remaining = read_size;
     let mut buffer = [0u8; LUAL_BUFFERSIZE as usize];
@@ -675,26 +578,23 @@ fn g_read(lua: &Lua, process: &mut Process, stream: i64, read_size: i64) -> LuaR
             return Ok(MultiValue::new());
         }
 
-        let n = unsafe {
-            libc::read(
-                fd,
-                buffer.as_mut_ptr() as *mut libc::c_void,
-                want as usize,
-            )
+        // A closed stream reads like the C's closed fd: EBADF.
+        let n = match process.stream_fd(stream) {
+            Some(fd) => rustix::io::read(fd, &mut buffer[..want as usize]),
+            None => Err(Errno::BADF),
         };
-        let mut length = n as i64;
-        if length == 0 {
+        let length = match n {
+            Ok(n) => n as i64,
+            Err(Errno::AGAIN) => 0,
+            Err(_) => {
+                process.signal(Signal::Term);
+                return Ok(MultiValue::new());
+            }
+        };
+        if matches!(n, Ok(0)) {
             // EOF only once the child is gone; otherwise "nothing yet".
             if !process.poll(WAIT_NONE) {
                 break;
-            }
-        } else if length < 0 {
-            let err = errno();
-            if err == libc::EAGAIN || err == libc::EWOULDBLOCK {
-                length = 0;
-            } else {
-                process.signal(Signal::Term);
-                return Ok(MultiValue::new());
             }
         }
         if length > 0 {
@@ -720,17 +620,20 @@ fn write_stdin(lua: &Lua, process: &mut Process, args: &Variadic<Value>) -> LuaR
     let bytes = value.as_bytes();
     let bytes: &[u8] = &bytes;
 
-    let written = unsafe { libc::write(process.stdin_fd, bytes.as_ptr() as *const libc::c_void, bytes.len()) };
-    if written < 0 {
-        let err = errno();
-        if err == libc::EAGAIN || err == libc::EWOULDBLOCK {
-            return Ok(MultiValue::from_vec(vec![Value::Integer(0)]));
+    use rustix::io::Errno;
+    let written = match process.stream_fd(STDIN_FD) {
+        Some(fd) => rustix::io::write(fd, bytes),
+        None => Err(Errno::BADF),
+    };
+    match written {
+        Ok(written) => Ok(MultiValue::from_vec(vec![Value::Integer(written as i64)])),
+        Err(Errno::AGAIN) => Ok(MultiValue::from_vec(vec![Value::Integer(0)])),
+        Err(err) => {
+            let message = error_message("cannot write to child process", err);
+            process.signal(Signal::Term);
+            Err(LuaError::runtime(message))
         }
-        let message = error_message("cannot write to child process", err);
-        process.signal(Signal::Term);
-        return Err(LuaError::runtime(message));
     }
-    Ok(MultiValue::from_vec(vec![Value::Integer(written as i64)]))
 }
 
 // ------------------------------------------------------------- Lua module
@@ -815,7 +718,7 @@ impl UserData for Process {
                     )))
                 }
             };
-            close_fd(fd);
+            *fd = None;
             Ok(true)
         });
 
