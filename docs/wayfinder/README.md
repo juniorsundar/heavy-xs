@@ -4,7 +4,7 @@ The user chose `docs/wayfinder/` instead of the default `.scratch/` location. Ea
 
 - [Rust/Lua responsibilities and a Rust-native regex design](map.md): completed regex effort.
 - [A Rust-native font backend to replace FreeType](freetype-map.md): completed; implemented in the Rust port.
-- [Replace SDL3 with Rust-native platform crates](sdl3-map.md): planning complete; [implementation handoff](assets/sdl3-migration-handoff.md) prepared, implementation not started by the map.
+- [Replace SDL3 with Rust-native platform crates](sdl3-map.md): planning complete and implemented through the [handoff](assets/sdl3-migration-handoff.md)'s Step 5: SDL is gone from the build, package and binary ([final artifact evidence](assets/sdl3-step5-artifact-evidence.md)). Accepted costs and pending checks are listed in the handoff's Step 4 dispositions.
 
 ## Wayfinding operations
 
@@ -22,4 +22,4 @@ The user chose `docs/wayfinder/` instead of the default `.scratch/` location. Ea
 - Charting creates the map; it does not resolve decision tickets. In a working session, resolve at most one non-research ticket.
 - Planning is the default; any execution override must be explicit in that effort's Notes. The SDL3 effort is planning only: implementation, adoption and feature removals require a later handoff.
 
-The SDL3 route is mapped. Start a separately authorized implementation session with the [SDL3 replacement implementation handoff](assets/sdl3-migration-handoff.md); invoking Wayfinder does not authorize execution. The completed regex and FreeType maps remain separate historical efforts.
+The SDL3 route is mapped and implemented; see the [handoff](assets/sdl3-migration-handoff.md) for the accepted differences and follow-ups. The completed regex and FreeType maps remain separate historical efforts.

@@ -1,6 +1,6 @@
 # SDL3 replacement implementation handoff
 
-**Status: planning complete; implementation not started by this handoff.** Start execution only under a separate implementation instruction. Builds, installation, desktop interaction, clipboard changes, signals and commits/pushes are not authorized by this document's creation.
+**Status: implemented through Step 5** (branch `sdl3/step4-native-cutover`; [desktop review](sdl3-step4-desktop-review.md), [cost results](sdl3-step4-cost-results.md), [final artifact evidence](sdl3-step5-artifact-evidence.md)). The original planning text follows unchanged. Builds, installation, desktop interaction, clipboard changes, signals and commits/pushes are not authorized by this document's creation.
 
 ## Authority and starting point
 
