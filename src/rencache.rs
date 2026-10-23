@@ -15,7 +15,7 @@ use std::ops::Range;
 
 use crate::renderer::{
     ren_draw_rect, ren_draw_text, ren_font_group_get_height, ren_font_group_get_tab_size,
-    ren_font_group_get_width, ren_font_group_set_tab_size, FontGroup,
+    ren_font_group_get_width, FontGroup,
 };
 use crate::renwindow::{RenRect, RenWindow};
 
@@ -52,7 +52,7 @@ pub(crate) enum Command {
         text_x: f32,
         /// The text, in the window's text arena.
         text: Range<usize>,
-        tab_size: i8,
+        tab_size: u16,
         tab: RenTab,
     },
 }
@@ -94,7 +94,7 @@ impl Command {
                 }
                 hash(&mut h, &text_x.to_ne_bytes());
                 hash(&mut h, &(range.len() as u64).to_ne_bytes());
-                hash(&mut h, &[*tab_size as u8]);
+                hash(&mut h, &tab_size.to_ne_bytes());
                 hash(&mut h, &tab.offset.to_ne_bytes());
                 hash(&mut h, &text[range.clone()]);
             }
@@ -284,7 +284,7 @@ pub fn rencache_draw_text(
             fonts: fonts.clone(),
             text_x: x as f32,
             text: start..window.text.len(),
-            tab_size: ren_font_group_get_tab_size(fonts) as i8,
+            tab_size: ren_font_group_get_tab_size(fonts) as u16,
             tab,
         };
         if !push_command(cache, Some(window), command) {
@@ -367,8 +367,7 @@ pub fn rencache_end_frame(window: &mut RenWindow) {
                     Command::SetClip(rect) => rs.set_clip(intersect_rects(*rect, r)),
                     Command::DrawRect { rect, color } => ren_draw_rect(&mut rs, *rect, *color),
                     Command::DrawText { rect, color, fonts, text_x, text: range, tab_size, tab } => {
-                        ren_font_group_set_tab_size(fonts, *tab_size as c_int);
-                        ren_draw_text(&mut rs, fonts, &text[range.clone()], *text_x, rect.y, *color, *tab);
+                        ren_draw_text(&mut rs, fonts, &text[range.clone()], *text_x, rect.y, *color, *tab, *tab_size);
                     }
                 }
             }
