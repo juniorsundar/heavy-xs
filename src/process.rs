@@ -29,9 +29,11 @@ use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
 use mlua::{
-    Error as LuaError, Lua, LuaString, MetaMethod, MultiValue, Result as LuaResult, Table, UserData,
+    Error as LuaError, Lua, MetaMethod, MultiValue, Result as LuaResult, Table, UserData,
     UserDataMethods, Value, Variadic,
 };
+
+use crate::luaargs::{argerror, coerce_string, nul_cut};
 
 // Tunables and Lua-visible constants, from src/api/process.c:28-31 and :76-95.
 const READ_BUF_SIZE: i64 = 2048;
@@ -332,18 +334,6 @@ fn kill_worker(list: Arc<KillList>) {
 
 // ----------------------------------------------------------- Lua arguments
 
-fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
-    LuaError::runtime(format!(
-        "bad argument #{} to '{}' ({} expected, got {})",
-        arg, fname, expected, got
-    ))
-}
-
-fn coerce_string(lua: &Lua, v: &Value, arg: usize, fname: &str) -> LuaResult<LuaString> {
-    lua.coerce_string(v.clone())?
-        .ok_or_else(|| argerror(fname, arg, "string", v.type_name()))
-}
-
 /// `luaL_checknumber` reduced to what the C actually reads back.
 fn number_value(v: &Value, def: i64, arg: usize, fname: &str) -> LuaResult<i64> {
     match v {
@@ -365,11 +355,6 @@ fn truthy(v: &Value) -> bool {
 
 fn arg_at<'a>(args: &'a [Value], i: usize) -> Option<&'a Value> {
     args.get(i).filter(|v| !matches!(v, Value::Nil))
-}
-
-/// The bytes a C string would see: up to an embedded NUL, the way `execvp` reads them.
-fn nul_cut(bytes: &[u8]) -> &[u8] {
-    &bytes[..bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len())]
 }
 
 /// The child-side settings of an env block (`"K=V\0K=V\0\0"`), applied by the C with `setenv`

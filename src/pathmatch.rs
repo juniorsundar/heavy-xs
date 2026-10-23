@@ -4,6 +4,8 @@
 //! reads past the end give 0, and digit runs wrap like `size_t`. The Lua argument handling stays
 //! in `system.rs`.
 
+use crate::luaargs::nul_cut;
+
 /// `f_fuzzy_match`: case-insensitive subsequence score of `p` in `s`, or `None` for no match.
 /// `files` scores from the end of both strings, so a match in the file name weighs most.
 pub(crate) fn fuzzy_score(s: &[u8], p: &[u8], files: bool) -> Option<i64> {
@@ -49,9 +51,8 @@ pub(crate) fn path_before(p1: &[u8], t1: &[u8], p2: &[u8], t2: &[u8]) -> bool {
     // Reads 0 past the end, like the C's terminator.
     let at = |b: &[u8], i: usize| -> u8 { b.get(i).copied().unwrap_or(0) };
     // `strcmp(type, "dir")` sees the type up to its first NUL.
-    let nul_cut = |b: &[u8]| -> Vec<u8> { b.iter().copied().take_while(|&c| c != 0).collect() };
-    let mut type1 = (nul_cut(&t1) != b"dir") as i32;
-    let mut type2 = (nul_cut(&t2) != b"dir") as i32;
+    let mut type1 = (nul_cut(t1) != b"dir") as i32;
+    let mut type2 = (nul_cut(t2) != b"dir") as i32;
 
     let mut offset = 0usize;
     let mut i = 0;

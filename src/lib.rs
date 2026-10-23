@@ -30,6 +30,7 @@ mod keynames;
 mod platform;
 mod plugin_syms;
 mod process;
+mod luaargs;
 mod pathmatch;
 mod system;
 mod syswindow;
