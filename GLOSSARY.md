@@ -1,8 +1,32 @@
-# Editor font rendering
+# Editor terminology
 
-Terms used to distinguish text layout from raster appearance during font-backend comparisons.
+Terms used when discussing editor rendering and Lua-facing GUI customisation.
 
 ## Language
+
+### Lua-facing GUI
+
+**Legacy Lite XL contract**:
+The existing Lua-facing interfaces and observable behaviours carried forward from Lite XL. Its GUI portion includes the extension interactions identified as part of that contract, not just native functions.
+_Avoid_: Native ABI when referring to Lua GUI compatibility
+
+**GUI compatibility reference**:
+The pinned pre-redesign editor snapshot and recorded plugin/configuration environments used to distinguish existing behaviour from redesign regressions.
+_Avoid_: Latest upstream when referring to the fixed comparison reference
+
+**GUI performance qualification**:
+A claim that a GUI candidate satisfies the agreed startup and interaction criteria for explicitly identified workloads and environments, supported by the required evidence. It is distinct from permission to explore a design or a claim of legacy compatibility.
+_Avoid_: Performance proven when required checks remain unverified
+
+**Experimental GUI exposure**:
+Newly exposed GUI internals offered without a stability promise, distinct from the existing Lua-facing exposure in the GUI compatibility reference.
+_Avoid_: Legacy contract when referring to reversible experimental additions
+
+**GUI customisation**:
+Changes to the editor's appearance, arrangement and interaction, including adding views or replacing how views, layout and input behave. Depth of customisation and ease of making a change are separate properties.
+_Avoid_: Theming when referring to behavioural changes
+
+### Font rendering and presentation
 
 **Text geometry**:
 The advances, baselines and line dimensions that determine where text, cursors and selections are placed. Different glyph pixels do not necessarily imply different text geometry.
