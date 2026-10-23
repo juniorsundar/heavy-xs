@@ -27,6 +27,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use crate::custom_events::{push_custom_event, register_custom_event, CustomEvent};
+use crate::luaargs::{nul_cut, string_arg};
 use mlua::{
     Error as LuaError, Function, Lua, MultiValue, Result as LuaResult, Table, UserData,
     UserDataMethods, Value, Variadic,
@@ -215,13 +216,6 @@ impl Drop for DirMonitor {
 
 // --------------------------------------------------------------- Lua side
 
-fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
-    LuaError::runtime(format!(
-        "bad argument #{} to '{}' ({} expected, got {})",
-        arg, fname, expected, got
-    ))
-}
-
 /// The message the C's `lua_pcall` message handler would have been given.
 fn error_text(error: &LuaError) -> String {
     match error {
@@ -238,16 +232,8 @@ impl UserData for DirMonitor {
 
     fn add_methods<M: UserDataMethods<Self>>(methods: &mut M) {
         methods.add_method("watch", |lua, this, args: Variadic<Value>| {
-            let path = match args.first() {
-                Some(v) => lua
-                    .coerce_string(v.clone())?
-                    .ok_or_else(|| argerror("watch", 2, "string", v.type_name()))?,
-                None => return Err(argerror("watch", 2, "string", "no value")),
-            };
-            let bytes = path.as_bytes();
-            let bytes: &[u8] = &bytes;
-            let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-            let path = CString::new(&bytes[..end]).unwrap();
+            let path = string_arg(lua, args.first(), 2, "watch")?;
+            let path = CString::new(nul_cut(&path.as_bytes())).unwrap();
 
             let id = this.shared.backend.add(&path);
 

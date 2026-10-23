@@ -8,9 +8,10 @@
 use std::cell::Cell;
 
 use mlua::{
-    Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic,
+    Error as LuaError, Lua, MultiValue, Result as LuaResult, Table, Value, Variadic,
 };
 
+use crate::luaargs::{argerror, coerce_string};
 use crate::unidata::*;
 
 const UTF8_MAX: u32 = 0x7FFF_FFFF;
@@ -254,21 +255,8 @@ fn byte_relat(pos: i64, len: usize) -> i64 {
 // Helpers
 //================================================================================
 
-fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
-    LuaError::runtime(format!(
-        "bad argument #{} to '{}' ({} expected, got {})",
-        arg, fname, expected, got
-    ))
-}
-
 fn typeerror(_fname: &str, _arg: usize, expected: &str, got: &str) -> LuaError {
     LuaError::runtime(format!("{} expected, got {}", expected, got))
-}
-
-/// `luaL_checklstring`: strings and numbers are accepted.
-fn check_string(lua: &Lua, v: &Value, arg: usize, fname: &str) -> LuaResult<LuaString> {
-    lua.coerce_string(v.clone())?
-        .ok_or_else(|| argerror(fname, arg, "string", v.type_name()))
 }
 
 //================================================================================
@@ -923,7 +911,7 @@ fn push_offset(b: &[u8], offset: usize, idx: i64) -> Option<(i64, u32)> {
 }
 
 fn l_len(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "len")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "len")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let len = b.len();
@@ -966,7 +954,7 @@ fn l_len(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_sub(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "sub")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "sub")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let posi = to_int(args.get(1), 2, "sub")?;
@@ -977,7 +965,7 @@ fn l_sub(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_reverse(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "reverse")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "reverse")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let lax = truthy(args.get(1));
@@ -1009,7 +997,7 @@ fn l_reverse(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_byte(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "byte")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "byte")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let posi = opt_int(args.get(1), 1);
@@ -1029,7 +1017,7 @@ fn l_byte(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_codepoint(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codepoint")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codepoint")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let len = b.len();
@@ -1086,7 +1074,7 @@ fn converter(
             convert_char(table, *n as u32) as i64,
         )])),
         Some(Value::String(_)) => {
-            let s = check_string(lua, args.first().unwrap(), 1, name)?;
+            let s = coerce_string(lua, args.first().unwrap(), 1, name)?;
             let b_owned = s.as_bytes();
             let b: &[u8] = &b_owned;
             let mut out = Vec::with_capacity(b.len());
@@ -1139,7 +1127,7 @@ fn parse_escape(b: &[u8], mut s: usize, e: usize, hex: bool) -> LuaResult<(u32, 
 }
 
 fn l_escape(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "escape")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "escape")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let e = b.len();
@@ -1173,7 +1161,7 @@ fn l_escape(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_insert(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "insert")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "insert")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let mut first = b.len();
@@ -1186,7 +1174,7 @@ fn l_insert(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
         }
         nargs += 1;
     }
-    let subs = check_string(
+    let subs = coerce_string(
         lua,
         args.get(nargs - 1).unwrap_or(&Value::Nil),
         nargs,
@@ -1201,7 +1189,7 @@ fn l_insert(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_remove(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "remove")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "remove")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let posi = opt_int(args.get(1), -1);
@@ -1218,7 +1206,7 @@ fn l_remove(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_charpos(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "charpos")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "charpos")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let result = if is_none_or_nil(args.get(2)) {
@@ -1244,7 +1232,7 @@ fn l_charpos(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_offset(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "offset")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "offset")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let len = b.len() as i64;
@@ -1298,7 +1286,7 @@ fn l_offset(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_next(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "next")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "next")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     let offset = byte_relat(opt_int(args.get(1), 1), b.len());
@@ -1318,10 +1306,10 @@ fn l_next(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_codes(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codes")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codes")?;
     let lax = truthy(args.get(1));
     let iter = lua.create_function(move |lua, args: Variadic<Value>| {
-        let state = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codes")?;
+        let state = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "codes")?;
         let b_owned = state.as_bytes();
         let b: &[u8] = &b_owned;
         let n = opt_int(args.get(1), 0);
@@ -1366,7 +1354,7 @@ fn l_width(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
             })]))
         }
         Some(Value::String(_)) => {
-            let s = check_string(lua, args.first().unwrap(), 1, "width")?;
+            let s = coerce_string(lua, args.first().unwrap(), 1, "width")?;
             let b_owned = s.as_bytes();
             let b: &[u8] = &b_owned;
             let mut width = 0i32;
@@ -1385,7 +1373,7 @@ fn l_width(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_widthindex(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "widthindex")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "widthindex")?;
     let b_owned = s.as_bytes();
     let b: &[u8] = &b_owned;
     // The C casts these to `int`; plain i32 wrapping arithmetic matches it.
@@ -1415,8 +1403,8 @@ fn l_widthindex(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_ncasecmp(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s1 = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "ncasecmp")?;
-    let s2 = check_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "ncasecmp")?;
+    let s1 = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "ncasecmp")?;
+    let s2 = coerce_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "ncasecmp")?;
     let b1_owned = s1.as_bytes();
     let b1: &[u8] = &b1_owned;
     let b2_owned = s2.as_bytes();
@@ -1448,8 +1436,8 @@ fn l_ncasecmp(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 
 /// `find_aux`: shared body of `find` and `match`.
 fn find_aux(lua: &Lua, args: Variadic<Value>, find: bool) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "find")?;
-    let pat = check_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "find")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "find")?;
+    let pat = coerce_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "find")?;
     let sb_owned = s.as_bytes();
     let sb: &[u8] = &sb_owned;
     let pb_owned = pat.as_bytes();
@@ -1604,8 +1592,8 @@ fn add_value(
 }
 
 fn l_gsub(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "gsub")?;
-    let pat = check_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "gsub")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "gsub")?;
+    let pat = coerce_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "gsub")?;
     let repl = args.get(2).cloned().unwrap_or(Value::Nil);
     if !matches!(
         repl,
@@ -1668,8 +1656,8 @@ fn l_gsub(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 }
 
 fn l_gmatch(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
-    let s = check_string(lua, args.first().unwrap_or(&Value::Nil), 1, "gmatch")?;
-    let pat = check_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "gmatch")?;
+    let s = coerce_string(lua, args.first().unwrap_or(&Value::Nil), 1, "gmatch")?;
+    let pat = coerce_string(lua, args.get(1).unwrap_or(&Value::Nil), 2, "gmatch")?;
     let state = Cell::new(0usize);
     let iter = lua.create_function(move |lua, ()| {
         let sb_owned = s.as_bytes();

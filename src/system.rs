@@ -15,42 +15,24 @@ use std::os::unix::ffi::OsStrExt;
 
 use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
 use crate::clipboard::{self, Kind as ClipboardKind};
+use crate::luaargs::{argerror, check_string, nul_cut};
 use crate::pathmatch;
 
 // ------------------------------------------------------------- argument glue
-
-fn argerror(fname: &str, arg: usize, expected: &str, got: &str) -> LuaError {
-    LuaError::runtime(format!(
-        "bad argument #{} to '{}' ({} expected, got {})",
-        arg, fname, expected, got
-    ))
-}
 
 fn no_value() -> &'static str {
     "no value"
 }
 
-/// `luaL_checkstring`: strings and numbers (coerced) only. Returns the bytes.
-fn check_string(lua: &Lua, args: &[Value], i: usize, fname: &str) -> LuaResult<LuaString> {
-    match args.get(i) {
-        Some(v) => lua
-            .coerce_string(v.clone())?
-            .ok_or_else(|| argerror(fname, i + 1, "string", v.type_name())),
-        None => Err(argerror(fname, i + 1, "string", no_value())),
-    }
-}
-
 /// A NUL-terminated copy for libc and SDL, cut at an embedded NUL as `const char *` would be.
 fn cstr(bytes: &[u8]) -> CString {
-    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    CString::new(&bytes[..end]).unwrap()
+    CString::new(nul_cut(bytes)).unwrap()
 }
 
 /// The native path a `const char *` would name: the bytes up to an embedded NUL, unconverted.
 fn native_path(bytes: &[u8]) -> std::path::PathBuf {
     use std::os::unix::ffi::OsStrExt;
-    let end = bytes.iter().position(|&b| b == 0).unwrap_or(bytes.len());
-    std::ffi::OsStr::from_bytes(&bytes[..end]).into()
+    std::ffi::OsStr::from_bytes(nul_cut(bytes)).into()
 }
 
 /// `strerror` text for an OS error, which is what SDL put in its messages. std displays it as

@@ -207,8 +207,8 @@ pub unsafe fn dialogfinished_callback(l: *mut lua_State, e: &Custom) -> c_int {
             match &e.payload {
                 // NULL in the C pushes nil.
                 Some(Payload::Message(message)) => {
-                    let len = message.iter().position(|&b| b == 0).unwrap_or(message.len());
-                    lua_pushlstring(l, message.as_ptr() as *const c_char, len);
+                    let message = crate::luaargs::nul_cut(message);
+                    lua_pushlstring(l, message.as_ptr() as *const c_char, message.len());
                 }
                 _ => mlua::ffi::lua_pushnil(l),
             }

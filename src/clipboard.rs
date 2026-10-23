@@ -63,8 +63,7 @@ pub fn set(kind: Kind, text: &[u8]) {
 
 /// Truncates at the first NUL, then accepts the prefix only if it is valid UTF-8.
 fn prepare(text: &[u8]) -> Option<&str> {
-    let end = text.iter().position(|&b| b == 0).unwrap_or(text.len());
-    std::str::from_utf8(&text[..end]).ok()
+    std::str::from_utf8(crate::luaargs::nul_cut(text)).ok()
 }
 
 #[cfg(test)]

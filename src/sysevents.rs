@@ -35,8 +35,8 @@ fn button_name(button: u8) -> &'static CStr {
 
 unsafe fn push_bytes(l: *mut lua_State, s: &[u8]) {
     // As lua_pushstring of the C string: an embedded NUL ends it.
-    let end = s.iter().position(|&b| b == 0).unwrap_or(s.len());
-    lua_pushlstring(l, s.as_ptr() as *const c_char, end);
+    let s = crate::luaargs::nul_cut(s);
+    lua_pushlstring(l, s.as_ptr() as *const c_char, s.len());
 }
 
 /// Pushes `name` plus the values and returns how many were pushed in total.
