@@ -44,50 +44,39 @@ impl FontData {
         if path.is_empty() {
             return Err("Parameter 'file' is invalid".to_string());
         }
-        unsafe {
-            let fd = libc::open(path.as_ptr(), libc::O_RDONLY | libc::O_CLOEXEC);
-            if fd < 0 {
-                let error = CStr::from_ptr(libc::strerror(*libc::__errno_location()));
-                return Err(format!("Couldn't open {}: {}", path.to_string_lossy(), error.to_string_lossy()));
-            }
-            let mut st: libc::stat = std::mem::zeroed();
-            let len = if libc::fstat(fd, &mut st) == 0 {
-                if (st.st_mode & libc::S_IFMT) == libc::S_IFDIR {
-                    libc::close(fd);
-                    return Err(format!("{} is a directory", path.to_string_lossy()));
-                }
-                st.st_size as usize
-            } else {
-                0
-            };
-            let ptr = if len == 0 {
-                libc::MAP_FAILED
-            } else {
-                libc::mmap(
-                    ptr::null_mut(),
-                    len,
-                    libc::PROT_READ,
-                    libc::MAP_PRIVATE,
-                    fd,
-                    0,
-                )
-            };
-            libc::close(fd);
-            if ptr == libc::MAP_FAILED {
-                return Err("unknown file format".to_string());
-            }
-            Ok(Self { ptr, len })
+        use std::os::fd::AsRawFd;
+        use std::os::unix::ffi::OsStrExt;
+        let file = std::fs::File::open(std::ffi::OsStr::from_bytes(path.to_bytes())).map_err(|err| {
+            format!("Couldn't open {}: {}", path.to_string_lossy(), crate::system::strerror(err.raw_os_error().unwrap_or(0)))
+        })?;
+        let len = match file.metadata() {
+            Ok(st) if st.is_dir() => return Err(format!("{} is a directory", path.to_string_lossy())),
+            Ok(st) => st.len() as usize,
+            Err(_) => 0,
+        };
+        let ptr = if len == 0 {
+            libc::MAP_FAILED
+        } else {
+            // SAFETY: a fresh read-only private mapping of an open file; nothing else holds it.
+            // The mapping outlives `file`, which is closed when this function returns.
+            unsafe { libc::mmap(ptr::null_mut(), len, libc::PROT_READ, libc::MAP_PRIVATE, file.as_raw_fd(), 0) }
+        };
+        if ptr == libc::MAP_FAILED {
+            return Err("unknown file format".to_string());
         }
+        Ok(Self { ptr, len })
     }
 
     fn bytes(&self) -> &[u8] {
-        // SAFETY: the mapping lives as long as `self` and is never written.
+        // SAFETY: the mapping lives as long as `self` and is never written. Another process
+        // truncating the file under it would fault (SIGBUS).
         unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
     }
 }
 
 impl Drop for FontData {
     fn drop(&mut self) {
+        // SAFETY: `ptr`/`len` are exactly the mapping `open` made, and no slice outlives `self`.
         unsafe { libc::munmap(self.ptr, self.len) };
     }
 }
