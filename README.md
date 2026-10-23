@@ -59,7 +59,8 @@ Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, re
   plus libwayland-client for a `--features wayland` build. They are loaded on demand, not linked.
 
 With Nix, `nix develop` provides all of these (and the test tools), and `nix build .#lite-xl`
-builds the package with those libraries on its runpath. `nix develop .#reference` adds SDL3,
+builds the package with those libraries on its runpath (`nix build .#lite-xl-wayland` for the
+native Wayland build). `nix develop .#reference` adds SDL3,
 which only the pinned SDL reference tooling under `scripts/rust-port` needs.
 
 ### Building
