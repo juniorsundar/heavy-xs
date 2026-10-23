@@ -1,0 +1,1507 @@
+{
+  "started": "2026-10-23T11:34:28.681Z",
+  "source": "e556d388892280d8343a82a625941137e3a6ac5f",
+  "runtime_data_sha256": {
+    "colors/default.lua": "4854da0111680cd41742d096249235fb991131d4ca5d7081ec331fd4b22b613e",
+    "colors/fall.lua": "360e0d0cc0441d3cbde21a77d210863d602d4305ef5b10cb7b718519ed41921b",
+    "colors/summer.lua": "24558918618f488fd1763293b2ea963da55646dd38b62676a420a7f1d2ee532c",
+    "colors/textadept.lua": "ef0adbb1e2e790c2c93e0681f808e73c1482502197813516d8271324fbac6277",
+    "core/command.lua": "16a5628151e9373e664c4f961a7b80e4690efcaeb2aad88af64691971f85330a",
+    "core/commands/command.lua": "28b96fc90d3e4bb01c0440de776876ce2efe83fa2ce8adea147342ecfb98e4fa",
+    "core/commands/contextmenu.lua": "42e41396e6c3492c14c99d0e9157a06465058581fc7d60606df4570cfcc6d0de",
+    "core/commands/core.lua": "33c460977c05568c03361f102f23e92f645946bdc62f7b7f268d58faa999436c",
+    "core/commands/dialog.lua": "8cd0e1bcae129930a724fe2e306f2eafb14d02a0a0a07667e9aafd758cd94907",
+    "core/commands/doc.lua": "d18156e033a514f1e1e2ec77b9b6545a73e9e260ac4f31dd70f76b59c55bd651",
+    "core/commands/files.lua": "ab7bcf091dad04c4a5050c0e026a9d3628cbf9110ea6206275ccc5483db46f33",
+    "core/commands/findreplace.lua": "1ecc47a5deacd3b369c7e19034ce6b2f69f85f2f39823d8525013f5ceb206d6e",
+    "core/commands/log.lua": "7bf75a211350848026f3f3526596dd99a8b928ea7f0727f57fddae789f27c45d",
+    "core/commands/root.lua": "0d94aa93605bffbf261b1679a1a54f0674b4698bb4adff374952f1d2f0cb6d91",
+    "core/commands/statusbar.lua": "8e888347ea23dc4a5bfba82003fab8312ac4cabe5dc3d235a5839257f42504ca",
+    "core/commandview.lua": "aebfa37253a855c71c6a995607e419235759ddf96b2f0f1c412b194371bde3ce",
+    "core/common.lua": "3c082cfd18ac83a62ff72c42326d657aa7a5d4744345edef9500d4f057b4c6f8",
+    "core/config.lua": "bcfa06a8f1be19e2e956240936bf7580031d3170e5461354a7a00976f48d8f8e",
+    "core/contextmenu.lua": "3e71c02c05ee2b6a6a6ba56d22bdf56509ac19e9592f5187d610922999154981",
+    "core/dirwatch.lua": "9121a5af635a2d6149ba50a8531ddc0a0cf0ee50ebf81086bae6bcf1dcbe798f",
+    "core/doc/highlighter.lua": "c0cef2149b895d55f66df3ffa99de6f4194f214b08059fe853f3f23e69447bdf",
+    "core/doc/init.lua": "86eb5268abf583089f28b0037fef9438b8ae92503f47df3631b6c10f7d046a7c",
+    "core/doc/search.lua": "af869f88942295b3ffb9636fbacc5e9c5da5c981cc863ee2dc9595905055b5cf",
+    "core/doc/translate.lua": "e9cd7071169b7408eef16e4ccee32daea6865c181c082c0fa5364574335d66f0",
+    "core/docview.lua": "1157f7cff97b4e83276bc0f1deb72084e8ba0b82ca678f2e66794ebb7ab64919",
+    "core/emptyview.lua": "caf50f00918daa2d7efc142fbd01d8f2ef89e7fb29d7878cc7a2c7b21cbe5150",
+    "core/ime.lua": "f37b23ed572897f371fedbc442cad9f50c14baa7d04e43a43f1ca99418e10d78",
+    "core/init.lua": "89ea3852aa1e9255774580e7a84e7b6147a1c902fc16e64f621db9acb58dc676",
+    "core/keymap-macos.lua": "d96e9fed79b94cc7c853c7cc845dcc315171121ed10d1e7c31c828bc114ba514",
+    "core/keymap.lua": "f807e8e8060b397be5d24c5b3f84a5fe6efaf754d37915e0cdc73bfe3c82c50a",
+    "core/logview.lua": "fbd3e2e8f8c49efd171e2ddaa10e618435ba3f0b1b0ec65178b63e42cbb1e3d9",
+    "core/modkeys-generic.lua": "53f782f2e5d856e4e97f457fea830c5f773fcc601712db9b9c47bee24de416c5",
+    "core/modkeys-macos.lua": "ce773aef91f782871a0b57604df1eb2758d7e8cfa44030a44ab61f5468f1fe47",
+    "core/nagview.lua": "75dea29e9c86b7559928ced33c01e72b1747aacfe4b29cb11b33f1d0dd8f410b",
+    "core/node.lua": "f4cbc0ad58f9f21725bc82b15b1f4fd64cdc97e960310d247d0e2e62080bcd20",
+    "core/object.lua": "416bc16dd265f30607ec14a56c039cee55e17cf1442db435806d3d86b6e8799d",
+    "core/process.lua": "b3fb537cdceecdc1ba8d363db601b31a33227f2f961c266cb9fa82aa60e9b962",
+    "core/project.lua": "5421f1f504b6219e0a6e82737c7b054d18a7d4a87cbab4ce89ed243fbc9abd6a",
+    "core/regex.lua": "31fc9cf81ea5d2cc9cf4aed2c7d86646bccf27641d04d241068b5246fec39c7e",
+    "core/rootview.lua": "581f95efb927a4113764d8d422b00b8e4af1e475f2bd007b8a198e2de560653f",
+    "core/scrollbar.lua": "c03e17ea5449e97dc37acb48b3993884c32d75d1a884d3460af5bd02e93a03dd",
+    "core/start.lua": "f5b89d4f0ff650ce7190e6c1e24ffd2d96994c8ed0d7dba8499ab14cc57231c3",
+    "core/statusview.lua": "087e646f41b73ec1935dbfabfbc4267baf744c79d5ee76aa5545886192a76487",
+    "core/storage.lua": "71c929dbedf068b528bc8434d834074bd32dd60ad6a1a7ac0a771d3228249c40",
+    "core/strict.lua": "05a573ca4577df79cec8bf2740c399b68d56ce174f98b8f79ec8d284638231f3",
+    "core/style.lua": "9affbc4e2b099f53ddbbfab8246db385d2f435a07f6f5032047c965d6e3495c4",
+    "core/syntax.lua": "b3889dca54836237c4c45a1ad9ee61c88979ecfed8b6eac6228f574899f09a41",
+    "core/titleview.lua": "e6f7da87910bcb863aa731201746e9ab0924f5bebf5c10c42aca30ae36d6c28b",
+    "core/tokenizer.lua": "fa26f3c0835379dd76c35fbd674c2a59f79e3b14ee037ef1a2d4f4420cb0f6d8",
+    "core/utf8string.lua": "ac475dae1452c6f4c463fa674b7b58d17cb59a091ea6e85e0c912fdd379d41c0",
+    "core/view.lua": "09bbe69fa43e1131169d782f567e5624247e9c91e5b2d0d6dd55d4c99de161f4",
+    "dirmonitor.lua": "db6d47c5f73337733cc79a257c2d848410710b6ff51b5f0e669c58e040e9e7ad",
+    "fonts/FiraSans-Regular.ttf": "bc51f6412e9ecea0d158ea0fe6b757b6b4b49af4105fb4802752062dfc710b70",
+    "fonts/JetBrainsMono-Regular.ttf": "c95c87d1d160fb925f876d7da574a5ce38f7d4f69e215447a56b800fa18870b2",
+    "fonts/icons.ttf": "082f7d2cd1412386fb99b1100a63116ab81e521bb1cb486f338e6f25e495f073",
+    "globals.lua": "b98fc3c0ccab69ee342c6cac904aa6dfd7e9b10e0ec138aeefa3f8e7d18920bc",
+    "plugins/autocomplete.lua": "5fdc868718f4d803ae4cbed8a667741b65eebce86c7d12ae8b1013d94198113c",
+    "plugins/autoreload.lua": "72ddfbdc9627f6977100cb6fe3c2f3972d58ca0eb682c6f9b37c636d3ae2b6ab",
+    "plugins/autorestart.lua": "116da0f6aaade29e93d3839eb04eae30c718aa5d5705418644467fbfa98fc650",
+    "plugins/detectindent.lua": "d154d92c52f044f03cf5591f4bd53dcfa0012e77e897ab255d8edf715e880a6f",
+    "plugins/drawwhitespace.lua": "b76ed3874595ef3e868a3d5f9138487a6fd4ed37c1123579247121dda3d8d7b1",
+    "plugins/findfile.lua": "ee67fc8f51782e43a5632169780824afa348f7cd6a5c10aa3f367c44437b7b21",
+    "plugins/language_c.lua": "c368ff7fa480b9ccc98dd1813ac713835a3eb33e8d5ecf32d3c5337608051415",
+    "plugins/language_cpp.lua": "3303ee25c49dca0d630fbc3fcfbe9746560e3c2b0f87de839f9ab4bda3c32b90",
+    "plugins/language_css.lua": "1e525bec464218a1efc49933e835d828d4ba88c4e9152ee9a219fc28169a3708",
+    "plugins/language_html.lua": "33f79e06e3b91f9ff0a2f574b91cd3c1d6cfc4b77c1b0357e6acae495f688977",
+    "plugins/language_js.lua": "0ec326fe5a5ed29b99d3e74e37dcd6d77c231c27fc84eafa875565b8d65ccf8b",
+    "plugins/language_lua.lua": "e175d99a00be2557c1e9398af38aef2425d2f3ed15745274f3186fcf4e630250",
+    "plugins/language_md.lua": "b8f1b4967cda72377467dcb13999d3a3b594309bd257592d3271f5bc5167efbd",
+    "plugins/language_python.lua": "583f53e32d37d68682f59f187e731043be4f4e1fe2830ccdcefb263c82035ecc",
+    "plugins/language_xml.lua": "70a2bb82a3c19913142acf3be271a8e0a3894fdf6914a8badb3a1d91abad18ce",
+    "plugins/lineguide.lua": "dcb7f6e542fcaae7b41be4d22af307df0f5b2aae6e8fcd160952d8fed562eb81",
+    "plugins/linewrapping.lua": "3202f3b35f14d1f9aced562732b6b6d329853f7559b0eabd3c095a6001439672",
+    "plugins/macro.lua": "1d6f3e5b9de025a3258ba1978a2d8c3d43a67f397d223bc96d0420e60a0e0113",
+    "plugins/projectsearch.lua": "f370cf7d323e3bb7325a3628b26cdf5a6ed61d036e0b949827cd2005a5b42afa",
+    "plugins/quote.lua": "6dd585cdebee2a1982d1c04e944e9047ac71f04dacf83ab390c8cd8e89cd3b5e",
+    "plugins/reflow.lua": "6447cbd764c8677b7c628fae5d2ee155f86ddbd35923df9dbc9a1ad2e68cc98f",
+    "plugins/scale.lua": "9bf05727412451fd9104fee5c3703b6a08a6be53e90af9b2041b1d261736bb16",
+    "plugins/tabularize.lua": "6c01ae7992151c16c9d8709ad125c434f6fe0eee5229eefacd66566529a90191",
+    "plugins/toolbarview.lua": "0ad13af3aa937973f08456314cea4b8d7efebe85551715108578f31dc9ce8565",
+    "plugins/treeview.lua": "5b51fc39b404217b3ee0006cb32c90e7ca28a777930e1306ac8b2cc10ac09926",
+    "plugins/trimwhitespace.lua": "cf9ccccefe8173a50a607ccb67db101f3b8717569b62798c5ec3e7aced8b4f6a",
+    "plugins/workspace.lua": "172028dc99e2ddea85bce3e1af1549229dbe01af10915baef2bfc03d924a644e",
+    "process.lua": "84044d071c07538a7b8888e80dbe45004160bf7482e996cea82e034ffa5e0bc0",
+    "regex.lua": "899621337806147c63d4d7685ecf35788305b17c643fb129af1624361a5b937f",
+    "renderer.lua": "95f294353cdeb5159aca10886d9bfef8d3fdd8440080e95898e99fa0bafebf28",
+    "renwindow.lua": "712e306eb66779380157d690f5170fce4aa82e8e089b6b04a16189194f65061f",
+    "string.lua": "0fb2531e1af61982ae87fc8abe89c85565e5f716934a6278c9ec229c0a53fb61",
+    "system.lua": "386e5d43dd63eb5e88c77a913ac6db1ccc702459da92922d548f9837a737f895",
+    "utf8extra.lua": "30032f42427c263fa2e6f30c85f2162a65b1848fc401578787c36b060c13fc33"
+  },
+  "binary_sha256": "bde5ae899aef0302c41201ad54569f045bdef0db6a46874bd0a6f835642cb186",
+  "plugin_manifest": {
+    "schema_version": 1,
+    "purpose": "Canonical bytes for the five source-inspected GUI compatibility plugin candidates, verified before any execution.",
+    "verification": {
+      "verified_at_utc": "2026-10-23T10:44:29Z",
+      "method": "HTTPS GET of commit-pinned raw.githubusercontent.com URLs; SHA256 via sha256sum; Git blob SHA1 via git hash-object on the downloaded raw bytes; sizes via wc -c.",
+      "network_scope": "Only the five primary raw source URLs below were requested. No branch URLs, no API, no plugin execution/import/build, no installation.",
+      "result": "PASS",
+      "all_blob_sha1_match_manifest": true,
+      "all_sizes_match_manifest": true,
+      "total_bytes": 17903
+    },
+    "source": {
+      "origin": "https://github.com/adamharrison/lite-xl-plugins",
+      "commit": "ce2da6f190ceea5405ec211fb1d3d47e6c770179",
+      "commit_subject": "Updated for 3.0.",
+      "raw_url_template": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/{name}.lua",
+      "branch_context": "3.0 (moving branch ref; the pin is the commit SHA, not the branch)",
+      "manifest": "research/SOURCE_MANIFEST.md"
+    },
+    "storage": {
+      "plugins_dir": "verified/plugins",
+      "file_mode": "0444",
+      "read_only": true,
+      "note": "Canonical raw bytes preserved verbatim. Do not edit; these are the reference copies used to check transcriptions and later gates."
+    },
+    "plugins": [
+      {
+        "name": "bigclock",
+        "logical_path": "plugins/bigclock.lua",
+        "local_path": "verified/plugins/bigclock.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/bigclock.lua",
+        "size_bytes": 2715,
+        "sha256": "7a992ac48994fbcca8b3044b9e20b87eb87caeb9e3d98930d9600b4d1d32a2ce",
+        "git_blob_sha1": "6ade5dd614b46b06ec2f71cdee589032624a26b3",
+        "git_blob_sha1_expected": "6ade5dd614b46b06ec2f71cdee589032624a26b3",
+        "size_expected": 2715,
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "dependencies": [
+          "core",
+          "core.style",
+          "core.command",
+          "core.common",
+          "core.config",
+          "core.view"
+        ],
+        "transcription": {
+          "research_path": "research/plugins/bigclock.lua",
+          "identical_to_canonical": true,
+          "differences": []
+        }
+      },
+      {
+        "name": "indentguide",
+        "logical_path": "plugins/indentguide.lua",
+        "local_path": "verified/plugins/indentguide.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/indentguide.lua",
+        "size_bytes": 4658,
+        "sha256": "a5b9688234cda8b2e4ddb2d2b894834ca13d1bcf92c14d5ee793aec4aaba2519",
+        "git_blob_sha1": "587e9b5a715b2d1f095e9ad2c288f9ab4e280556",
+        "git_blob_sha1_expected": "587e9b5a715b2d1f095e9ad2c288f9ab4e280556",
+        "size_expected": 4658,
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "dependencies": [
+          "core.style",
+          "core.config",
+          "core.common",
+          "core.docview"
+        ],
+        "transcription": {
+          "research_path": "research/plugins/indentguide.lua",
+          "identical_to_canonical": false,
+          "differences": [
+            "Transcription is 4657 bytes (one fewer than canonical 4658) because the trailing space on line 145 was lost: canonical `if i < active_lvl ` (after `<`), transcription `if i < active_lvl`.",
+            "Whitespace-only difference; no semantic change. Transcription should not be treated as byte-identical to raw."
+          ]
+        }
+      },
+      {
+        "name": "bracketmatch",
+        "logical_path": "plugins/bracketmatch.lua",
+        "local_path": "verified/plugins/bracketmatch.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/bracketmatch.lua",
+        "size_bytes": 8233,
+        "sha256": "c85dbe1c60c77612dd5bac17cb0e619cfc3e1a798933a9f1ca2497ccd826c6b6",
+        "git_blob_sha1": "582fd8a1d5ecf7171a9148a6e255be60ba92e9fe",
+        "git_blob_sha1_expected": "582fd8a1d5ecf7171a9148a6e255be60ba92e9fe",
+        "size_expected": 8233,
+        "mod_version_header": "--- mod-version:4",
+        "read_only": true,
+        "dependencies": [
+          "core",
+          "core.style",
+          "core.command",
+          "core.keymap",
+          "core.docview",
+          "core.config",
+          "core.common"
+        ],
+        "transcription": {
+          "research_path": "research/plugins/bracketmatch.lua",
+          "identical_to_canonical": true,
+          "differences": []
+        }
+      },
+      {
+        "name": "autosaveonfocuslost",
+        "logical_path": "plugins/autosaveonfocuslost.lua",
+        "local_path": "verified/plugins/autosaveonfocuslost.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/autosaveonfocuslost.lua",
+        "size_bytes": 973,
+        "sha256": "acb7bc697b223c9cad8dc75f387df915d743756fe5df6cd6c9aba310d402d364",
+        "git_blob_sha1": "6ea1bf464f7d42485c32d7beb3bd0f4f0df7eb3b",
+        "git_blob_sha1_expected": "6ea1bf464f7d42485c32d7beb3bd0f4f0df7eb3b",
+        "size_expected": 973,
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "dependencies": [
+          "core",
+          "core.commandview",
+          "core.docview",
+          "core.rootview"
+        ],
+        "transcription": {
+          "research_path": "research/plugins/autosaveonfocuslost.lua",
+          "identical_to_canonical": true,
+          "differences": []
+        }
+      },
+      {
+        "name": "scalestatus",
+        "logical_path": "plugins/scalestatus.lua",
+        "local_path": "verified/plugins/scalestatus.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/scalestatus.lua",
+        "size_bytes": 1324,
+        "sha256": "88d40fc37a849713ec0ecfdcac02bf3c4381e24d8e2135e86484b867374e1bda",
+        "git_blob_sha1": "821b35d4256a1d227f27b595287d3001f0b98531",
+        "git_blob_sha1_expected": "821b35d4256a1d227f27b595287d3001f0b98531",
+        "size_expected": 1324,
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "dependencies": [
+          "core",
+          "core.common",
+          "core.config",
+          "plugins.scale"
+        ],
+        "dependency_notes": [
+          "plugins.scale resolves to the in-repo bundled data/plugins/scale.lua (mod-version:4, unmodified at commit 7e7e9985532692069030f4490be05edf5a46f2bb); no download required or performed."
+        ],
+        "transcription": {
+          "research_path": "research/plugins/scalestatus.lua",
+          "identical_to_canonical": false,
+          "differences": [
+            "Transcription is 1323 bytes (one fewer than canonical 1324) because the final newline after `return true` was dropped.",
+            "Whitespace-only difference; no semantic change. Transcription should not be treated as byte-identical to raw."
+          ]
+        }
+      }
+    ],
+    "static_safety_review": {
+      "scope": "Canonical bytes only, static inspection; no plugin was executed or imported.",
+      "no_exec_shell_io": "No os.execute/os.exit/os.remove/io.*/dofile/loadfile/loadstring/load()/package./debug. usage found.",
+      "no_network": "No socket/http/curl/wget/ffi usage found.",
+      "requires_allowlist": "Every require() targets core.* or the in-repo plugins.scale; no third-party or remote modules.",
+      "global_reads": "Only expected host globals: system.absolute_path, USERDIR, PATHSEP (autosaveonfocuslost); renderer, SCALE, style (GUI plugins).",
+      "filesystem_writes": "autosaveonfocuslost calls view.doc:save() on focus loss for dirty documents, excluding init.lua and .lite_project.lua. This is intended behavior but is the one plugin with a write side effect; gate it accordingly.",
+      "verdict": "No obfuscation, eval, network, or remote dependency observed in the five canonical files."
+    },
+    "open_gaps": [
+      "The research/plugins transcriptions were intentionally left unmodified. Two differ from canonical bytes (indentguide, scalestatus); use verified/plugins as source of truth.",
+      "The 3.0 branch is moving; this manifest is only valid for commit ce2da6f190ceea5405ec211fb1d3d47e6c770179. Re-verify on re-resolution."
+    ]
+  },
+  "additional_plugin_manifest": {
+    "schema_version": 1,
+    "purpose": "Canonical bytes for the two follow-up DocView drawing/caret plugin candidates, verified before any execution. Companion to verified/manifest.json; it does not replace or modify the original five-plugin manifest.",
+    "verification": {
+      "verified_at_utc": "2026-10-23T11:19:22Z",
+      "method": "HTTPS GET of commit-pinned raw.githubusercontent.com URLs (curl -fsSL --max-time 30 --retry 2); files written verbatim; SHA256 via sha256sum; Git blob SHA1 via git hash-object --no-filters on the downloaded raw bytes; sizes via wc -c. Files installed with mode 0444, then re-hashed from the installed path.",
+      "network_scope": "Only the two canonical raw source URLs below were requested. No branch URLs, no API, no plugin execution/import/build, no installation.",
+      "result": "PASS",
+      "all_blob_sha1_match_expected": true,
+      "all_sizes_match_expected": true,
+      "total_bytes": 7769
+    },
+    "source": {
+      "origin": "https://github.com/adamharrison/lite-xl-plugins",
+      "commit": "ce2da6f190ceea5405ec211fb1d3d47e6c770179",
+      "commit_subject": "Updated for 3.0.",
+      "raw_url_template": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/{name}.lua",
+      "branch_context": "3.0 (moving branch ref; the pin is the commit SHA, not the branch)",
+      "manifest": "research/followup.md"
+    },
+    "storage": {
+      "plugins_dir": "verified/plugins",
+      "file_mode": "0444",
+      "read_only": true,
+      "note": "Canonical raw bytes preserved verbatim. Do not edit; these are the reference copies for static compatibility review."
+    },
+    "plugins": [
+      {
+        "name": "smoothcaret",
+        "logical_path": "plugins/smoothcaret.lua",
+        "local_path": "verified/plugins/smoothcaret.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/smoothcaret.lua",
+        "size_bytes": 3293,
+        "size_expected": 3293,
+        "sha256": "c95c4bb0770a6e8a71bd946850d92e189e2ee3c5396b5072d375967c2d39c8bc",
+        "git_blob_sha1": "4228ccd36b7fdcf9a01a87843ed1bf5f1f087004",
+        "git_blob_sha1_expected": "4228ccd36b7fdcf9a01a87843ed1bf5f1f087004",
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "requires": [
+          "core",
+          "core.config",
+          "core.style",
+          "core.common",
+          "core.docview"
+        ],
+        "optional_requires": [],
+        "dependencies": [
+          "core",
+          "core.config",
+          "core.style",
+          "core.common",
+          "core.docview"
+        ],
+        "config_options": {
+          "enabled": true,
+          "rate": 0.65
+        },
+        "settings_integration": "Defines config.plugins.smoothcaret.config_spec for the settings GUI. No require of plugins.settings; the spec is inert when the settings plugin is absent (it is absent in this repo).",
+        "monkeypatches": [
+          "DocView:update (wraps and calls the previous implementation, then animates caret positions)",
+          "DocView:draw_caret (wraps and calls the previous implementation using the animated position)"
+        ],
+        "host_apis_used": [
+          "config.plugins.smoothcaret",
+          "config.transitions / config.fps / config.animation_rate / config.disabled_transitions (via View:move_towards)",
+          "config.blink_period",
+          "core.blink_timer",
+          "core.redraw",
+          "common.merge",
+          "DocView:get_visible_line_range",
+          "DocView:get_line_screen_position",
+          "Doc.data:get_selections (iterated as idx, line1, col1, line2, col2)",
+          "Doc.selections (flat array; used only for count-change detection)",
+          "DocView.scroll",
+          "DocView.mouse_selecting",
+          "View:move_towards"
+        ],
+        "static_safety_scan": {
+          "scope": "Full 3293-byte canonical file read in full; static inspection only.",
+          "no_exec_shell_io": "No os.execute/os.exit/os.remove/os.tmpname/os.getenv/os.setlocale/os.time/os.date/os.clock/os.difftime, io.*, dofile, loadfile, loadstring, load(), package.* or debug.* usage.",
+          "no_network": "No socket/http/https/curl/wget/ffi usage.",
+          "no_native_calls": "No system.* native API usage. Requires only core.* modules.",
+          "no_host_file_io": "No file reads or writes; no USERDIR/PATHSEP/system.absolute_path use.",
+          "requires_allowlist": "All five requires target core.*; no third-party, remote, or optional plugin requirement.",
+          "process_or_data_side_effects": "None outside the running editor: mutates config defaults via common.merge, stores animation state on DocView (self.carets, self.visible_carets, self.last_n_selections, self.last_mouse_selecting), adjusts core.blink_timer on mouse selection changes, and sets core.redraw.",
+          "obfuscation": "None; plain readable Lua.",
+          "verdict": "No exec, network, native, or host-file side effects observed."
+        },
+        "local_api_compatibility": {
+          "static_only": true,
+          "checks": [
+            "View:move_towards(t, k, dest, rate, name) exists at data/core/view.lua:69 and supports the table-first overload used by smoothcaret.",
+            "Doc:get_selections(sort_intra, idx_reverse) exists at data/core/doc/init.lua:289; iterator yields idx, line1, col1, line2, col2. smoothcaret consumes line1,col1, which matches the local DocView:draw_overlay caret placement (also line1,col1).",
+            "DocView:get_visible_line_range exists at data/core/docview.lua:164; get_line_screen_position at :145; draw_caret at :474; update at :411.",
+            "style.caret_width exists at data/core/style.lua:10.",
+            "config.plugins exists at data/core/config.lua:279."
+          ],
+          "risks": [
+            "#self.doc.selections is a flat array of 4 numbers per selection in this repo, so 'last_n_selections' is 4*n, not n. It still detects any selection-count change (4*n changes), so the reset-on-new-caret branch still fires; the name/semantics are misleading but behavior is preserved.",
+            "Doc:get_selection_idx and get_selections expose the selection anchor (line1,col1) first. That matches local draw_overlay, so caret placement is consistent, but for reversed selections the animated caret follows the anchor rather than the cursor end.",
+            "IME: data/core/docview.lua:556 calls self:draw_caret from draw_ime_decoration with a shifted x. smoothcaret ignores the supplied x and uses its own stored absolute position, so the composition caret may not follow the IME decoration precisely.",
+            "Co-load ordering: custom_caret replaces DocView:draw_caret without calling through; if it loads after smoothcaret it discards smoothcaret's wrapper and smooth animation stops. See the global risk entry."
+          ]
+        }
+      },
+      {
+        "name": "custom_caret",
+        "logical_path": "plugins/custom_caret.lua",
+        "local_path": "verified/plugins/custom_caret.lua",
+        "source_url": "https://raw.githubusercontent.com/adamharrison/lite-xl-plugins/ce2da6f190ceea5405ec211fb1d3d47e6c770179/plugins/custom_caret.lua",
+        "size_bytes": 4476,
+        "size_expected": 4476,
+        "sha256": "e76eda17f4b6734a366590e4c9780d3adda15b7890d9240fcfeff22333439b77",
+        "git_blob_sha1": "0869fb74ec95260979c560f5810d554cd0c26c90",
+        "git_blob_sha1_expected": "0869fb74ec95260979c560f5810d554cd0c26c90",
+        "mod_version_header": "-- mod-version:4",
+        "read_only": true,
+        "requires": [
+          "core",
+          "core.style",
+          "core.common",
+          "core.config",
+          "core.docview"
+        ],
+        "optional_requires": [
+          "plugins.settings (via pcall(require, \"plugins.settings\"); settings-UI integration only; absent in this repo, so the pcall returns false and the block is skipped)"
+        ],
+        "dependencies": [
+          "core",
+          "core.style",
+          "core.common",
+          "core.config",
+          "core.docview"
+        ],
+        "config_options": {
+          "shape": "line",
+          "custom_color": true,
+          "caret_color": "table.pack(table.unpack(style.caret)) captured at load from the active color scheme",
+          "surrounding_chars": false
+        },
+        "settings_integration": "If plugins.settings is loadable, the core.add_thread callback sets config.plugins.custom_caret.config_spec and calls settings.ui:enable_plugin(\"custom_caret\"). This repo has no data/plugins/settings.lua, so the optional require fails safely and no settings UI is registered.",
+        "monkeypatches": [
+          "DocView:update (wraps and calls the previous implementation, then resets caret_idx)",
+          "DocView:draw_caret (full replacement; does not call the previous implementation)"
+        ],
+        "host_apis_used": [
+          "config.plugins.custom_caret",
+          "style.caret",
+          "style.caret_width",
+          "style.background",
+          "renderer.draw_rect",
+          "renderer.draw_text",
+          "common.merge",
+          "common.clamp",
+          "core.add_thread",
+          "core.push_clip_rect",
+          "core.pop_clip_rect",
+          "DocView:get_line_height",
+          "DocView:get_font",
+          "DocView:get_line_screen_position",
+          "DocView:get_line_text_y_offset",
+          "Doc.data:get_selection_idx",
+          "Doc.data:get_char",
+          "Doc.lines",
+          "table.pack / table.unpack"
+        ],
+        "static_safety_scan": {
+          "scope": "Full 4476-byte canonical file read in full; static inspection only.",
+          "no_exec_shell_io": "No os.execute/os.exit/os.remove/os.tmpname/os.getenv/os.setlocale/os.time/os.date/os.clock/os.difftime, io.*, dofile, loadfile, loadstring, load(), package.* or debug.* usage.",
+          "no_network": "No socket/http/https/curl/wget/ffi usage.",
+          "no_native_calls": "No system.* native API usage. Requires only core.* plus the optional plugins.settings require guarded by pcall.",
+          "no_host_file_io": "No file reads or writes; no USERDIR/PATHSEP/system.absolute_path use.",
+          "requires_allowlist": "Base requires target core.* only. The single optional require is the local plugin plugins.settings (absent here) and is used only for settings-UI registration.",
+          "process_or_data_side_effects": "None outside the running editor: mutates config defaults via common.merge, captures style.caret at load, draws caret rect/text, and schedules a core.add_thread callback that rewrites config.plugins.custom_caret.config_spec and, only if settings is present, enables its UI. No document or filesystem mutation.",
+          "obfuscation": "None; plain readable Lua.",
+          "verdict": "No exec, network, native, or host-file side effects observed."
+        },
+        "local_api_compatibility": {
+          "static_only": true,
+          "checks": [
+            "Doc:get_selection_idx(idx, sort) exists at data/core/doc/init.lua:185; returns line1, col1, line2, col2.",
+            "Doc:get_char(line, col) exists at data/core/doc/init.lua:370 and sanitizes the position before returning one character.",
+            "Doc.lines exists and is a flat array of lines including trailing newline (data/core/doc/init.lua:38).",
+            "style.caret is set by data/colors/default.lua, which data/core/init.lua requires at line 5 before user plugins load.",
+            "style.caret_width exists at data/core/style.lua:10.",
+            "core.push_clip_rect (data/core/init.lua:722), core.pop_clip_rect (:733) and core.add_thread (:708) exist.",
+            "DocView:get_line_height (:134), get_line_screen_position (:145), get_line_text_y_offset (:157), get_font, draw_caret (:474) and update (:411) exist.",
+            "renderer.draw_rect / renderer.draw_text are the same native renderer entry points already used by data/core/docview.lua."
+          ],
+          "risks": [
+            "caret_idx is incremented once per DocView:draw_caret call, but local draw_overlay calls draw_caret only for selections whose line1 is visible (data/core/docview.lua:565-577). With off-screen earlier selections, caret_idx no longer equals the selection index, so the block/underline width and surrounding characters can be computed from the wrong selection. This is an upstream assumption, not a missing API.",
+            "doc:get_selection_idx returns the selection anchor (line1,col1) first, not a sorted/cursor-end position. custom_caret draws the block/underline and samples get_char at that anchor. Local draw_overlay also places the caret at line1,col1, so placement is consistent, but a reversed selection shows the block at the anchor.",
+            "style.caret is read at file-load time for the caret_color default. Normal startup loads colors.default before user plugins; loading custom_caret before any color scheme sets style.caret would error at table.unpack(style.caret).",
+            "Co-load ordering: custom_caret replaces DocView:draw_caret without calling through. If it loads after smoothcaret, smoothcaret's wrapper is discarded. If it loads before, smoothcaret wraps it, but custom_caret ignores the supplied animated x when recomputing char metrics (it uses get_selection_idx), so block/underline metrics may not track the animated caret.",
+            "IME: draw_ime_decoration calls self:draw_caret without resetting caret_idx semantics, so block/underline geometry during IME composition can be based on a shifted index."
+          ]
+        }
+      }
+    ],
+    "static_safety_review": {
+      "scope": "Both canonical files read in full; static inspection only; no plugin executed, imported, built, or installed.",
+      "no_exec_shell_io": "No os.execute/os.exit/os.remove/io.*/dofile/loadfile/loadstring/load()/package./debug. usage in either file.",
+      "no_network": "No socket/http/curl/wget/ffi usage in either file.",
+      "no_native_calls": "No system.* native API usage in either file.",
+      "no_host_file_io": "Neither file reads or writes host files; no USERDIR/PATHSEP/system.absolute_path use.",
+      "requires_allowlist": "smoothcaret requires only core.*; custom_caret requires core.* plus an optional pcall(require, \"plugins.settings\") for settings UI only. plugins.settings is absent in this repo and the pcall fails safely.",
+      "config_gating": "smoothcaret is reversible at runtime via config.plugins.smoothcaret.enabled=false. custom_caret is always active once loaded and is parameterized by shape/custom_color/caret_color/surrounding_chars.",
+      "verdict": "No obfuscation, eval, network, native, or host-file side effects observed. Both files monkeypatch DocView methods at load, which is a behavioral, not a security, side effect."
+    },
+    "local_api_checks": {
+      "View.move_towards": {
+        "path": "data/core/view.lua",
+        "line": 69,
+        "signature": "View:move_towards(t, k, dest, rate, name)",
+        "supports_table_first_overload": true,
+        "used_by": [
+          "smoothcaret"
+        ],
+        "result": "compatible"
+      },
+      "Doc.get_selections": {
+        "path": "data/core/doc/init.lua",
+        "line": 289,
+        "signature": "Doc:get_selections(sort_intra, idx_reverse)",
+        "iterator_yields": [
+          "idx",
+          "line1",
+          "col1",
+          "line2",
+          "col2"
+        ],
+        "used_by": [
+          "smoothcaret"
+        ],
+        "result": "compatible (consumes line1, col1, matching local caret placement)"
+      },
+      "Doc.get_selection_idx": {
+        "path": "data/core/doc/init.lua",
+        "line": 185,
+        "signature": "Doc:get_selection_idx(idx, sort)",
+        "returns": [
+          "line1",
+          "col1",
+          "line2",
+          "col2",
+          "sorted?"
+        ],
+        "used_by": [
+          "custom_caret"
+        ],
+        "result": "exists; caret_idx-to-selection-index alignment is the risk noted above"
+      },
+      "Doc.get_char": {
+        "path": "data/core/doc/init.lua",
+        "line": 370,
+        "signature": "Doc:get_char(line, col)",
+        "used_by": [
+          "custom_caret"
+        ],
+        "result": "compatible"
+      }
+    },
+    "incompatibility_risks": [
+      "custom_caret's caret_idx counts draw_caret invocations, not selection indices. Local draw_overlay skips off-screen selections (data/core/docview.lua:565-577), so multi-cursor documents with earlier off-screen selections can draw block/underline metrics and surrounding characters for the wrong selection.",
+      "custom_caret fully replaces DocView:draw_caret and does not call through. Loading it after smoothcaret removes smoothcaret's animation wrapper; loading order determines whether the two can coexist.",
+      "Both plugins monkeypatch global DocView methods at load time. They are not sandboxed per-view and affect every DocView, which is expected for Lite XL plugins but should be gated during any execution experiment.",
+      "Doc:get_selection_idx and Doc:get_selections return the selection anchor (line1,col1) first. Caret drawing therefore follows the anchor for reversed selections; this matches local draw_overlay but differs from a cursor-end convention.",
+      "smoothcaret treats #doc.selections (a flat 4-numbers-per-selection array locally) as a caret count. Change detection still works because the value changes with selection count, but it is not literally the number of carets.",
+      "style.caret must exist before custom_caret loads; normal startup (colors.default required before user plugins) satisfies this, but a nonstandard loader order would error.",
+      "IME composition calls this:draw_caret directly (data/core/docview.lua:556) with a shifted x; smoothcaret ignores that x, and custom_caret's caret_idx is not IME-aware. Both can misplace caret geometry during IME composition.",
+      "The optional settings integration in custom_caret cannot be exercised here because data/plugins/settings.lua is absent; the pcall path is safe but settings UI behavior is unverified."
+    ],
+    "open_gaps": [
+      "No execution/import/build was performed, per scope; compatibility is static-only against the local source tree at e556d388.",
+      "The 3.0 branch is moving; this manifest is only valid for commit ce2da6f190ceea5405ec211fb1d3d47e6c770179. Re-verify on re-resolution.",
+      "The existing verified/manifest.json and research sources were intentionally left unchanged; this follow-up manifest is additive."
+    ]
+  },
+  "display": ":90",
+  "screen": "1280x800x24 dpi96; window1024x640 scale1",
+  "closure": [
+    "/nix/store/0vqb1mcas5j8dv6bhbrshinlgsg6bvgi-gcc-15.3.0-lib",
+    "/nix/store/3qgy8q2j64v2m9jy3a5jmssacbblhd4r-coreutils-9.11",
+    "/nix/store/3vlnkr6z7hh86rrn087df45s4cfjxy65-libx11-1.8.13",
+    "/nix/store/4hlgp6r4j5p6b2b9sxw01cba0x3fjxd6-systemd-minimal-libs-261.2",
+    "/nix/store/4vij9dvkfsdglc3mng0ib3fflam2j9k9-xkeyboard-config-2.48",
+    "/nix/store/5xym1gmpk8kxl2vvfaaxja52qap9g49l-util-linux-minimal-2.42.2-login",
+    "/nix/store/7x021x160xhywqya2vwigp49ax8hzgv4-util-linux-2.42.2-mount",
+    "/nix/store/8jnb0l7s676sp8p1mh8n2188gk6vjgwp-acl-2.4.0",
+    "/nix/store/9g3536ribbggd4swm4bwk8sknsddfl3j-libxml2-2.15.3",
+    "/nix/store/algvsjnffll23bmirbg4a6aycfavk609-libxcursor-1.2.3",
+    "/nix/store/avkwd1sfvr31c5ffd06qj0grvyp9pb2w-libxrender-0.9.12",
+    "/nix/store/axmdd5wlxg1c9dbblvj09pjhkawqxmqx-glibc-2.42-84-bin",
+    "/nix/store/bb2jb295969rw2xmijf6s578yb0pxypr-attr-2.6.0",
+    "/nix/store/bmyw1idq6xyp1h4ksmb14s4imwnf8vwa-gmp-with-cxx-6.3.0",
+    "/nix/store/cm1r1dml740xsbfaxxvxrgnn3n2ma8k7-tcb-1.2",
+    "/nix/store/cnlcnkrhd3h67g92jhxij3w864ynhi6n-util-linux-2.42.2-login",
+    "/nix/store/f1i90m4xwg5yc3ca5ylp49ni51dx5g24-audit-4.2.1-lib",
+    "/nix/store/g4ygi5cq1f4dqjhydlvpyhjyvknjghkx-libmd-1.2.0",
+    "/nix/store/gax6r1j1i28bvxjcs1v98npzaa4hwj7d-libbsd-0.12.2",
+    "/nix/store/gkb9jhxirg79jv66m4yc2pkvn5za9glm-libxdmcp-1.1.5",
+    "/nix/store/i4f1ydn42hii1y1sz1wx2pl6lkqyby1l-libxfixes-6.0.2",
+    "/nix/store/j5ml0bwadkmxc6185ilixlw85ywagxgv-libxcb-1.17.0",
+    "/nix/store/kvg5r55y17ybrs2gccjbj4vdg9sp69ia-libxi-1.8.3",
+    "/nix/store/l3p6y554mkxi4vipnnp8809kxj0g1lyv-zlib-1.3.2",
+    "/nix/store/m51xyp95w4gnhcbncz6xi0x5519m293i-libxext-1.3.7",
+    "/nix/store/m7v9cqyhncd3gbp548cnxm4b2acig3ng-linux-pam-1.7.2",
+    "/nix/store/n51dhmdbik1kfrsm62j5knavmigwrl1a-glibc-2.42-84",
+    "/nix/store/nga9d6m9iplygw3iqghk2g840nz7b0gy-libidn2-2.3.8",
+    "/nix/store/pfww4nv3wkgpyk1jvqqpz6ymxgj7cbbh-libxcrypt-4.5.2",
+    "/nix/store/q22jwk7vaa69na5akgklgh70bhv9y4al-libcap-ng-0.9.3",
+    "/nix/store/qdzn5piljhvzcjwxkxfyi0bc0m215wdb-libxau-1.0.12",
+    "/nix/store/qikidl3z4p1i05wri3y53ya4gq2nb8as-shadow-4.20.2",
+    "/nix/store/rkdfqfbwyiwg2pgvw7rkd0g71b702s4l-util-linux-2.42.2-lib",
+    "/nix/store/rm1pxpky3hd09wa7aa8w4yfa19141sl5-util-linux-2.42.2-lastlog",
+    "/nix/store/ssvq1r0xd8f7paf6zqgpfql1a4drwhy2-xgcc-15.3.0-libgcc",
+    "/nix/store/vjcwhp0milwa1jqy1inpjxrsh8hjrgwc-wayland-1.26.0",
+    "/nix/store/vkzbcqvnxj1inwrjymp3gd0bn61kb0wl-db-4.8.30",
+    "/nix/store/wb232z007b8qynidq89lli8lb2c4q0r4-libffi-3.8.0",
+    "/nix/store/wi6kaycsa2479qrxv9xy6yg3q5ggfs6j-gcc-15.3.0-libgcc",
+    "/nix/store/xcv2rrfly0za0kdhzvmc0j2a6074zkib-sqlite-3.53.3",
+    "/nix/store/yh8rykx8wakl1ccn8rc351f6r2wbg4cn-libunistring-1.4.2",
+    "/nix/store/yk95z4hjlzdk418px0fc797qszccfj5p-libxkbcommon-1.13.2",
+    "/nix/store/zwv3i1aawb8zmxj029x7lyd0an5q4nj6-util-linux-2.42.2-bin",
+    "/nix/store/zygwm8dln4ck42wc90gzc668jbrhdvpz-util-linux-2.42.2-swap",
+    "/nix/store/zz125vwahb637g5ckl046ll8fcqmc8pk-ncurses-6.6"
+  ],
+  "excluded_rpath": [
+    "/home/juniorsundar/Documents/casual/lite-xl/outputs/out/lib"
+  ],
+  "helpers": {
+    "probe.lua": "97555c6df3c27e8c55a7600bf5eac5a3256aa9ea59d99d6a8a43e816d53a8e03",
+    "isolation.c": "a64535a6e9ea2b403f45e9d03616b5dcbcf152c34aee44e49371cc9fc4adfcc6",
+    "run.mjs": "6ff329128f02ddad3c73fb7af23ec58a1965e97e172e8a24730ddeefbafa507b"
+  },
+  "focus_helper_sha256": "6765c0c7155cc84229f718c75f0c2c8e43a70e2e8e94a81efc6214718f44c457",
+  "focus_source_sha256": "2913db8ed7cc934d4ee7b99423a61230256829ee3a4fc82188924d86baf55ac9",
+  "limits": {
+    "wall_s": 45,
+    "kill_after_s": 5,
+    "cpu_s": 20,
+    "address_space_bytes": 2147483648,
+    "nproc": 128,
+    "open_files": 256,
+    "file_bytes": 16777216,
+    "work_tmpfs_bytes": 134217728,
+    "tmp_tmpfs_bytes": 16777216,
+    "output_bytes": 16777216
+  },
+  "gates": [
+    {
+      "id": "isolation",
+      "plugins": [],
+      "exit": 0,
+      "signal": null,
+      "markers": [],
+      "stderr": "",
+      "stdout": "ISOLATION filesystem=private network=private pid=private env=clean bounds=set\n"
+    },
+    {
+      "id": "no-display",
+      "plugins": [],
+      "exit": 1,
+      "signal": null,
+      "markers": [],
+      "stderr": "Lite XL internal error: An internal error occurred in a critical part of the application.\n\nError: /opt/share/lite-xl/core/init.lua:374: Error creating lite-xl window: cannot create native event loop: os error at /home/juniorsundar/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/mod.rs:765: neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set.\n\nDetails can be found in \"/work/user/error.txt\"\n",
+      "stdout": "Error: /opt/share/lite-xl/core/init.lua:374: Error creating lite-xl window: cannot create native event loop: os error at /home/juniorsundar/.cargo/registry/src/index.crates.io-1949cf8c6b5b557f/winit-0.30.13/src/platform_impl/linux/mod.rs:765: neither WAYLAND_DISPLAY nor WAYLAND_SOCKET nor DISPLAY is set.\nstack traceback:\n\t[C]: in function 'renwindow.create'\n\t/opt/share/lite-xl/core/init.lua:374: in function 'core.init'\n\t[string \"local close_platform = ......\"]:15: in function <[string \"local close_platform = ......\"]:8>\n\t[C]: in function 'xpcall'\n\t[string \"local close_platform = ......\"]:8: in main chunk\n"
+    },
+    {
+      "id": "baseline",
+      "plugins": [],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          ""
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=false"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\t\nGUIREF\tPASS\twrapper_chain_update\tlinewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=false\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n"
+    }
+  ],
+  "trials": [
+    {
+      "id": "autosaveonfocuslost",
+      "plugins": [
+        "autosaveonfocuslost"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "autosaveonfocuslost"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=false"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "autosave_focuslost",
+          "synthetic_event=1;scratch_saved=1"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tautosaveonfocuslost\nGUIREF\tPASS\twrapper_chain_update\tlinewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=false\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tautosave_focuslost\tsynthetic_event=1;scratch_saved=1\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "bigclock",
+      "plugins": [
+        "bigclock"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "bigclock"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=false"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "bigclock_view_draw_font_scale_close",
+          "scale=2>1"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tbigclock\nGUIREF\tPASS\twrapper_chain_update\tlinewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=false\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tbigclock_view_draw_font_scale_close\tscale=2>1\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "bracketmatch",
+      "plugins": [
+        "bracketmatch"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "FAIL",
+          "phase_1",
+          "/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tFAIL\tphase_1\t/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk\n",
+      "passed": false
+    },
+    {
+      "id": "custom_caret",
+      "plugins": [
+        "custom_caret"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "custom_caret"
+        ],
+        [
+          "PASS",
+          "caret_implementation",
+          "custom_caret.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "custom_caret.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=true"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tcustom_caret\nGUIREF\tPASS\tcaret_implementation\tcustom_caret.lua\nGUIREF\tPASS\twrapper_chain_update\tcustom_caret.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=true\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "indentguide",
+      "plugins": [
+        "indentguide"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "FAIL",
+          "phase_1",
+          "/work/user/plugins/indentguide.lua:85: attempt to call a nil value (method 'get_selections') stack traceback: /work/user/plugins/indentguide.lua:85: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tFAIL\tphase_1\t/work/user/plugins/indentguide.lua:85: attempt to call a nil value (method 'get_selections') stack traceback: /work/user/plugins/indentguide.lua:85: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk\n",
+      "passed": false
+    },
+    {
+      "id": "scalestatus",
+      "plugins": [
+        "scalestatus"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "scalestatus"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=false"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "scalestatus_structured_item",
+          "100%"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tscalestatus\nGUIREF\tPASS\twrapper_chain_update\tlinewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=false\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tscalestatus_structured_item\t100%\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "smoothcaret",
+      "plugins": [
+        "smoothcaret"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "smoothcaret"
+        ],
+        [
+          "PASS",
+          "caret_implementation",
+          "smoothcaret.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "smoothcaret.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=false"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tsmoothcaret\nGUIREF\tPASS\tcaret_implementation\tsmoothcaret.lua\nGUIREF\tPASS\twrapper_chain_update\tsmoothcaret.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=false\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "drawing-combination",
+      "plugins": [
+        "bracketmatch",
+        "indentguide"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "FAIL",
+          "phase_1",
+          "/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in upvalue 'docview_update' /work/user/plugins/indentguide.lua:62: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tFAIL\tphase_1\t/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in upvalue 'docview_update' /work/user/plugins/indentguide.lua:62: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk\n",
+      "passed": false
+    },
+    {
+      "id": "caret-combination",
+      "plugins": [
+        "custom_caret",
+        "smoothcaret"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "custom_caret,smoothcaret"
+        ],
+        [
+          "PASS",
+          "caret_implementation",
+          "smoothcaret.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "smoothcaret.lua>custom_caret.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=true"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tcustom_caret,smoothcaret\nGUIREF\tPASS\tcaret_implementation\tsmoothcaret.lua\nGUIREF\tPASS\twrapper_chain_update\tsmoothcaret.lua>custom_caret.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=true\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "working-five",
+      "plugins": [
+        "autosaveonfocuslost",
+        "bigclock",
+        "custom_caret",
+        "scalestatus",
+        "smoothcaret"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "READY",
+          "focus",
+          "private_x11_driver_required"
+        ],
+        [
+          "PASS",
+          "normal_loader",
+          "autosaveonfocuslost,bigclock,custom_caret,scalestatus,smoothcaret"
+        ],
+        [
+          "PASS",
+          "caret_implementation",
+          "smoothcaret.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_update",
+          "smoothcaret.lua>custom_caret.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "wrapper_chain_draw",
+          "drawwhitespace.lua>linewrapping.lua>docview.lua"
+        ],
+        [
+          "PASS",
+          "native_x11_focus_acquired",
+          ""
+        ],
+        [
+          "PASS",
+          "view_identity_layout_clip_activation_close",
+          "inactive_update=1;inactive_draw=0"
+        ],
+        [
+          "PASS",
+          "deferred_draw_order",
+          "1,2,3"
+        ],
+        [
+          "PASS",
+          "command_predicate_identity_keymap_fallthrough",
+          ""
+        ],
+        [
+          "PASS",
+          "focused_caret_draw",
+          "calls=1;rects=1;block_shape=true"
+        ],
+        [
+          "PASS",
+          "docview_update_draw_args_return",
+          "updates=1;draws=6;decoration_rects=0"
+        ],
+        [
+          "PASS",
+          "autosave_focuslost",
+          "synthetic_event=1;scratch_saved=1"
+        ],
+        [
+          "PASS",
+          "scalestatus_structured_item",
+          "100%"
+        ],
+        [
+          "PASS",
+          "deprecated_prompt_focus_and_draw",
+          ""
+        ],
+        [
+          "PASS",
+          "synthetic_text_ime_dispatch",
+          "native_ime=unverified"
+        ],
+        [
+          "PASS",
+          "bigclock_view_draw_font_scale_close",
+          "scale=2>1"
+        ],
+        [
+          "PASS",
+          "context_menu_draw_hit_command_focus",
+          "synthetic_pointer=1;argument_identity=1"
+        ],
+        [
+          "PASS",
+          "normal_frames",
+          "9"
+        ],
+        [
+          "DONE",
+          "reference",
+          "9"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tREADY\tfocus\tprivate_x11_driver_required\nGUIREF\tPASS\tnormal_loader\tautosaveonfocuslost,bigclock,custom_caret,scalestatus,smoothcaret\nGUIREF\tPASS\tcaret_implementation\tsmoothcaret.lua\nGUIREF\tPASS\twrapper_chain_update\tsmoothcaret.lua>custom_caret.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\twrapper_chain_draw\tdrawwhitespace.lua>linewrapping.lua>docview.lua\nGUIREF\tPASS\tnative_x11_focus_acquired\t\nGUIREF\tPASS\tview_identity_layout_clip_activation_close\tinactive_update=1;inactive_draw=0\nGUIREF\tPASS\tdeferred_draw_order\t1,2,3\nGUIREF\tPASS\tcommand_predicate_identity_keymap_fallthrough\t\nGUIREF\tPASS\tfocused_caret_draw\tcalls=1;rects=1;block_shape=true\nGUIREF\tPASS\tdocview_update_draw_args_return\tupdates=1;draws=6;decoration_rects=0\nGUIREF\tPASS\tautosave_focuslost\tsynthetic_event=1;scratch_saved=1\nGUIREF\tPASS\tscalestatus_structured_item\t100%\nGUIREF\tPASS\tdeprecated_prompt_focus_and_draw\t\nGUIREF\tPASS\tsynthetic_text_ime_dispatch\tnative_ime=unverified\nGUIREF\tPASS\tbigclock_view_draw_font_scale_close\tscale=2>1\nGUIREF\tPASS\tcontext_menu_draw_hit_command_focus\tsynthetic_pointer=1;argument_identity=1\nGUIREF\tPASS\tnormal_frames\t9\nGUIREF\tDONE\treference\t9\n",
+      "passed": true
+    },
+    {
+      "id": "initial-five",
+      "plugins": [
+        "autosaveonfocuslost",
+        "bigclock",
+        "bracketmatch",
+        "indentguide",
+        "scalestatus"
+      ],
+      "exit": 0,
+      "signal": null,
+      "markers": [
+        [
+          "FAIL",
+          "phase_1",
+          "/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in upvalue 'docview_update' /work/user/plugins/indentguide.lua:62: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk"
+        ]
+      ],
+      "stderr": "",
+      "stdout": "GUIREF\tFAIL\tphase_1\t/work/user/plugins/bracketmatch.lua:128: attempt to call a nil value (method 'get_selection') stack traceback: /work/user/plugins/bracketmatch.lua:128: in upvalue 'update_state' /work/user/plugins/bracketmatch.lua:169: in upvalue 'docview_update' /work/user/plugins/indentguide.lua:62: in function 'core.docview.update' /opt/share/lite-xl/core/node.lua:511: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:518: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/node.lua:519: in function 'core.node.update' /opt/share/lite-xl/core/rootview.lua:534: in upvalue 'update' /opt/share/lite-xl/plugins/autocomplete.lua:737: in function 'core.rootview.update' /opt/share/lite-xl/core/init.lua:955: in upvalue 'step' /work/user/init.lua:258: in function </work/user/init.lua:256> [C]: in function 'xpcall' /work/user/init.lua:256: in function 'core.step' /opt/share/lite-xl/core/init.lua:1038: in function </opt/share/lite-xl/core/init.lua:1024> (...tail calls...) [string \"local close_platform = ......\"]:16: in function <[string \"local close_platform = ......\"]:8> [C]: in function 'xpcall' [string \"local close_platform = ......\"]:8: in main chunk\n",
+      "passed": false
+    }
+  ],
+  "finished": "2026-10-23T11:34:30.197Z",
+  "build_provenance": {
+    "source": "e556d388892280d8343a82a625941137e3a6ac5f",
+    "binary_sha256": "bde5ae899aef0302c41201ad54569f045bdef0db6a46874bd0a6f835642cb186",
+    "binary_bytes": 8419392,
+    "feature_set": "normal default X11; no test_hooks; no wayland",
+    "profile": "release; thin LTO; codegen-units=1",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
+    "cargo": "cargo 1.99.1 (5f94df478 2026-08-27)",
+    "input_sha256": {
+      "Cargo.lock": "3ecc86193707ce7cf6fe4668378b4083be3b861cc4ee10d21b1ec6b7179450df",
+      "Cargo.toml": "ef05d115a6dd6417cf628b8cf8dd21f8cb0c7ce8486147c0b5d64f11f4ffd5a7",
+      ".cargo/config.toml": "f4fa9990420825f5f81c757f8576c2d5686fda484818375e5127020639934918",
+      "build.rs": "20f86605dc9928e3b3e5cf6b441583f9fa4e23caf2d24e09dfa38459d3959b87"
+    },
+    "evidence": "../gui-cost-baseline.md"
+  },
+  "collection_environment": {
+    "kernel": "Linux 6.18.57 x86_64 GNU/Linux",
+    "cpu": "12th Gen Intel(R) Core(TM) i9-12900H",
+    "node": "v24.21.0",
+    "cc": "15.3.0",
+    "bubblewrap": "0.12.0",
+    "display_provenance": "profile=xvfb display=:90 screen=1280x800x24 dpi=96 xvfb=/nix/store/2ngsl5s8gmkbvav54pg2khb5ykxc4d10-xvfb-21.1.24/bin/Xvfb bus=unreachable runtime_dir=private",
+    "owned_artifacts": "target/gui-compat-reference.oglCZs",
+    "real_desktop_used": false
+  },
+  "fixture_sha256": "68a0cdef084abc8b8d088dceeb7334d5e775bdf060fb4d85b78f29dec4f346d8",
+  "session_sha256": "ec4cae431baa684a45aeca2912e0c2f952605f67ddc2d0af705a4aa445fa6c08"
+}

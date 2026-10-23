@@ -1,7 +1,7 @@
 # A Rust-native font backend to replace FreeType
 
 Labels: wayfinder:map
-Status: open
+Status: resolved
 
 ## Destination
 
