@@ -20,8 +20,8 @@
 //!     may call back into the monitor.
 
 use std::collections::HashSet;
-use std::ffi::{c_void, CStr, CString};
-use std::os::unix::io::RawFd;
+use std::ffi::{CStr, CString};
+use std::os::fd::OwnedFd;
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
@@ -45,83 +45,78 @@ fn wake_event_loop() {
 
 // ------------------------------------------------------------ the backend
 
-fn close_fd(fd: &mut RawFd) {
-    if *fd >= 0 {
-        unsafe { libc::close(*fd) };
-        *fd = -1;
-    }
-}
-
-/// Everything the worker needs. Immutable once created; the fds are closed by
-/// the owner after the worker has been joined.
+/// Everything the worker needs. Immutable once created. The fds close when the last
+/// reference goes, which is after the worker has been joined (`deinit_dirmonitor`).
 struct Backend {
-    inotify: RawFd,
-    /// Self-pipe: a byte written to `sig[1]` wakes a worker blocked in `poll`.
-    sig: [RawFd; 2],
+    /// `None` if `inotify_init1` failed: every watch then fails, as on the C's -1 fd.
+    inotify: Option<OwnedFd>,
+    /// Self-pipe: a byte written to the write end wakes a worker blocked in `poll`.
+    sig: Option<(OwnedFd, OwnedFd)>,
 }
 
 impl Backend {
     /// `init_dirmonitor`.
     fn new() -> Backend {
-        let inotify = unsafe { libc::inotify_init1(libc::IN_NONBLOCK | libc::IN_CLOEXEC) };
-        let mut sig = [-1, -1];
-        unsafe { libc::pipe2(sig.as_mut_ptr(), libc::O_CLOEXEC) };
-        Backend { inotify, sig }
+        use rustix::fs::inotify::{init, CreateFlags};
+        use rustix::pipe::{pipe_with, PipeFlags};
+        Backend {
+            inotify: init(CreateFlags::NONBLOCK | CreateFlags::CLOEXEC).ok(),
+            sig: pipe_with(PipeFlags::CLOEXEC).ok(),
+        }
     }
 
     /// `add_dirmonitor`: a watch id, or -1.
     fn add(&self, path: &CStr) -> i32 {
-        let mask = libc::IN_CREATE | libc::IN_DELETE | libc::IN_MOVED_FROM | libc::IN_MODIFY | libc::IN_MOVED_TO;
-        unsafe { libc::inotify_add_watch(self.inotify, path.as_ptr(), mask) }
+        use rustix::fs::inotify::{add_watch, WatchFlags};
+        let mask = WatchFlags::CREATE | WatchFlags::DELETE | WatchFlags::MOVED_FROM | WatchFlags::MODIFY | WatchFlags::MOVED_TO;
+        self.inotify.as_ref().and_then(|fd| add_watch(fd, path, mask).ok()).unwrap_or(-1)
     }
 
     /// `remove_dirmonitor`.
     fn remove(&self, id: i32) {
-        unsafe { libc::inotify_rm_watch(self.inotify, id) };
+        if let Some(fd) = &self.inotify {
+            let _ = rustix::fs::inotify::remove_watch(fd, id);
+        }
     }
 
     /// `get_changes_dirmonitor`: blocks until inotify has data (returns its
     /// length), the monitor is being shut down, or reading fails (both -1).
     fn get_changes(&self, buffer: &mut [u8]) -> i32 {
+        use rustix::event::{poll, PollFd, PollFlags};
+        use rustix::io::Errno;
+        let events = PollFlags::IN | PollFlags::ERR;
         loop {
-            let mut fds = [
-                libc::pollfd { fd: self.inotify, events: libc::POLLIN | libc::POLLERR, revents: 0 },
-                libc::pollfd { fd: self.sig[0], events: libc::POLLIN | libc::POLLERR, revents: 0 },
-            ];
-            let polled = unsafe { libc::poll(fds.as_mut_ptr(), 2, -1) };
-            if polled < 0 {
-                if std::io::Error::last_os_error().raw_os_error() == Some(libc::EINTR) {
-                    continue;
-                }
+            // poll(2) skips the C's -1 fds; leaving a missing one out is the same.
+            let mut fds: Vec<PollFd> = Vec::with_capacity(2);
+            if let Some((reader, _)) = &self.sig {
+                fds.push(PollFd::new(reader, events));
+            }
+            if let Some(inotify) = &self.inotify {
+                fds.push(PollFd::new(inotify, events));
+            }
+            match poll(&mut fds, None) {
+                Ok(_) => {}
+                Err(Errno::INTR) => continue,
+                Err(_) => return -1,
+            }
+            if self.sig.is_some() && !fds[0].revents().is_empty() {
                 return -1;
             }
-            if fds[1].revents != 0 {
-                return -1;
-            }
-            let n = unsafe {
-                libc::read(self.inotify, buffer.as_mut_ptr() as *mut c_void, buffer.len())
-            };
-            if n >= 0 {
-                return n as i32;
-            }
-            match std::io::Error::last_os_error().raw_os_error() {
-                Some(libc::EAGAIN) | Some(libc::EINTR) => continue,
-                _ => return -1,
+            drop(fds);
+            let Some(inotify) = &self.inotify else { return -1 };
+            match rustix::io::read(inotify, &mut *buffer) {
+                Ok(n) => return n as i32,
+                Err(Errno::AGAIN) | Err(Errno::INTR) => continue,
+                Err(_) => return -1,
             }
         }
     }
 
     /// Wake a worker blocked in `poll` (see `get_changes`).
     fn wake(&self) {
-        let byte = 1u8;
-        unsafe { libc::write(self.sig[1], &byte as *const u8 as *const c_void, 1) };
-    }
-
-    /// `deinit_dirmonitor`. Only call once the worker is gone.
-    fn close(&mut self) {
-        close_fd(&mut self.inotify);
-        close_fd(&mut self.sig[0]);
-        close_fd(&mut self.sig[1]);
+        if let Some((_, writer)) = &self.sig {
+            let _ = rustix::io::write(writer, &[1u8]);
+        }
     }
 }
 
@@ -213,10 +208,8 @@ impl Drop for DirMonitor {
         if let Some(thread) = self.thread.get_mut().unwrap().take() {
             let _ = thread.join();
         }
-        // The worker held the only other reference and has exited.
-        if let Some(shared) = Arc::get_mut(&mut self.shared) {
-            shared.backend.close();
-        }
+        // The worker held the only other reference and has exited, so dropping `shared`
+        // with `self` closes the fds.
     }
 }
 

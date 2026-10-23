@@ -17,14 +17,15 @@ path = "src/main.rs"
 # Rust-native, and the X11/Wayland client libraries are loaded at run time.
 [dependencies]
 mlua = { version = "0.12", default-features = false, features = ["lua54", "vendored"] }
-# Raw POSIX calls for the process module (fork/exec, pipes, waitpid, signals).
+# The Lua C ABI (FILE* handles, native plugins), the font mapping, the child-side pre_exec
+# and test-only signal calls.
 libc = "0.2"
 fancy-regex = "=0.19.2"
 skrifa = "=0.48.0"
 zeno = "=0.3.3"
 tiny-skia = { version = "=0.12.0", default-features = false, features = ["std", "simd"] }
-# Raw syscalls without libc: CLOCK_MONOTONIC_RAW for system.get_time and the zero-length sleep.
-rustix = { version = "=1.1.5", default-features = false, features = ["time", "thread"] }
+# Safe POSIX calls: clocks and sleep, inotify, poll, pipes, statfs, uname, kill and waitpid.
+rustix = { version = "=1.1.5", default-features = false, features = ["event", "fs", "pipe", "process", "system", "thread", "time"] }
 # Native plugins: dlopen/dlsym behind an owned handle (system.load_native_plugin).
 libloading = "=0.8.9"
 # Native platform. X11 (native or XWayland) by default; the `wayland` feature adds the native Wayland backend.

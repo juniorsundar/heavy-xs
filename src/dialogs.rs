@@ -249,12 +249,9 @@ fn local_path(uri: &str) -> Result<Vec<u8>, String> {
     if let Some(authority) = path.strip_prefix("//") {
         let (host, suffix) = authority.split_once('/').ok_or_else(error)?;
         if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
-            let mut hostname = [0u8; 257];
-            if unsafe { libc::gethostname(hostname.as_mut_ptr().cast(), 256) } != 0 {
-                return Err(error());
-            }
-            let end = hostname.iter().position(|&b| b == 0).unwrap_or(256);
-            if !host.as_bytes().eq_ignore_ascii_case(&hostname[..end]) {
+            // glibc's gethostname is uname's nodename.
+            let uname = rustix::system::uname();
+            if !host.as_bytes().eq_ignore_ascii_case(uname.nodename().to_bytes()) {
                 return Err(error());
             }
         }
@@ -321,15 +318,8 @@ mod tests {
         ] {
             assert!(local_path(uri).is_err(), "{uri}");
         }
-        let mut name = [0u8; 257];
-        assert_eq!(
-            unsafe { libc::gethostname(name.as_mut_ptr().cast(), 256) },
-            0
-        );
-        let host = std::ffi::CStr::from_bytes_until_nul(&name)
-            .unwrap()
-            .to_str()
-            .unwrap();
+        let uname = rustix::system::uname();
+        let host = uname.nodename().to_str().unwrap();
         assert_eq!(
             local_path(&format!("file://{host}/local")).unwrap(),
             b"/local"
