@@ -58,10 +58,13 @@
       # linker rpath is fixed up automatically, so the resulting binary runs
       # anywhere a nix store exists (i.e. outside of the dev shell too).
       packages = forAllSystems (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in rec {
-          # Cargo builds Lua and the Rust backends from vendored, locked sources.
-          lite-xl = pkgs.rustPlatform.buildRustPackage rec {
-            pname = "lite-xl";
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          # Cargo builds Lua and the Rust backends from vendored, locked sources. `wayland` adds
+          # the native Wayland backend; without it the editor is X11 (native or XWayland).
+          editor = { pname, wayland }: let runtimeDeps = platformDeps pkgs ++ pkgs.lib.optionals wayland (waylandDeps pkgs); in
+          pkgs.rustPlatform.buildRustPackage {
+            inherit pname;
             version = "2.1.7";
             src = self;
 
@@ -72,14 +75,15 @@
             # The contract suites need a display driver and the staged data dir;
             # scripts/rust-port/verify.sh runs them outside the sandbox.
             doCheck = false;
+            buildFeatures = pkgs.lib.optionals wayland [ "wayland" ];
 
             # build.rs asks pkg-config where the run-time libraries live, for the runpath.
             nativeBuildInputs = [ pkgs.pkg-config ];
-            buildInputs = platformDeps pkgs;
+            buildInputs = runtimeDeps;
 
             # Dlopen-only libraries would otherwise be removed by shrink-rpath.
             postFixup = ''
-              patchelf --add-rpath "${pkgs.lib.makeLibraryPath (platformDeps pkgs)}" "$out/bin/lite-xl"
+              patchelf --add-rpath "${pkgs.lib.makeLibraryPath runtimeDeps}" "$out/bin/lite-xl"
             '';
 
             # Data files, desktop entry etc. live outside the crate: same script as the dev flow.
@@ -98,6 +102,9 @@
               platforms = pkgs.lib.platforms.linux;
             };
           };
+        in rec {
+          lite-xl = editor { pname = "lite-xl"; wayland = false; };
+          lite-xl-wayland = editor { pname = "lite-xl-wayland"; wayland = true; };
           default = lite-xl;
         });
 
