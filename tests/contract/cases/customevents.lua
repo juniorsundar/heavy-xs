@@ -1,4 +1,4 @@
--- W5 contract suite, part 5: the custom-event registry (src/custom_events.c).
+-- The custom-event registry (src/custom_events.rs).
 --
 -- Reached through lxl_test (test_hooks): register a name with a tracing/silent/absent callback,
 -- push an event of it, and watch what poll_event hands to Lua. The registry's observable
@@ -36,7 +36,7 @@ return function(rec)
   drain()
 
   -- What the editor registers at startup, in order. The values are offsets from the first
-  -- user event type, so the baseline does not depend on SDL's numbering.
+  -- custom event type, so the baseline does not depend on the numbering.
   rec("dialogfinished type", tostring(ctype("dialogfinished")))
   rec("dirmonitor type", tostring(ctype("dirmonitor")))
   rec("type 0 name", tostring(cname(0)))
@@ -126,7 +126,7 @@ return function(rec)
   rec("push after refusal still works", tostring(push("t_one", 9, 9)))
   rec("poll after refusal", poll())
 
-  -- Many registrations: each consumes one SDL event type -----------------------------------------------------
+  -- Many registrations: each consumes one event type ---------------------------------------------------------
   local made, last = 0, nil
   for i = 1, 40 do
     if reg("bulk_" .. i, "tracer") then made = made + 1 end

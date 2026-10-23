@@ -1,4 +1,4 @@
--- W7 contract suite: fonts and text rendering (src/renderer.c, src/api/renderer.c).
+-- Fonts and text rendering (src/renderer.rs, src/renderer_api.rs).
 --
 -- Two halves. The API half records return values and error behaviour of the `renderer.font`
 -- functions. The pixel half renders text into a real offscreen window and records an FNV-1a hash

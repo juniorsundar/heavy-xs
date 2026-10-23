@@ -1,9 +1,8 @@
--- W3 contract suite: the `process` module (src/api/process.c) through the
--- data/core/process.lua wrapper, which is what plugins actually use.
+-- The `process` module (src/process.rs) through the data/core/process.lua wrapper, which is
+-- what plugins actually use.
 --
--- The golden is a historical recording from the C build. Cases that involve
--- timing or the kill-list worker poll with generous timeouts and record only a
--- boolean, so the output stays stable run to run.
+-- Cases that involve timing or the kill-list worker poll with generous timeouts and record
+-- only a boolean, so the output stays stable run to run.
 
 local process = require "core.process"
 local system = require "system"
@@ -241,6 +240,6 @@ return function(rec)
 
   -- The module table's destructor drains the kill list and joins the worker.
   -- Called manually because the harness leaves through os.exit, which skips
-  -- finalizers; calling it twice would be a double free in C.
+  -- finalizers. Called once: a second call is not something Lua ever makes.
   rec("module gc", select_n(getmetatable(process).__gc, process))
 end

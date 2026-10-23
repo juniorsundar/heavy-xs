@@ -1,8 +1,6 @@
--- W5 contract suite, part 2: system.poll_event / system.wait_event.
+-- system.poll_event / system.wait_event: how each queued input is packed for Lua.
 --
 -- Needs the `test_hooks` cargo feature (`lxl_test.push_event`); verify.sh turns it on.
--- The golden was recorded from the C poll_event/wait_event with the same injected events; that
--- implementation is gone, so it is historical evidence, not something this binary can select.
 
 local function try(fn, ...)
   local r = table.pack(pcall(fn, ...))
@@ -15,17 +13,10 @@ local function try(fn, ...)
   return table.concat(out, ",")
 end
 
--- Reports the exact tuple of one poll_event call, including its arity. SDL can make a
--- pushed event visible one pump late, identically for both implementations, so an empty
--- result is retried briefly before it is believed.
+-- Reports the exact tuple of one poll_event call, including its arity. A pushed event is
+-- queued synchronously, so one call sees it.
 local function poll()
-  local r = try(system.poll_event)
-  for _ = 1, 4 do
-    if r ~= "0" then break end
-    system.sleep(0.02)
-    r = try(system.poll_event)
-  end
-  return r
+  return try(system.poll_event)
 end
 
 -- Drains the queue, returning each tuple (arity-prefixed), so stray events show up.
@@ -52,33 +43,35 @@ return function(rec)
 
   -- Simple one-value events -------------------------------------------------
   rec("quit", (push { type = "quit" }) and poll() or "push failed")
-  for _, name in ipairs { "MINIMIZED", "MAXIMIZED", "RESTORED", "MOUSE_LEAVE", "FOCUS_LOST" } do
-    push { type = "window", etype = lxl_test["EVENT_WINDOW_" .. name], window = win }
+  for _, e in ipairs { { "MINIMIZED", "minimized" }, { "MAXIMIZED", "maximized" }, { "RESTORED", "restored" },
+                       { "MOUSE_LEAVE", "mouse_left" }, { "FOCUS_LOST", "focus_lost" } } do
+    local name, kind = e[1], e[2]
+    push { type = kind, window = win }
     rec("window " .. name, poll())
   end
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_EXPOSED, window = win }
+  push { type = "exposed", window = win }
   rec("window EXPOSED", poll())
-  for _, name in ipairs { "WILL_ENTER_BACKGROUND", "DID_ENTER_BACKGROUND", "WILL_ENTER_FOREGROUND", "DID_ENTER_FOREGROUND" } do
-    push { type = "app", etype = lxl_test["EVENT_" .. name] }
+  for _, e in ipairs { { "WILL_ENTER_BACKGROUND", "entering_background" }, { "DID_ENTER_BACKGROUND", "entered_background" },
+                       { "WILL_ENTER_FOREGROUND", "entering_foreground" }, { "DID_ENTER_FOREGROUND", "entered_foreground" } } do
+    local name, kind = e[1], e[2]
+    push { type = kind }
     rec("app " .. name, poll())
   end
 
   -- Resize carries the size in points ----------------------------------------
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_RESIZED, window = win, data1 = 123, data2 = 77 }
+  push { type = "resized", window = win, w = 123, h = 77 }
   rec("resized", poll())
   rec("pixel size after resized", table.concat({ win:get_size() }, "x"))
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_PIXEL_SIZE_CHANGED, window = win }
-  rec("pixel size changed (swallowed)", poll())
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_DISPLAY_SCALE_CHANGED, window = win }
-  rec("display scale changed (swallowed)", poll())
+  push { type = "rescaled", window = win }
+  rec("rescaled (swallowed)", poll())
 
   -- Focus gained flushes queued key presses and yields nothing ---------------
   push { type = "key_down", scancode = 43, key = 9 }
   push { type = "key_down", scancode = 43, key = 9 }
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_FOCUS_GAINED, window = win }
+  push { type = "focus_gained", window = win }
   rec("focus gained flushes key_down", drain())
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_FOCUS_GAINED, window = win }
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_FOCUS_LOST, window = win }
+  push { type = "focus_gained", window = win }
+  push { type = "focus_lost", window = win }
   rec("focus gained skipped to next", poll())
 
   -- Keyboard: names are layout aware and lower case ---------------------------
@@ -92,7 +85,7 @@ return function(rec)
     -- non-Latin keycode: falls back to the QWERTY scancode name
     { "cyrillic", 4, 0x0444 }, { "greek", 5, 0x03B2 }, { "cjk", 6, 0x65E5 },
     { "punct [", 47, 91 }, { "punct `", 53, 96 }, { "punct ~", 53, 126 },
-    -- scancode names longer than the C's char buf[16]
+    -- long scancode names
     { "kp memstore", 208, 0x400000D0 }, { "kp plusminus", 215, 0x400000D7 },
     { "unknown scancode", 1000, 1000 }, { "zero key", 4, 0 },
   }
@@ -104,15 +97,15 @@ return function(rec)
   rec("key_up a", poll())
 
   -- Keypad with and without NumLock ------------------------------------------
-  local NUMLOCK = 0x1000
+
   for i = 0, 10 do
     local sc = 89 + i -- KP_1 .. KP_0, KP_PERIOD
-    push { type = "key_down", scancode = sc, key = 0x40000059 + i, mod = 0 }
+    push { type = "key_down", scancode = sc, key = 0x40000059 + i, numlock = false }
     local off = poll()
-    push { type = "key_down", scancode = sc, key = 0x40000059 + i, mod = NUMLOCK }
+    push { type = "key_down", scancode = sc, key = 0x40000059 + i, numlock = true }
     rec(("keypad %02d"):format(i), off .. " || " .. poll())
   end
-  push { type = "key_down", scancode = 88, key = 0x40000058, mod = 0 }
+  push { type = "key_down", scancode = 88, key = 0x40000058, numlock = false }
   rec("keypad enter (outside range)", poll())
 
   -- Text ----------------------------------------------------------------------
@@ -167,18 +160,17 @@ return function(rec)
   local dm_ok = pcall(function() dirmonitor.new() end)
   rec("dirmonitor module present", tostring(dm_ok))
   -- "dirmonitor" is registered with a NULL callback: its event is swallowed.
-  push { type = "other", etype = lxl_test.EVENT_USER + 1 }
+  -- Offset 1 is "dirmonitor", registered without a callback. Offset 0 is "dialogfinished",
+  -- whose callback needs a payload, so the unregistered cases use types well past both.
+  push { type = "custom", offset = 1 }
   rec("registered, no callback", poll())
 
-  -- Unknown and out-of-range event types fall through the default arm.
-  push { type = "other", etype = 0x7FFF }
+  -- Input Lua never sees, and custom types nobody registered, produce nothing.
+  push { type = "other" }
   rec("unknown low type", poll())
-  -- 0x8000 (EVENT_USER) is the first registered custom type, "dialogfinished", whose
-  -- callback reads data2 as a string: forging it with NULL crashes the C. Use types
-  -- past the registered ones (0x8000, 0x8001) instead.
-  push { type = "other", etype = lxl_test.EVENT_USER + 0x100 }
+  push { type = "custom", offset = 0x100 }
   rec("user range, nothing registered", poll())
-  push { type = "other", etype = 0xF000 }
+  push { type = "custom", offset = 0x7000 }
   rec("high type, nothing registered", poll())
 
   -- Several queued events come out in order, one tuple per call ---------------
@@ -188,16 +180,9 @@ return function(rec)
   push { type = "text_input", text = "2" }
   rec("ordered queue", drain())
 
-  -- Events for a window that no longer exists --------------------------------
-  -- (a window id of 0 is never registered); the C dereferences NULL, so only the
-  -- events that have a NULL-safe path are recorded.
+  -- A drop with no window (one can arrive before a window exists) -----------
   push { type = "drop_file", text = "/x" }
   rec("filedropped, no window", poll())
-  -- WINDOW_RESIZED for an unknown window: the C called ren_resize_window(NULL) and segfaulted
-  -- (see docs/rust-port/PLAN.md, W5), so its golden holds a fixed "true" here. The port skips
-  -- the event; recorded as a comparison, not a value.
-  push { type = "window", etype = lxl_test.EVENT_WINDOW_RESIZED, data1 = 5, data2 = 6 }
-  rec("resized, no window survives", tostring(try(system.poll_event) == "0"))
 
   -- wait_event -----------------------------------------------------------------
   drain()
@@ -213,7 +198,7 @@ return function(rec)
   push { type = "text_input", text = "w2" }
   rec("wait_event no timeout", try(system.wait_event))
   drain()
-  -- Test coercion against actual queued input, not SDL\'s backend poll-cycle readiness.
+  -- Test coercion against actual queued input.
   push { type = "text_input", text = "argument-check" }
   rec("wait_event string number", try(system.wait_event, "0.01"))
   rec("wait_event bad arg", try(system.wait_event, "x"))

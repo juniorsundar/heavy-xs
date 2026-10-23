@@ -1,12 +1,11 @@
--- W5 contract suite, part 4: native plugin loading (`system.load_native_plugin`, the XL symbol
+-- Native plugin loading (`system.load_native_plugin`, the XL symbol
 -- resolver, the NativePlugin metatable) and the file dialogs' error path.
 --
 -- The plugins in tests/contract/plugin/ are compiled here with the system C compiler, against
 -- the shipped lite_xl_plugin_api.h and without linking Lua, exactly as a plugin author would.
 --
 -- DIALOGS: no test here ever lets a real dialog open. The environment is pointed at a dead
--- D-Bus socket. Native portal errors are checked before normalizing their backend-specific text;
--- the historical SDL runner instead rejects its empty SDL_FILE_DIALOG_DRIVER.
+-- D-Bus socket. Portal errors are checked before their backend-specific text is normalized.
 
 local ROOT = "/tmp/lxl_sysplugin_contract"
 local SRC = os.getenv("LXL_PLUGIN_SRC") or "tests/contract/plugin"
@@ -25,7 +24,8 @@ local function try(fn, ...)
   return table.concat(out, ",")
 end
 
--- A dialog result with the driver-list wording of SDL's error dropped.
+-- A dialog result in the golden's (SDL-era) shape: an unreachable portal reads as the old
+-- "File dialog driver unsupported (...)" error, and any supported-values list is elided.
 local function nodriver(msg)
   msg = tostring(msg)
   if msg:match("^dialogfinished,%-?%d+,error,Portal file chooser: .+") then
@@ -100,18 +100,15 @@ return function(rec)
   collectgarbage("collect"); collectgarbage("collect")
   rec("userdata __gc ran", tostring(plug.gc_count() - before))
 
-  -- Which symbols does the resolver know? The plugin asks for each by name. The C table is a
-  -- hand-kept copy that lacks `lua_closethread` (a 5.4.6 name in the header), so a plugin that
-  -- calls it hits the header's exit(1) stub. Rust resolves it; the suite records that one name
-  -- as "n/a" so the baseline stays the C behaviour for everything else.
+  -- Which symbols does the resolver know? The plugin asks for each by name, including
+  -- `lua_closethread` (a 5.4.6 name in the header, which the C resolver's table lacked).
   local cp = require "closeplug"
   local names = {}
-  for name in pairs(cp) do if name ~= "lua_closethread" then names[#names + 1] = name end end
+  for name in pairs(cp) do names[#names + 1] = name end
   table.sort(names)
   local resolved = {}
   for _, name in ipairs(names) do resolved[#resolved + 1] = (name == "" and "<empty>" or name) .. "=" .. tostring(cp[name]) end
   rec("resolver", table.concat(resolved, " "))
-  rec("resolver knows lua_closethread (C: false, Rust: true; see PLAN.md)", "n/a")
 
   -- Fallback entrypoint, and the three failure modes --------------------------------------------
   -- The plain entry returns 1 without pushing anything, so Lua sees one value of whatever
@@ -195,7 +192,7 @@ return function(rec)
   rec("dialog empty options", try(system.open_file_dialog, win, 20, {}))
   rec("dialog empty options event", nodriver(await(20)))
   -- The success path needs a real dialog, so it is driven by forging the event a finished
-  -- dialog produces (test_hooks). This checks the C-to-Lua packing, not SDL.
+  -- dialog produces (test_hooks). This checks the packing for Lua, not a portal.
   local function forged(spec)
     spec.type = "dialog_finished"
     lxl_test.push_event(spec)

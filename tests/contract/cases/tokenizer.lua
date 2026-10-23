@@ -1,4 +1,4 @@
--- W1 integration: the real syntax/tokenizer path, which is regex heavy
+-- The real syntax/tokenizer path, which is regex heavy
 -- (data/core/tokenizer.lua uses compiled patterns, gmatch and check_pattern).
 require("core.regex")
 local syntax = require("core.syntax")

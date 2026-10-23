@@ -3,9 +3,8 @@ require("core.regex")
 
 local function join(...) return table.concat({ ... }, "|") end
 local function iter(gen) local t = {} for v in gen do t[#t+1] = tostring(v) end return table.concat(t, "|") end
--- mlua raises errors as userdata (tostring adds "runtime error: " + traceback);
--- the C core raises plain strings. Strip the prefix and traceback so the rest,
--- which is what a user sees, can be compared.
+-- mlua raises errors as userdata (tostring adds "runtime error: " + traceback). Strip the
+-- prefix and traceback so the rest, which is what a user sees, is recorded.
 local function err_prefix(ok, msg)
   return (tostring(msg):gsub("\n.*", ""):gsub("^runtime error: ", ""))
 end

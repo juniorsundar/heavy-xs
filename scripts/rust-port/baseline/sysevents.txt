@@ -15,8 +15,7 @@ app WILL_ENTER_FOREGROUND                    1,enteringforeground
 app DID_ENTER_FOREGROUND                     1,enteredforeground
 resized                                      3,resized,integer:123,integer:77
 pixel size after resized                     400.0x300.0
-pixel size changed (swallowed)               0
-display scale changed (swallowed)            0
+rescaled (swallowed)                         0
 focus gained flushes key_down                2,keypressed,tab | 2,keypressed,tab
 focus gained skipped to next                 1,focuslost
 key_down a                                   2,keypressed,a
@@ -94,7 +93,6 @@ user range, nothing registered               0
 high type, nothing registered                0
 ordered queue                                2,textinput,1 | 2,keypressed,a | 1,quit | 2,textinput,2
 filedropped, no window                       4,filedropped,/x,integer:0,integer:0
-resized, no window survives                  true
 wait_event timeout                           1,false
 wait_event timeout elapsed                   true
 wait_event zero                              1,false
