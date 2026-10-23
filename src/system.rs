@@ -15,6 +15,7 @@ use std::os::unix::ffi::OsStrExt;
 
 use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
 use crate::clipboard::{self, Kind as ClipboardKind};
+use crate::pathmatch;
 
 // ------------------------------------------------------------- argument glue
 
@@ -457,149 +458,23 @@ fn set_primary_selection(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
 // ------------------------------------------------------- fuzzy and path sorting
 
 /// `f_fuzzy_match`: case-insensitive subsequence score; 0 values for no match.
-/// The C walks NUL-terminated `const char *`, so an embedded NUL ends a string.
 fn fuzzy_match(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
     let s = check_string(lua, &args, 0, "fuzzy_match")?;
     let p = check_string(lua, &args, 1, "fuzzy_match")?;
-    let (s, p) = (bytes_of(&s), bytes_of(&p));
-    let (str_len, ptn_len) = (s.len() as i64, p.len() as i64);
     let files = matches!(args.get(2), Some(Value::Boolean(true)));
-
-    // Indexing with `at`, which reads 0 outside the string like the C's terminator.
-    let at = |buf: &[u8], i: i64| -> u8 { if i >= 0 && (i as usize) < buf.len() { buf[i as usize] } else { 0 } };
-    let lower = |c: u8| c.to_ascii_lowercase();
-
-    let (mut score, mut run) = (0i32, 0i32);
-    let increment: i64 = if files { -1 } else { 1 };
-    let mut st = if files { str_len - 1 } else { 0 };
-    let mut pt = if files { ptn_len - 1 } else { 0 };
-
-    while st >= 0 && pt >= 0 && at(&s, st) != 0 && at(&p, pt) != 0 {
-        while st >= 0 && at(&s, st) == b' ' {
-            st += increment;
-        }
-        while pt >= 0 && at(&p, pt) == b' ' {
-            pt += increment;
-        }
-        if lower(at(&s, st)) == lower(at(&p, pt)) {
-            score += run * 10 - (at(&s, st) != at(&p, pt)) as i32;
-            run += 1;
-            pt += increment;
-        } else {
-            score -= 10;
-            run = 0;
-        }
-        st += increment;
-    }
-    if pt >= 0 && at(&p, pt) != 0 {
-        return Ok(MultiValue::new());
-    }
-    Ok(multi(vec![Value::Integer((score - (str_len as i32) * 10) as i64)]))
+    Ok(match pathmatch::fuzzy_score(&s.as_bytes(), &p.as_bytes(), files) {
+        Some(score) => multi(vec![Value::Integer(score)]),
+        None => MultiValue::new(),
+    })
 }
 
 /// `f_path_compare`: directories first, numeric runs as integers, `/` as a terminator.
 fn path_compare(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
-    let p1 = bytes_of(&check_string(lua, &args, 0, "path_compare")?);
-    let t1 = bytes_of(&check_string(lua, &args, 1, "path_compare")?);
-    let p2 = bytes_of(&check_string(lua, &args, 2, "path_compare")?);
-    let t2 = bytes_of(&check_string(lua, &args, 3, "path_compare")?);
-    let (len1, len2) = (p1.len(), p2.len());
-
-    // Reads 0 past the end, like the C's terminator.
-    let at = |b: &[u8], i: usize| -> u8 { b.get(i).copied().unwrap_or(0) };
-    // `strcmp(type, "dir")` sees the type up to its first NUL.
-    let nul_cut = |b: &[u8]| -> Vec<u8> { b.iter().copied().take_while(|&c| c != 0).collect() };
-    let mut type1 = (nul_cut(&t1) != b"dir") as i32;
-    let mut type2 = (nul_cut(&t2) != b"dir") as i32;
-
-    let mut offset = 0usize;
-    let mut i = 0;
-    while i < len1 && i < len2 {
-        if p1[i] != p2[i] {
-            break;
-        }
-        if p1[i] == b'/' {
-            offset = i + 1;
-        }
-        i += 1;
-    }
-    // `strchr(path + offset, PATHSEP)` stops at the first NUL.
-    let has_sep = |b: &[u8]| b.iter().skip(offset).take_while(|&&c| c != 0).any(|&c| c == b'/');
-    if has_sep(&p1) {
-        type1 = 0;
-    }
-    if has_sep(&p2) {
-        type2 = 0;
-    }
-    if type1 != type2 {
-        return Ok(type1 < type2);
-    }
-
-    let mut cfr: i32 = -1;
-    let same_len = len1 == len2;
-    let (mut i, mut j) = (offset, offset);
-    while i <= len1 && j <= len2 {
-        let (a, b) = (at(&p1, i), at(&p2, j));
-        if a == 0 || b == 0 {
-            if cfr < 0 {
-                cfr = 0;
-            }
-            if !same_len {
-                cfr = (a == 0) as i32;
-            }
-        } else if a.is_ascii_digit() && b.is_ascii_digit() {
-            let (mut ii, mut ij) = (0usize, 0usize);
-            while at(&p1, i + ii).is_ascii_digit() {
-                ii += 1;
-            }
-            while at(&p2, j + ij).is_ascii_digit() {
-                ij += 1;
-            }
-            // size_t arithmetic in the C: wraps on overflow.
-            let (mut di, mut dj) = (0usize, 0usize);
-            for k in 0..ii {
-                di = di.wrapping_mul(10).wrapping_add((at(&p1, i + k) - b'0') as usize);
-            }
-            for k in 0..ij {
-                dj = dj.wrapping_mul(10).wrapping_add((at(&p2, j + k) - b'0') as usize);
-            }
-            if di == dj {
-                i += 1;
-                j += 1;
-                continue;
-            }
-            cfr = (di < dj) as i32;
-        } else if a == b {
-            i += 1;
-            j += 1;
-            continue;
-        } else if a == b'/' || b == b'/' {
-            cfr = (a == b'/') as i32;
-        } else {
-            let (la, lb) = (a.to_ascii_lowercase_c(), b.to_ascii_lowercase_c());
-            if la == lb {
-                if same_len && cfr < 0 {
-                    cfr = (a > b) as i32;
-                }
-                i += 1;
-                j += 1;
-                continue;
-            }
-            cfr = (la < lb) as i32;
-        }
-        break;
-    }
-    Ok(cfr != 0)
-}
-
-/// The C folds `'A'..='Z'` by adding 32 on a `char`; identical to this for ASCII.
-trait AsciiLowerC {
-    fn to_ascii_lowercase_c(self) -> u8;
-}
-impl AsciiLowerC for u8 {
-    fn to_ascii_lowercase_c(self) -> u8 {
-        if self.is_ascii_uppercase() { self + 32 } else { self }
-    }
+    let p1 = check_string(lua, &args, 0, "path_compare")?;
+    let t1 = check_string(lua, &args, 1, "path_compare")?;
+    let p2 = check_string(lua, &args, 2, "path_compare")?;
+    let t2 = check_string(lua, &args, 3, "path_compare")?;
+    Ok(pathmatch::path_before(&p1.as_bytes(), &t1.as_bytes(), &p2.as_bytes(), &t2.as_bytes()))
 }
 
 // -------------------------------------------------------------- the overlay
