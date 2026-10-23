@@ -186,6 +186,15 @@ Quick reference, subordinate to that resolution:
 
 A borderline result within one measured noise floor uses five rounds; higher first-pair XWayland noise returns for recalibration before judgment. An over-limit result requires explanation and user approval/rejection, **not** an automatic golden, silent waiver or automatic permanent rejection. SDL's known accumulation failure does not relax the candidate gate. Do not fix the focused Lua idle spin as part of this migration.
 
+**Step 4 dispositions (user decision, 2026-10-23).** The [desktop review](sdl3-step4-desktop-review.md) and [paired cost results](sdl3-step4-cost-results.md) are accepted for the cutover. The four over-limit results are **approved as known costs with follow-ups**, not waived silently, and their gates stay in force for later work:
+
+1. Typing presentation p95 (+1.8 to +3.1 ms): the full-frame copy design. Follow-up: damage-region copies with buffer-age tracking, which needs its own design decision.
+2. Scroll active work p95 (+1 to +2 ms): the Rust rectangle fill and blend are 3–4× slower than SDL's SIMD routines. Follow-up: optimise `ren_draw_rect` (fixed-format fill with non-temporal stores, vectorisable blend), measured against the recorded micro-benchmark.
+3. Focused idle CPU (+0.8 to +1.1 percentage points): the per-pass cost of the winit pump under the editor's out-of-scope polling loop. Follow-up: the Lua idle-spin work, which outweighs this cost.
+4. XWayland memory adjudication: one single-step 4.3 MiB rise in one of two 200-cycle runs, otherwise flat. Follow-up: recheck when the drawing and presentation work changes the allocation pattern.
+
+All four are deferred to the post-migration performance work. Unavailable and pending items (IME, non-US layouts and dead keys, clipboard without a manager, native X11, touch, sandbox, cold-cache startup) keep their recorded dispositions.
+
 ## Completion and recovery
 
 For each step retain a last-passing revision, explicit evidence/identities, classified failures and pending dispositions. There is no user-data migration: recovery returns only the owned implementation changes to the previous passing revision, with normal process restart as needed. Never reset the user's worktree, replace documents/configuration or run a broad cleanup/kill command. Reverting the coupled step is an atomic code/build/test rollback, not an SDL runtime fallback in the shipped binary.
