@@ -144,11 +144,16 @@ pub fn initialized() -> bool {
     OWNER.with(|cell| matches!(*cell.borrow(), Slot::Ready(_)))
 }
 
+/// `None` while pumping, before init, after close, or once the thread is tearing down (a window
+/// still held then, such as the persistent one, is simply not destroyed, as before).
 fn with_owner<R>(f: impl FnOnce(&mut Owner) -> R) -> Option<R> {
-    OWNER.with(|cell| match &mut *cell.borrow_mut() {
-        Slot::Ready(owner) => Some(f(owner)),
-        _ => None,
-    })
+    OWNER
+        .try_with(|cell| match &mut *cell.borrow_mut() {
+            Slot::Ready(owner) => Some(f(owner)),
+            _ => None,
+        })
+        .ok()
+        .flatten()
 }
 
 pub fn pump(timeout: Option<Duration>) -> Result<(), String> {

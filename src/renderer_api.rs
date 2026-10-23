@@ -1,17 +1,23 @@
 //! `src/api/renderer.c`: the `renderer` Lua module and the `Font` userdata.
 //!
-//! Line-by-line port. Fonts cross the Lua boundary as `Font` userdata holding a single
-//! `RenFont *` (`sizeof(RenFont*)` bytes, exactly as the C), and a "font group" is a plain
-//! Lua table of such userdata that carries the same `Font` metatable. The metatable's methods
-//! are raw `lua_CFunction`s like `sysevents.rs`/`sysplugin.rs`; argument checking uses the real
+//! Line-by-line port. Fonts cross the Lua boundary as `Font` userdata holding one owning
+//! [`FontRef`] (as `Rc::into_raw`, released by `__gc`), and a "font group" is a plain Lua table
+//! of such userdata that carries the same `Font` metatable. The metatable's methods are raw
+//! `lua_CFunction`s like `sysevents.rs`/`sysplugin.rs`; argument checking uses the real
 //! `luaL_check*`/`luaL_typeerror` so errors read exactly as before.
+//!
+//! The renderer itself is safe Rust. What stays unsafe here is the Lua C API, and one rule
+//! keeps it sound: every check that can raise (a `longjmp` over these frames) runs before the
+//! function takes a font or window reference, so no raise ever skips a release.
 //!
 //! Two deliberate deviations from the C are noted below: the unknown-hinting error formats
 //! the option string (the C passes the address of the enum to `%s`), and the group-table readers
 //! reject an empty/mutated group with a Lua error instead of nil-dereferencing.
 
+use std::cell::{Cell, RefCell};
 use std::ffi::{c_char, c_int, CStr, CString};
 use std::ptr;
+use std::rc::Rc;
 
 use mlua::ffi::{
     luaL_argerror, luaL_checkany, luaL_checklstring, luaL_checknumber, luaL_checkstring,
@@ -30,13 +36,11 @@ use crate::rencache::{
     rencache_set_clip_rect, rencache_show_debug, RenColor, RenTab, FONT_FALLBACK_MAX,
 };
 use crate::renderer::{
-    ren_font_copy, ren_font_free, ren_font_get_path, ren_font_group_get_height,
-    ren_font_group_get_size, ren_font_group_get_width, ren_font_group_set_size,
-    ren_font_group_set_tab_size, ren_font_load, RenFont,
+    ren_font_copy, ren_font_group_get_height, ren_font_group_get_size, ren_font_group_get_width,
+    ren_font_group_set_size, ren_font_group_set_tab_size, ren_font_load, FontGroup, FontRef,
+    RenFont,
 };
-use crate::renwindow::{
-    ren_get_size, ren_get_target_window, ren_set_target_window, RenRect, RenWindow,
-};
+use crate::renwindow::{self, RenRect};
 
 /// `LUA_NOREF`; mlua-sys does not export the macro.
 const LUA_NOREF: c_int = -2;
@@ -44,7 +48,6 @@ const LUA_NOREF: c_int = -2;
 const FONT_TYPE: &CStr = c"Font";
 /// `API_TYPE_FONT "(userdata)"`, the name `f_font_group` reports for a bad element.
 const FONT_TYPE_USERDATA: &CStr = c"Font(userdata)";
-const RENWINDOW_TYPE: &CStr = c"RenWindow";
 
 // `ERenFontHinting` / `ERenFontAntialiasing` / `ERenFontStyle` from `renderer.h`.
 const FONT_HINTING_NONE: c_int = 0;
@@ -66,8 +69,42 @@ extern "C-unwind" {
     fn luaL_typeerror(L: *mut lua_State, arg: c_int, tname: *const c_char) -> c_int;
 }
 
-/// A reference index to a table that stores the fonts, anchored for one frame.
-static mut RENDERER_FONT_REF: c_int = LUA_NOREF;
+thread_local! {
+    /// A reference index to a table that stores the fonts, anchored for one frame. The commands
+    /// hold their own font references now; the table stays for the fonts' Lua-side identity.
+    static RENDERER_FONT_REF: Cell<c_int> = const { Cell::new(LUA_NOREF) };
+}
+
+/// A `Font` userdata's payload: an `Rc::into_raw` pointer, NULL until loaded or once released.
+type Slot = *const RefCell<RenFont>;
+
+/// The fonts `font_retrieve` found, not yet referenced: `group` takes the references once
+/// nothing else can raise.
+struct Found {
+    fonts: [Slot; FONT_FALLBACK_MAX],
+}
+
+impl Found {
+    /// The fonts as an owned group.
+    ///
+    /// # Safety
+    /// The userdata the fonts came from are still alive (they are on the Lua stack or in a table
+    /// on it for the whole call).
+    unsafe fn group(&self) -> FontGroup {
+        let fonts = self.fonts.iter().take_while(|f| !f.is_null()).map(|&f| {
+            // SAFETY: each non-NULL slot holds one strong count until its `__gc`.
+            Rc::increment_strong_count(f);
+            Rc::from_raw(f)
+        });
+        FontGroup::new(fonts).expect("font_retrieve rejects empty groups")
+    }
+}
+
+/// Wraps a new font in its userdata slot.
+unsafe fn store_font(slot: *mut Slot, font: RenFont) {
+    let font: FontRef = Rc::new(RefCell::new(font));
+    slot.write(Rc::into_raw(font));
+}
 
 // ------------------------------------------------------------- font options
 
@@ -166,9 +203,10 @@ unsafe extern "C-unwind" fn f_font_load(l: *mut lua_State) -> c_int {
         return ret_code;
     }
 
-    let font = lua_newuserdata(l, std::mem::size_of::<*mut RenFont>()) as *mut *mut RenFont;
-    match ren_font_load(filename, size, antialiasing, hinting, style as u8) {
-        Ok(loaded) => *font = loaded,
+    let font = lua_newuserdata(l, std::mem::size_of::<Slot>()) as *mut Slot;
+    font.write(ptr::null());
+    match ren_font_load(CStr::from_ptr(filename), size, antialiasing, hinting, style as u8) {
+        Ok(loaded) => store_font(font, loaded),
         Err(msg) => {
             // The owned message must not outlive the longjmp: copy it onto the Lua stack (which
             // owns its bytes) and drop it before raising.
@@ -182,17 +220,14 @@ unsafe extern "C-unwind" fn f_font_load(l: *mut lua_State) -> c_int {
     1
 }
 
-/// `font_retrieve`: fill `fonts` with up to `FONT_FALLBACK_MAX` pointers, NULL-terminated.
-/// Returns whether the argument was a table (a font group).
-unsafe fn font_retrieve(
-    l: *mut lua_State,
-    fonts: &mut [*mut RenFont; FONT_FALLBACK_MAX],
-    idx: c_int,
-) -> bool {
-    fonts.fill(ptr::null_mut());
+/// `font_retrieve`: up to `FONT_FALLBACK_MAX` fonts, NULL-terminated, and whether the argument
+/// was a table (a font group). Raises on a bad argument, an empty group or a released font.
+unsafe fn font_retrieve(l: *mut lua_State, idx: c_int) -> (Found, bool) {
+    let mut found = Found { fonts: [ptr::null(); FONT_FALLBACK_MAX] };
+    let fonts = &mut found.fonts;
     let is_table;
     if lua_type(l, idx) != LUA_TTABLE {
-        fonts[0] = *(luaL_checkudata(l, idx, FONT_TYPE.as_ptr()) as *mut *mut RenFont);
+        fonts[0] = *(luaL_checkudata(l, idx, FONT_TYPE.as_ptr()) as *const Slot);
         is_table = false;
     } else {
         is_table = true;
@@ -202,9 +237,9 @@ unsafe fn font_retrieve(
         } else {
             len
         };
-        for i in 0..len {
+        for (i, font) in fonts.iter_mut().enumerate().take(len) {
             lua_rawgeti(l, idx, (i + 1) as lua_Integer);
-            fonts[i] = *(luaL_checkudata(l, -1, FONT_TYPE.as_ptr()) as *mut *mut RenFont);
+            *font = *(luaL_checkudata(l, -1, FONT_TYPE.as_ptr()) as *const Slot);
             lua_pop(l, 1);
         }
         // An empty or mutated (hollowed-out) group would leave every slot NULL and the callers
@@ -214,17 +249,20 @@ unsafe fn font_retrieve(
             luaL_error(l, c"failed to use font group: table is empty".as_ptr());
         }
     }
-    is_table
+    // A font only reads as NULL here once its `__gc` has run (a resurrected userdata).
+    if !is_table && fonts[0].is_null() {
+        luaL_error(l, c"attempt to use a released font".as_ptr());
+    }
+    (found, is_table)
 }
 
 /// `f_font_copy`.
 unsafe extern "C-unwind" fn f_font_copy(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    let table = font_retrieve(l, &mut fonts, 1);
+    let (found, table) = font_retrieve(l, 1);
     let size = if lua_gettop(l) >= 2 {
         luaL_checknumber(l, 2) as f32
     } else {
-        ren_font_group_get_height(fonts.as_mut_ptr()) as f32
+        (*found.fonts[0]).borrow().height() as f32
     };
     let mut style: c_int = -1;
     let mut hinting: c_int = -1;
@@ -240,10 +278,13 @@ unsafe extern "C-unwind" fn f_font_copy(l: *mut lua_State) -> c_int {
         luaL_setmetatable(l, FONT_TYPE.as_ptr());
     }
     let mut i = 0;
-    while i < FONT_FALLBACK_MAX && !fonts[i].is_null() {
-        let font = lua_newuserdata(l, std::mem::size_of::<*mut RenFont>()) as *mut *mut RenFont;
-        match ren_font_copy(fonts[i], size, antialiasing, hinting, style) {
-            Ok(copied) => *font = copied,
+    while i < FONT_FALLBACK_MAX && !found.fonts[i].is_null() {
+        let font = lua_newuserdata(l, std::mem::size_of::<Slot>()) as *mut Slot;
+        font.write(ptr::null());
+        // SAFETY: the source font's userdata is on the stack (or in the table there).
+        let copied = ren_font_copy(&(*found.fonts[i]).borrow(), size, antialiasing, hinting, style);
+        match copied {
+            Ok(copied) => store_font(font, copied),
             Err(msg) => {
                 // As in `f_font_load`: copy onto the Lua stack and drop before the longjmp.
                 let msg = CString::new(msg).unwrap_or_default();
@@ -290,15 +331,15 @@ unsafe extern "C-unwind" fn f_font_group(l: *mut lua_State) -> c_int {
 
 /// `f_font_get_path`.
 unsafe extern "C-unwind" fn f_font_get_path(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    let table = font_retrieve(l, &mut fonts, 1);
+    let (found, table) = font_retrieve(l, 1);
 
     if table {
         lua_newtable(l);
     }
     let mut i = 0;
-    while i < FONT_FALLBACK_MAX && !fonts[i].is_null() {
-        lua_pushstring(l, ren_font_get_path(fonts[i]));
+    while i < FONT_FALLBACK_MAX && !found.fonts[i].is_null() {
+        // Lua copies the string; the borrow ends with the statement.
+        lua_pushstring(l, (*found.fonts[i]).borrow().path().as_ptr());
         if table {
             lua_rawseti(l, -2, (i + 1) as lua_Integer);
         }
@@ -309,10 +350,9 @@ unsafe extern "C-unwind" fn f_font_get_path(l: *mut lua_State) -> c_int {
 
 /// `f_font_set_tab_size`.
 unsafe extern "C-unwind" fn f_font_set_tab_size(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
+    let (found, _) = font_retrieve(l, 1);
     let n = luaL_checknumber(l, 2) as c_int;
-    ren_font_group_set_tab_size(fonts.as_mut_ptr(), n);
+    ren_font_group_set_tab_size(&found.group(), n);
     0
 }
 
@@ -321,8 +361,13 @@ unsafe extern "C-unwind" fn f_font_gc(l: *mut lua_State) -> c_int {
     if lua_istable(l, 1) != 0 {
         return 0; // do not run if it is a FontGroup
     }
-    let self_ = luaL_checkudata(l, 1, FONT_TYPE.as_ptr()) as *mut *mut RenFont;
-    ren_font_free(*self_);
+    let slot = luaL_checkudata(l, 1, FONT_TYPE.as_ptr()) as *mut Slot;
+    let font = slot.replace(ptr::null());
+    if !font.is_null() {
+        // SAFETY: the slot's own strong count, taken exactly once. A frame's commands may still
+        // hold the font; it is freed when the last of them goes.
+        drop(Rc::from_raw(font));
+    }
     0
 }
 
@@ -343,42 +388,44 @@ unsafe fn checktab(l: *mut lua_State, idx: c_int) -> RenTab {
 }
 
 /// `f_font_get_width`.
-unsafe extern "C-unwind" fn f_font_get_width(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
+/// A Lua string argument's bytes. Lua keeps them alive while the value is on the stack.
+unsafe fn checkbytes<'a>(l: *mut lua_State, idx: c_int) -> &'a [u8] {
     let mut len: usize = 0;
-    let text = luaL_checklstring(l, 2, &mut len);
+    let text = luaL_checklstring(l, idx, &mut len);
+    std::slice::from_raw_parts(text as *const u8, len)
+}
+
+unsafe extern "C-unwind" fn f_font_get_width(l: *mut lua_State) -> c_int {
+    let (found, _) = font_retrieve(l, 1);
+    let text = checkbytes(l, 2);
     let tab = checktab(l, 3);
 
-    lua_pushnumber(
-        l,
-        ren_font_group_get_width(fonts.as_mut_ptr(), text, len, tab, ptr::null_mut()),
-    );
+    let width = ren_font_group_get_width(&found.group(), text, tab, None);
+    lua_pushnumber(l, width);
     1
 }
 
 /// `f_font_get_height`.
 unsafe extern "C-unwind" fn f_font_get_height(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
-    lua_pushnumber(l, ren_font_group_get_height(fonts.as_mut_ptr()) as f64);
+    let (found, _) = font_retrieve(l, 1);
+    let height = ren_font_group_get_height(&found.group());
+    lua_pushnumber(l, height as f64);
     1
 }
 
 /// `f_font_get_size`.
 unsafe extern "C-unwind" fn f_font_get_size(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
-    lua_pushnumber(l, ren_font_group_get_size(fonts.as_mut_ptr()) as f64);
+    let (found, _) = font_retrieve(l, 1);
+    let size = ren_font_group_get_size(&found.group());
+    lua_pushnumber(l, size as f64);
     1
 }
 
 /// `f_font_set_size`.
 unsafe extern "C-unwind" fn f_font_set_size(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
+    let (found, _) = font_retrieve(l, 1);
     let size = luaL_checknumber(l, 2) as f32;
-    ren_font_group_set_size(fonts.as_mut_ptr(), size);
+    ren_font_group_set_size(&found.group(), size);
     0
 }
 
@@ -462,12 +509,7 @@ unsafe extern "C-unwind" fn f_show_debug(l: *mut lua_State) -> c_int {
 
 /// `f_get_size`.
 unsafe extern "C-unwind" fn f_get_size(l: *mut lua_State) -> c_int {
-    let mut w: c_int = 0;
-    let mut h: c_int = 0;
-    let window = ren_get_target_window();
-    if !window.is_null() {
-        ren_get_size(window, &mut w, &mut h);
-    }
+    let (w, h) = renwindow::target().map_or((0, 0), |window| window.borrow_mut().size());
     lua_pushnumber(l, w as f64);
     lua_pushnumber(l, h as f64);
     2
@@ -475,23 +517,30 @@ unsafe extern "C-unwind" fn f_get_size(l: *mut lua_State) -> c_int {
 
 /// `f_begin_frame`.
 unsafe extern "C-unwind" fn f_begin_frame(l: *mut lua_State) -> c_int {
-    assert!(ren_get_target_window().is_null());
-    let window = *(luaL_checkudata(l, 1, RENWINDOW_TYPE.as_ptr()) as *mut *mut RenWindow);
-    ren_set_target_window(window);
-    rencache_begin_frame(window);
+    assert!(renwindow::target().is_none());
+    let window = crate::renwindow_api::check_window_at(l, 1);
+    rencache_begin_frame(&mut window.borrow_mut());
+    renwindow::set_target(Some(window));
     0
 }
 
 /// `f_end_frame`.
 unsafe extern "C-unwind" fn f_end_frame(l: *mut lua_State) -> c_int {
-    let window = ren_get_target_window();
-    assert!(!window.is_null());
-    rencache_end_frame(window);
-    ren_set_target_window(ptr::null_mut());
+    let window = renwindow::target().expect("end_frame without begin_frame");
+    rencache_end_frame(&mut window.borrow_mut());
+    renwindow::set_target(None);
+    drop(window);
     // Clear the font reference table.
     lua_newtable(l);
-    lua_rawseti(l, LUA_REGISTRYINDEX, RENDERER_FONT_REF as lua_Integer);
+    lua_rawseti(l, LUA_REGISTRYINDEX, RENDERER_FONT_REF.get() as lua_Integer);
     0
+}
+
+/// Runs `f` on the frame's target window, or on `None` outside a frame.
+fn with_target<R>(f: impl FnOnce(Option<&mut renwindow::RenWindow>) -> R) -> R {
+    let target = renwindow::target();
+    let mut window = target.as_ref().map(|window| window.borrow_mut());
+    f(window.as_deref_mut())
 }
 
 /// `rect_to_grid`.
@@ -515,7 +564,7 @@ unsafe extern "C-unwind" fn f_set_clip_rect(l: *mut lua_State) -> c_int {
     let w = luaL_checknumber(l, 3);
     let h = luaL_checknumber(l, 4);
     let rect = rect_to_grid(x, y, w, h);
-    rencache_set_clip_rect(ren_get_target_window(), rect);
+    with_target(|window| rencache_set_clip_rect(window, rect));
     0
 }
 
@@ -527,17 +576,16 @@ unsafe extern "C-unwind" fn f_draw_rect(l: *mut lua_State) -> c_int {
     let h = luaL_checknumber(l, 4);
     let rect = rect_to_grid(x, y, w, h);
     let color = checkcolor(l, 5, 255);
-    rencache_draw_rect(ren_get_target_window(), rect, color);
+    with_target(|window| rencache_draw_rect(window, rect, color));
     0
 }
 
 /// `f_draw_text`.
 unsafe extern "C-unwind" fn f_draw_text(l: *mut lua_State) -> c_int {
-    let mut fonts = [ptr::null_mut(); FONT_FALLBACK_MAX];
-    font_retrieve(l, &mut fonts, 1);
+    let (found, _) = font_retrieve(l, 1);
 
     // Stores a reference to this font in the reference table.
-    lua_rawgeti(l, LUA_REGISTRYINDEX, RENDERER_FONT_REF as lua_Integer);
+    lua_rawgeti(l, LUA_REGISTRYINDEX, RENDERER_FONT_REF.get() as lua_Integer);
     if lua_istable(l, -1) != 0 {
         lua_pushvalue(l, 1);
         lua_pushboolean(l, 1);
@@ -547,22 +595,14 @@ unsafe extern "C-unwind" fn f_draw_text(l: *mut lua_State) -> c_int {
     }
     lua_pop(l, 1);
 
-    let mut len: usize = 0;
-    let text = luaL_checklstring(l, 2, &mut len);
-    let mut x = luaL_checknumber(l, 3);
+    let text = checkbytes(l, 2);
+    let x = luaL_checknumber(l, 3);
     let y = luaL_checknumber(l, 4) as c_int;
     let color = checkcolor(l, 5, 255);
     let tab = checktab(l, 6);
-    x = rencache_draw_text(
-        ren_get_target_window(),
-        fonts.as_mut_ptr(),
-        text,
-        len,
-        x,
-        y,
-        color,
-        tab,
-    );
+    let fonts = found.group();
+    let x = with_target(|window| rencache_draw_text(window, &fonts, text, x, y, color, tab));
+    drop(fonts);
     lua_pushnumber(l, x);
     1
 }
@@ -574,7 +614,7 @@ unsafe extern "C-unwind" fn f_draw_text(l: *mut lua_State) -> c_int {
 pub unsafe extern "C-unwind" fn luaopen_renderer(l: *mut lua_State) -> c_int {
     // Get a reference in the registry to store the font anchors for one frame.
     lua_newtable(l);
-    RENDERER_FONT_REF = luaL_ref(l, LUA_REGISTRYINDEX);
+    RENDERER_FONT_REF.set(luaL_ref(l, LUA_REGISTRYINDEX));
 
     // `luaL_newlib` is a macro mlua-sys does not export; build the table by hand.
     let lib: [(&CStr, lua_CFunction); 7] = [

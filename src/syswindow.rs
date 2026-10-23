@@ -11,22 +11,17 @@ use std::ffi::{c_char, c_int, CStr};
 
 use mlua::ffi::{
     lua_State, lua_gettop, lua_pushboolean, lua_pushinteger, lua_pushstring, lua_toboolean,
-    luaL_checknumber, luaL_checkoption, luaL_checkstring, luaL_checkudata,
+    luaL_checknumber, luaL_checkoption, luaL_checkstring,
 };
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::window::{CursorIcon, Fullscreen};
 
 use crate::native;
-use crate::renwindow::{ren_get_window_id, ren_resize_window, RenWindow};
-
-/// `luaL_checkudata(L, 1, "RenWindow")`, dereferenced: the `RenWindow *`. The C does
-/// not check it for NULL either, except `text_input`, which returns quietly.
-unsafe fn check_window(l: *mut lua_State) -> *mut RenWindow {
-    *(luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut RenWindow)
-}
-
+/// `luaL_checkudata(L, 1, "RenWindow")`, read as the window's native id (0 once the userdata
+/// has been collected, which no native window has). Takes no reference, so the argument checks
+/// after it may raise freely.
 unsafe fn window_id(l: *mut lua_State) -> u32 {
-    ren_get_window_id(check_window(l))
+    crate::renwindow_api::window_id_at(l, 1)
 }
 
 // ----------------------------------------------------------------- cursor
@@ -150,14 +145,17 @@ pub unsafe extern "C-unwind" fn get_window_size(l: *mut lua_State) -> c_int {
 }
 
 pub unsafe extern "C-unwind" fn set_window_size(l: *mut lua_State) -> c_int {
-    let renwindow = check_window(l);
+    let id = window_id(l);
     // Doubles in the C, truncated to int for the SDL calls; winit wants logical points.
     let (w, h) = (luaL_checknumber(l, 2) as c_int, luaL_checknumber(l, 3) as c_int);
     let (x, y) = (luaL_checknumber(l, 4) as c_int, luaL_checknumber(l, 5) as c_int);
-    if let Some(window) = native::window(ren_get_window_id(renwindow)) {
+    if let Some(window) = native::window(id) {
         let _ = window.request_inner_size(LogicalSize::new(w as f64, h as f64));
         window.set_outer_position(LogicalPosition::new(x as f64, y as f64));
-        ren_resize_window(renwindow);
+        drop(window);
+        if let Some(renwindow) = crate::renwindow::find(id) {
+            renwindow.borrow_mut().resize();
+        }
     }
     0
 }
@@ -205,11 +203,11 @@ pub unsafe extern "C-unwind" fn set_window_hit_test(l: *mut lua_State) -> c_int 
 
 pub unsafe extern "C-unwind" fn text_input(l: *mut lua_State) -> c_int {
     // The one window function that tolerates a NULL RenWindow.
-    let renwindow = check_window(l);
-    if renwindow.is_null() {
+    let id = window_id(l);
+    if id == 0 {
         return 0;
     }
-    native::set_text_input(ren_get_window_id(renwindow), lua_toboolean(l, 2) != 0);
+    native::set_text_input(id, lua_toboolean(l, 2) != 0);
     0
 }
 

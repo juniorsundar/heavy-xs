@@ -16,7 +16,7 @@ use mlua::ffi::{
     lua_State, lua_createtable, lua_getfield, lua_getglobal, lua_gettop, lua_pushinteger,
     lua_pushlightuserdata, lua_pushlstring, lua_pushstring, lua_rawseti, lua_setfield, lua_settop,
     lua_toboolean, lua_touserdata, lua_type, luaL_checkinteger, luaL_checklstring, luaL_checkstring,
-    luaL_checkudata, luaL_error, luaL_len, luaL_optlstring, luaL_setmetatable, LUA_TNIL, LUA_TTABLE,
+    luaL_error, luaL_len, luaL_optlstring, luaL_setmetatable, LUA_TNIL, LUA_TTABLE,
 };
 use libloading::os::unix::{Library, RTLD_LOCAL, RTLD_NOW};
 
@@ -270,7 +270,7 @@ unsafe fn copied_string(l: *mut lua_State, index: c_int, field: i64) -> Option<V
 }
 
 unsafe fn open_dialog(l: *mut lua_State, kind: crate::dialogs::Kind) -> c_int {
-    let window = luaL_checkudata(l, 1, c"RenWindow".as_ptr()) as *mut *mut crate::renwindow::RenWindow;
+    let window = crate::renwindow_api::window_id_at(l, 1);
     let id = luaL_checkinteger(l, 2) as usize;
     let snapshot = checked_options(l, kind);
     let location = copied_string(l, snapshot, 1);
@@ -290,7 +290,7 @@ unsafe fn open_dialog(l: *mut lua_State, kind: crate::dialogs::Kind) -> c_int {
             filters.push((name, pattern));
         }
     }
-    crate::dialogs::start(crate::renwindow::ren_get_window_id(*window), id, kind,
+    crate::dialogs::start(window, id, kind,
         crate::dialogs::Options { location, title, accept, many, filters });
     0
 }
