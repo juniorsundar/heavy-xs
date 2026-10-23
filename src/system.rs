@@ -10,7 +10,7 @@
 //!
 //! Deviations from the C are noted next to the code and listed in docs/rust-port/PLAN.md.
 
-use std::ffi::{c_void, CStr, CString};
+use std::ffi::{c_void, CString};
 use std::os::unix::ffi::OsStrExt;
 
 use mlua::{Error as LuaError, Lua, LuaString, MultiValue, Result as LuaResult, Table, Value, Variadic};
@@ -54,7 +54,7 @@ fn native_path(bytes: &[u8]) -> std::path::PathBuf {
 
 /// `strerror` text for an OS error, which is what SDL put in its messages. std displays it as
 /// "<text> (os error N)".
-fn os_error_text(err: &std::io::Error) -> String {
+pub(crate) fn os_error_text(err: &std::io::Error) -> String {
     let text = err.to_string();
     match err.raw_os_error() {
         Some(code) => text.strip_suffix(&format!(" (os error {code})")).map_or(text.clone(), str::to_owned),
@@ -89,42 +89,38 @@ fn multi(values: Vec<Value>) -> MultiValue {
     MultiValue::from_vec(values)
 }
 
-fn errno() -> i32 {
-    std::io::Error::last_os_error().raw_os_error().unwrap_or(0)
-}
-
-fn strerror(err: i32) -> String {
-    unsafe { CStr::from_ptr(libc::strerror(err)) }.to_string_lossy().into_owned()
+/// `strerror` text for an errno value, through std (which calls `strerror_r`).
+pub(crate) fn strerror(err: i32) -> String {
+    os_error_text(&std::io::Error::from_raw_os_error(err))
 }
 
 // --------------------------------------------------------- filesystem: info
 
 /// `f_get_file_info`: `{size, type?, modified, symlink?}`, or `nil, message`.
 fn get_file_info(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    use std::os::unix::fs::MetadataExt;
     let path = check_string(lua, &args, 0, "get_file_info")?;
-    let path = cstr(&bytes_of(&path));
+    let path = native_path(&bytes_of(&path));
 
-    let mut st: libc::stat = unsafe { std::mem::zeroed() };
-    if unsafe { libc::stat(path.as_ptr(), &mut st) } < 0 {
-        return Ok(multi(vec![Value::Nil, str_value(lua, strerror(errno()).as_bytes())?]));
-    }
+    let st = match std::fs::metadata(&path) {
+        Ok(st) => st,
+        Err(err) => return Ok(multi(vec![Value::Nil, str_value(lua, os_error_text(&err).as_bytes())?])),
+    };
 
     let info = lua.create_table()?;
-    info.raw_set("size", st.st_size as i64)?;
-    let kind = st.st_mode & libc::S_IFMT;
+    info.raw_set("size", st.size() as i64)?;
     // A type that is neither a regular file nor a directory is nil, which Lua
     // stores as an absent key (the C does `lua_pushnil` + `lua_setfield`).
-    match kind {
-        libc::S_IFREG => info.raw_set("type", "file")?,
-        libc::S_IFDIR => info.raw_set("type", "dir")?,
-        _ => {}
+    if st.is_file() {
+        info.raw_set("type", "file")?;
+    } else if st.is_dir() {
+        info.raw_set("type", "dir")?;
     }
-    info.raw_set("modified", st.st_mtime as f64 + st.st_mtime_nsec as f64 / 1_000_000_000.0)?;
+    info.raw_set("modified", st.mtime() as f64 + st.mtime_nsec() as f64 / 1_000_000_000.0)?;
 
-    if kind == libc::S_IFDIR {
-        let mut lst: libc::stat = unsafe { std::mem::zeroed() };
-        if unsafe { libc::lstat(path.as_ptr(), &mut lst) } == 0 {
-            info.raw_set("symlink", (lst.st_mode & libc::S_IFMT) == libc::S_IFLNK)?;
+    if st.is_dir() {
+        if let Ok(lst) = std::fs::symlink_metadata(&path) {
+            info.raw_set("symlink", lst.file_type().is_symlink())?;
         }
     }
     Ok(multi(vec![Value::Table(info)]))
@@ -133,14 +129,11 @@ fn get_file_info(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 /// `f_absolute_path`: zero values (not nil) on failure.
 fn absolute_path(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
     let path = check_string(lua, &args, 0, "absolute_path")?;
-    let path = cstr(&bytes_of(&path));
-    let resolved = unsafe { libc::realpath(path.as_ptr(), std::ptr::null_mut()) };
-    if resolved.is_null() {
-        return Ok(MultiValue::new());
+    // std's canonicalize is `realpath`.
+    match std::fs::canonicalize(native_path(&bytes_of(&path))) {
+        Ok(resolved) => Ok(multi(vec![str_value(lua, resolved.as_os_str().as_bytes())?])),
+        Err(_) => Ok(MultiValue::new()),
     }
-    let bytes = unsafe { CStr::from_ptr(resolved) }.to_bytes().to_vec();
-    unsafe { libc::free(resolved as *mut c_void) };
-    Ok(multi(vec![str_value(lua, &bytes)?]))
 }
 
 /// `f_get_fs_type`: Linux magic numbers; unknown filesystems give "unknown".
@@ -148,13 +141,12 @@ fn get_fs_type(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
     let path = check_string(lua, &args, 0, "get_fs_type")?;
     let bytes = bytes_of(&path);
     let c_path = cstr(&bytes);
-    let mut buf: libc::statfs = unsafe { std::mem::zeroed() };
-    if unsafe { libc::statfs(c_path.as_ptr(), &mut buf) } != 0 {
+    let Ok(buf) = rustix::fs::statfs(c_path.as_c_str()) else {
         return Err(LuaError::runtime(format!(
             "error calling statfs on {}",
             String::from_utf8_lossy(c_path.to_bytes())
         )));
-    }
+    };
     const NAMES: [(u32, &str); 9] = [
         (0xef53, "ext2/ext3"),
         (0x6969, "nfs"),
@@ -197,11 +189,11 @@ fn list_dir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 
 /// `f_mkdir`: `true`, or `false, message`.
 fn mkdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
+    use std::os::unix::fs::DirBuilderExt;
     let path = check_string(lua, &args, 0, "mkdir")?;
-    let path = cstr(&bytes_of(&path));
-    let mode = libc::S_IRUSR | libc::S_IWUSR | libc::S_IXUSR | libc::S_IRGRP | libc::S_IXGRP | libc::S_IROTH | libc::S_IXOTH;
-    if unsafe { libc::mkdir(path.as_ptr(), mode) } < 0 {
-        return Ok(multi(vec![Value::Boolean(false), str_value(lua, strerror(errno()).as_bytes())?]));
+    // A single mkdir(2) with mode 0755, before the umask.
+    if let Err(err) = std::fs::DirBuilder::new().mode(0o755).create(native_path(&bytes_of(&path))) {
+        return Ok(multi(vec![Value::Boolean(false), str_value(lua, os_error_text(&err).as_bytes())?]));
     }
     Ok(multi(vec![Value::Boolean(true)]))
 }
@@ -230,9 +222,8 @@ fn rmdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
 /// `f_chdir`: raises on failure.
 fn chdir(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
     let path = check_string(lua, &args, 0, "chdir")?;
-    let path = cstr(&bytes_of(&path));
-    if unsafe { libc::chdir(path.as_ptr()) } != 0 {
-        return Err(LuaError::runtime(format!("chdir() failed: {}", strerror(errno()))));
+    if let Err(err) = std::env::set_current_dir(native_path(&bytes_of(&path))) {
+        return Err(LuaError::runtime(format!("chdir() failed: {}", os_error_text(&err))));
     }
     Ok(MultiValue::new())
 }
@@ -278,9 +269,10 @@ fn ftruncate(lua: &Lua, args: Variadic<Value>) -> LuaResult<MultiValue> {
         return Err(LuaError::runtime("attempt to use a closed file"));
     }
     if unsafe { libc::ftruncate(libc::fileno(file), length as libc::off_t) } != 0 {
+        let err = std::io::Error::last_os_error();
         return Ok(multi(vec![
             Value::Boolean(false),
-            str_value(lua, format!("ftruncate(): {}", strerror(errno())).as_bytes())?,
+            str_value(lua, format!("ftruncate(): {}", os_error_text(&err)).as_bytes())?,
         ]));
     }
     Ok(multi(vec![Value::Boolean(true)]))
@@ -316,13 +308,13 @@ fn sleep(_: &Lua, args: Variadic<Value>) -> LuaResult<()> {
     Ok(())
 }
 
-/// `f_exec`: runs `"<cmd> &"` through `system()`; never waits.
+/// `f_exec`: runs `"<cmd> &"` the way `system()` does, through `/bin/sh -c`, waiting only for
+/// the shell, which backgrounds the command and returns at once.
 fn exec(lua: &Lua, args: Variadic<Value>) -> LuaResult<()> {
     let cmd = check_string(lua, &args, 0, "exec")?;
     let mut line = bytes_of(&cmd);
     line.extend_from_slice(b" &");
-    let line = cstr(&line);
-    unsafe { libc::system(line.as_ptr()) };
+    let _ = std::process::Command::new("/bin/sh").arg("-c").arg(native_path(&line)).status();
     Ok(())
 }
 
@@ -341,8 +333,13 @@ pub fn snapshot_environment() {
     }
 }
 
-/// `f_setenv`: always overwrites. Validation, NUL truncation and the result are libc's and
-/// SDL's: an empty name, a name containing `=` or a failing libc call is `false`.
+/// `f_setenv`: always overwrites. Validation and NUL truncation are libc's and SDL's: an empty
+/// name or a name containing `=` is `false`.
+///
+/// Goes through `std::env::set_var`, not libc `setenv`, because the editor has other threads
+/// (tokio workers, the clipboard): std serialises its own environment reads and writes behind one
+/// lock, so Rust code on those threads cannot read a half-updated environment. A C library that
+/// calls `getenv` on another thread is still outside that lock.
 fn setenv(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
     let key = cstr(&bytes_of(&check_string(lua, &args, 0, "setenv")?));
     let value = cstr(&bytes_of(&check_string(lua, &args, 1, "setenv")?));
@@ -354,7 +351,9 @@ fn setenv(lua: &Lua, args: Variadic<Value>) -> LuaResult<bool> {
     if let Some(i) = SNAP_VARS.iter().position(|v| *v == name) {
         SNAP_SNAPSHOT.lock().unwrap()[i] = true;
     }
-    Ok(unsafe { libc::setenv(key.as_ptr(), value.as_ptr(), 1) } == 0)
+    use std::ffi::OsStr;
+    std::env::set_var(OsStr::from_bytes(name), OsStr::from_bytes(value.as_bytes()));
+    Ok(true)
 }
 
 /// SDL 3.4's Linux sandbox priority, over already-gathered facts.
@@ -370,8 +369,9 @@ fn classify_sandbox(flatpak_info: bool, snap: [bool; 3], container_manager: bool
     }
 }
 
-fn accessible(path: &CStr) -> bool {
-    unsafe { libc::access(path.as_ptr(), libc::F_OK) == 0 }
+/// `access(path, F_OK)`: the path resolves, following symlinks.
+fn accessible(path: &str) -> bool {
+    std::path::Path::new(path).exists()
 }
 
 /// `get_sandbox`: classified at the first call, then cached for the life of the process (so it
@@ -381,7 +381,7 @@ fn get_sandbox(_: &Lua, _: Variadic<Value>) -> LuaResult<&'static str> {
     static SANDBOX: std::sync::OnceLock<&'static str> = std::sync::OnceLock::new();
     Ok(SANDBOX.get_or_init(|| {
         let snap = *SNAP_SNAPSHOT.lock().unwrap();
-        classify_sandbox(accessible(c"/.flatpak-info"), snap, accessible(c"/run/host/container-manager"))
+        classify_sandbox(accessible("/.flatpak-info"), snap, accessible("/run/host/container-manager"))
     }))
 }
 
