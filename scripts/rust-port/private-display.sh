@@ -75,16 +75,24 @@ pd_profile_stop() {
 }
 
 pd_run() {
-  case $pd_profile in
-    xvfb) set -- DISPLAY="$pd_display" XAUTHORITY="$pd_dir/Xauthority" SDL_VIDEO_DRIVER=x11 SDL_VIDEODRIVER=x11 "$@" ;;
-    *) set -- SDL_VIDEO_DRIVER="$pd_profile" SDL_VIDEODRIVER="$pd_profile" "$@" ;;
-  esac
+  # PD_SDL=1 (set by sdl-reference.sh only) also selects and isolates the pinned SDL reference's
+  # video, input-method and dialog drivers; the native editor reads none of these.
+  if [ "${PD_SDL:-}" = 1 ]; then
+    case $pd_profile in
+      xvfb) set -- SDL_VIDEO_DRIVER=x11 SDL_VIDEODRIVER=x11 "$@" ;;
+      *) set -- SDL_VIDEO_DRIVER="$pd_profile" SDL_VIDEODRIVER="$pd_profile" "$@" ;;
+    esac
+    set -- env -u SDL_IM_MODULE SDL_FILE_DIALOG_DRIVER= "$@"
+  fi
+  if [ "$pd_profile" = xvfb ]; then
+    set -- DISPLAY="$pd_display" XAUTHORITY="$pd_dir/Xauthority" "$@"
+  fi
   # The binary's own runpath picks its libraries: a shell's LD_LIBRARY_PATH can point at a build
   # for another glibc (seen: an alsa-lib needing GLIBC_2.43 under a 2.42 loader).
   ${pd_exec:+exec} env -u LD_LIBRARY_PATH -u LD_PRELOAD -u DISPLAY -u XAUTHORITY -u WAYLAND_DISPLAY -u WAYLAND_SOCKET -u XDG_SESSION_TYPE \
-    -u IBUS_ADDRESS -u XMODIFIERS -u GTK_IM_MODULE -u QT_IM_MODULE -u SDL_IM_MODULE \
+    -u IBUS_ADDRESS -u XMODIFIERS -u GTK_IM_MODULE -u QT_IM_MODULE \
     XDG_RUNTIME_DIR="$pd_dir/run" DBUS_SESSION_BUS_ADDRESS="unix:path=$pd_dir/no-session-bus" \
-    SDL_FILE_DIALOG_DRIVER= "$@"
+    "$@"
 }
 
 # One line describing the environment, for provenance records.

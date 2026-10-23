@@ -54,11 +54,13 @@ Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, re
 ### Prerequisites
 
 - Rust (stable) and Cargo
-- A C compiler (Cargo builds vendored Lua 5.4; the font backend is Rust-native)
-- SDL3, found through `pkg-config`
-- `pkg-config`
+- A C compiler (Cargo builds vendored Lua 5.4; fonts, windows and presentation are Rust-native)
+- At run time, the X11 client libraries (libX11, libxcb, libXcursor, libXi) and libxkbcommon,
+  plus libwayland-client for a `--features wayland` build. They are loaded on demand, not linked.
 
-With Nix, `nix develop` provides all of these, and `nix build .#lite-xl` builds the package.
+With Nix, `nix develop` provides all of these (and the test tools), and `nix build .#lite-xl`
+builds the package with those libraries on its runpath. `nix develop .#reference` adds SDL3,
+which only the pinned SDL reference tooling under `scripts/rust-port` needs.
 
 ### Building
 

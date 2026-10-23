@@ -10,9 +10,9 @@
       systems = [ "x86_64-linux" "aarch64-linux" ];
       forAllSystems = nixpkgs.lib.genAttrs systems;
 
-      # Providers loaded by winit/softbuffer/arboard, retained outside the dev shell.
+      # Libraries the default (X11) build loads at run time (winit/softbuffer dlopen them), kept
+      # on the executable's runpath so it works outside the dev shell.
       platformDeps = pkgs: with pkgs; [
-        wayland
         libxkbcommon
         libx11
         libxcb
@@ -20,7 +20,11 @@
         libxi
       ];
 
-      # SDL3 and the libraries behind its pkg-config Requires.private list.
+      # The native Wayland backend (`--features wayland`) additionally loads libwayland-client.
+      waylandDeps = pkgs: with pkgs; [ wayland ];
+
+      # SDL3 and the libraries behind its pkg-config Requires.private list: only for the pinned
+      # SDL reference (scripts/rust-port/sdl-reference.sh), never for the editor.
       sdlDeps = pkgs: with pkgs; [
         sdl3
         alsa-lib          # alsa.pc
@@ -55,8 +59,7 @@
       # anywhere a nix store exists (i.e. outside of the dev shell too).
       packages = forAllSystems (system:
         let pkgs = nixpkgs.legacyPackages.${system}; in rec {
-          # Cargo builds Lua and the Rust backends from vendored, locked sources;
-          # SDL3 stays linked until the final packaging step.
+          # Cargo builds Lua and the Rust backends from vendored, locked sources.
           lite-xl = pkgs.rustPlatform.buildRustPackage rec {
             pname = "lite-xl";
             version = "2.1.7";
@@ -70,8 +73,9 @@
             # scripts/rust-port/verify.sh runs them outside the sandbox.
             doCheck = false;
 
+            # build.rs asks pkg-config where the run-time libraries live, for the runpath.
             nativeBuildInputs = [ pkgs.pkg-config ];
-            buildInputs = pkgs.lib.unique (sdlDeps pkgs ++ platformDeps pkgs);
+            buildInputs = platformDeps pkgs;
 
             # Dlopen-only libraries would otherwise be removed by shrink-rpath.
             postFixup = ''
@@ -102,13 +106,15 @@
       #   cargo build
       #   scripts/install-linux.sh target/debug/lite-xl $(pwd)/target/stage
       #   LITE_PREFIX=$(pwd)/target/stage/usr/local target/debug/lite-xl
+      # `nix develop .#reference` adds SDL3 for scripts/rust-port/sdl-reference.sh and
+      # HIT_TEST_REFERENCE=c only; the editor itself never uses it.
       devShells = forAllSystems (system:
-        let pkgs = nixpkgs.legacyPackages.${system}; in {
-          default = pkgs.mkShell {
-            packages = pkgs.lib.unique (sdlDeps pkgs ++ platformDeps pkgs) ++ (with pkgs; [
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+          shell = extra: pkgs.mkShell {
+            packages = pkgs.lib.unique (platformDeps pkgs ++ waylandDeps pkgs ++ extra) ++ (with pkgs; [
               cargo
               rustc
-              pkg-config
               stdenv.cc # vendored Lua and the contract plugin fixtures
               git # build.rs embeds the commit in debug builds, optional
               lua5_4 # scripts/rust-port/gen-plugin-syms.lua
@@ -120,9 +126,14 @@
               util-linux # mcookie
               dbus # private session bus for service contract checks
               jq # select the exact test fixture artifact from Cargo JSON
-
-              # note: ibus is only dlopen()ed by SDL at runtime for input
-              # methods; it is not needed at build time.
+              # The XTest input drivers that native-check.sh and dialog-check.sh compile.
+              pkg-config
+              libx11
+              libxtst
+              libxext
+              libxi
+              libxfixes
+              xorgproto
 
               # LSP servers for the editor (clangd comes with clang-tools)
               clang-tools
@@ -133,12 +144,15 @@
 
             shellHook = ''
               echo "lite-xl dev shell"
-              echo "  cargo build"
+              echo "  cargo build                                   # X11 (add --features wayland)"
               echo "  scripts/install-linux.sh target/debug/lite-xl \$(pwd)/target/stage"
               echo "  LITE_PREFIX=\$(pwd)/target/stage/usr/local target/debug/lite-xl"
               echo "  scripts/rust-port/verify.sh                   # build + contract suites"
             '';
           };
+        in {
+          default = shell [ ];
+          reference = shell (sdlDeps pkgs);
         });
     };
 }

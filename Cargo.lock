@@ -843,7 +843,6 @@ dependencies = [
  "libloading",
  "mlua",
  "rustix 1.1.5",
- "sdl3-sys",
  "skrifa",
  "softbuffer",
  "tiny-skia 0.12.0",
@@ -1636,15 +1635,6 @@ dependencies = [
  "memmap2",
  "smithay-client-toolkit",
  "tiny-skia 0.11.4",
-]
-
-[[package]]
-name = "sdl3-sys"
-version = "0.7.2+SDL-3.4.18"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "82b6a7f3cad40c5b318b3539bb4624389f4a03504cd5f4c65030787b962505ac"
-dependencies = [
- "pkg-config",
 ]
 
 [[package]]

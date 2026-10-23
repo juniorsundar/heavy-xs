@@ -15,6 +15,8 @@
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 . "$root/scripts/rust-port/private-display.sh"
+# The reference is an SDL editor: select its drivers in every private run, including verify.sh's.
+export PD_SDL=1
 commit=${REF_COMMIT:-c80459bc0f464df68b8d8cdff553cd8288519a67}
 lock_sha=${REF_LOCK_SHA256:-1a2b1485592910d3bc588c04d8a7f12f0d285b9997a6cab91eac66a718f72a35}
 ref=${REF_DIR:-$root/target/sdl3-reference}
