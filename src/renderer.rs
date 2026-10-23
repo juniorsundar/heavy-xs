@@ -596,6 +596,7 @@ fn font_get_xadvance(
     metric: Option<&GlyphMetric>,
     curr_x: f64,
     tab: RenTab,
+    tab_size: u16,
 ) -> f32 {
     // Some fonts (e.g. Unifont) provide xadvance for whitespace; ignore it.
     if let Some(metric) = metric.filter(|m| !is_whitespace(codepoint) && m.xadvance != 0.0) {
@@ -604,15 +605,15 @@ fn font_get_xadvance(
     if codepoint != b'\t' as u32 {
         return font.space_advance;
     }
-    let tab_size = font.space_advance * font.tab_size as f32;
+    let tab_width = font.space_advance * tab_size as f32;
     if tab.offset.is_nan() {
-        return tab_size;
+        return tab_width;
     }
-    let offset = (curr_x + tab.offset) % (tab_size as f64);
-    let mut adv = (tab_size as f64 - offset) as f32;
+    let offset = (curr_x + tab.offset) % (tab_width as f64);
+    let mut adv = (tab_width as f64 - offset) as f32;
     // If there is not enough space until the next stop, skip it.
     if adv < font.space_advance {
-        adv += tab_size;
+        adv += tab_width;
     }
     adv
 }
@@ -643,6 +644,7 @@ struct GlyphRun<'a> {
     pen: f64,
     pending: f64,
     tab: RenTab,
+    tab_size: u16,
     /// Drawing: load coverage, and choose the subpixel bitmap from the pen's fraction. Measuring
     /// needs neither and always uses the first subpixel bitmap.
     drawing: bool,
@@ -650,12 +652,13 @@ struct GlyphRun<'a> {
 
 impl<'a> GlyphRun<'a> {
     fn measure(fonts: &'a FontGroup, text: &'a [u8], tab: RenTab) -> Self {
-        Self { fonts, text, p: 0, origin: 0.0, pen: 0.0, pending: 0.0, tab, drawing: false }
+        let tab_size = fonts.first().borrow().tab_size;
+        Self { fonts, text, p: 0, origin: 0.0, pen: 0.0, pending: 0.0, tab, tab_size, drawing: false }
     }
 
     /// `origin` is the pen's start, which tab stops are measured from.
-    fn draw(fonts: &'a FontGroup, text: &'a [u8], origin: f64, tab: RenTab) -> Self {
-        Self { fonts, text, p: 0, origin, pen: origin, pending: 0.0, tab, drawing: true }
+    fn draw(fonts: &'a FontGroup, text: &'a [u8], origin: f64, tab: RenTab, tab_size: u16) -> Self {
+        Self { fonts, text, p: 0, origin, pen: origin, pending: 0.0, tab, tab_size, drawing: true }
     }
 
     /// The pen before the glyph last returned, or after the last glyph once the run is done.
@@ -683,6 +686,7 @@ impl Iterator for GlyphRun<'_> {
             glyph.metric.as_ref(),
             self.pen - self.origin,
             self.tab,
+            self.tab_size,
         );
         self.pending = advance as f64;
         Some(RunGlyph { codepoint, glyph, pen: self.pen, advance, at_end: next == self.text.len() })
@@ -716,6 +720,7 @@ pub fn ren_draw_text(
     y: c_int,
     color: RenColor,
     tab: RenTab,
+    tab_size: u16,
 ) -> f64 {
     let clip = rs.clip;
 
@@ -732,7 +737,7 @@ pub fn ren_draw_text(
         (first.style & FONT_STYLE_UNDERLINE != 0, first.style & FONT_STYLE_STRIKETHROUGH != 0, first.baseline)
     };
 
-    let mut run = GlyphRun::draw(fonts, text, (x * surface_scale as f32) as f64, tab);
+    let mut run = GlyphRun::draw(fonts, text, (x * surface_scale as f32) as f64, tab, tab_size);
     for RunGlyph { codepoint, glyph, pen: pen_x, advance: adv, at_end } in run.by_ref() {
         let Some(metric) = glyph.metric else {
             break;
@@ -978,7 +983,8 @@ mod tests {
             scale: 1,
         };
         let color = RenColor { r: 230, g: 200, b: 90, a: 255 };
-        let pen = ren_draw_text(&mut rs, &fonts, text, 10.3, 5, color, tab);
+        let tab_size = fonts.first().borrow().tab_size;
+        let pen = ren_draw_text(&mut rs, &fonts, text, 10.3, 5, color, tab, tab_size);
         let hash = pixels.iter().fold(0xcbf29ce484222325u64, |h, &p| (h ^ p as u64).wrapping_mul(0x100000001b3));
         (width, x_offset, pen, hash)
     }
@@ -1004,6 +1010,21 @@ mod tests {
             }
         }
         assert_eq!(out, GOLDEN);
+    }
+
+    #[test]
+    fn drawn_tabs_land_where_they_were_measured_for_large_tab_sizes() {
+        let fonts = fixture_group(FONT_ANTIALIASING_SUBPIXEL);
+        let tab = RenTab { offset: f64::NAN };
+        for size in [2u16, 127, 128, 200, 300] {
+            ren_font_group_set_tab_size(&fonts, size as c_int);
+            let width = ren_font_group_get_width(&fonts, b"a\tb", tab, None);
+            let mut pixels = vec![0u32; 16];
+            let mut rs = RenSurface { pixels: &mut pixels, w: 4, h: 4, clip: RenRect { x: 0, y: 0, width: 4, height: 4 }, scale: 1 };
+            let color = RenColor { r: 1, g: 1, b: 1, a: 255 };
+            let pen = ren_draw_text(&mut rs, &fonts, b"a\tb", 0.0, 0, color, tab, size);
+            assert_eq!(pen, width, "tab size {size}");
+        }
     }
 
     /// Recorded from the traversal before it was shared between measuring and drawing: width,
