@@ -316,3 +316,89 @@ pub fn luaopen_dirmonitor(lua: &Lua) -> LuaResult<Table> {
     module.set("mode", lua.create_function(|_, _: Variadic<Value>| Ok("multiple"))?)?;
     Ok(module)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn overflow_refreshes_all_current_paths_through_dirwatch() {
+        let root = std::env::temp_dir().join(format!("lite-xl-overflow-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        for name in ["a", "b", "removed"] {
+            std::fs::create_dir(root.join(name)).unwrap();
+        }
+        std::fs::write(root.join("file"), b"fixture").unwrap();
+
+        let lua = Lua::new();
+        let monitor = lua.create_userdata(DirMonitor::new()).unwrap();
+        let shared = monitor.borrow::<DirMonitor>().unwrap().shared.clone();
+        lua.globals().set("monitor", monitor).unwrap();
+        lua.globals().set("root", root.to_str().unwrap()).unwrap();
+        lua.load(r#"
+            package.preload["core.common"] = function() return {} end
+            package.preload["core.config"] = function() return {} end
+            system = {
+                get_time = function() return 0 end,
+                get_file_info = function(path)
+                    return { type = path == root .. "/file" and "file" or "dir", modified = 1 }
+                end
+            }
+            dirmonitor = { new = function() return monitor end }
+        "#).exec().unwrap();
+        let dirwatch: Table = lua.load(include_str!("../data/core/dirwatch.lua")).eval().unwrap();
+        lua.globals().set("dirwatch", dirwatch).unwrap();
+        lua.load(r#"
+            watcher = dirwatch.new()
+            for _, name in ipairs { "a", "b", "file", "removed", "missing" } do
+                watcher:watch(root .. "/" .. name)
+            end
+            watcher:unwatch(root .. "/removed")
+            assert(watcher.scanned[root .. "/missing"], "failed watch should fall back to scanning")
+        "#).exec().unwrap();
+
+        // Feed the kernel's overflow record without changing process-wide inotify limits.
+        let mut overflow = Vec::new();
+        overflow.extend_from_slice(&(-1i32).to_ne_bytes());
+        overflow.extend_from_slice(&libc::IN_Q_OVERFLOW.to_ne_bytes());
+        overflow.extend_from_slice(&[0; 8]);
+        for _ in 0..2 {
+            {
+                let mut state = shared.state.lock().unwrap();
+                state.buffer = overflow.clone();
+                state.length = overflow.len() as i32;
+            }
+            lua.load(r#"
+                local seen = {}
+                assert(watcher:check(function(path)
+                    seen[path] = (seen[path] or 0) + 1
+                end))
+                for _, name in ipairs { "a", "b", "file" } do
+                    assert(seen[root .. "/" .. name] == 1, "overflow missed " .. name)
+                    seen[root .. "/" .. name] = nil
+                end
+                assert(next(seen) == nil, "overflow reported an unwatched path")
+            "#).exec().unwrap();
+        }
+
+        // No overflow: ordinary changes still refresh only their own path.
+        {
+            let id: i32 = lua.load("return watcher.watched[root .. '/a']").eval().unwrap();
+            let mut state = shared.state.lock().unwrap();
+            state.buffer = [id.to_ne_bytes(), libc::IN_MODIFY.to_ne_bytes(), [0; 4], [0; 4]].concat();
+            state.length = state.buffer.len() as i32;
+        }
+        lua.load(r#"
+            local count = 0
+            assert(watcher:check(function(path)
+                assert(path == root .. "/a", "ordinary event refreshed another path")
+                count = count + 1
+            end))
+            assert(count == 1)
+        "#).exec().unwrap();
+
+        drop(lua);
+        drop(shared);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+}

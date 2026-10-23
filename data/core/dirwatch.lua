@@ -123,6 +123,14 @@ end
 function dirwatch:check(change_callback, scan_time, wait_time)
   local had_change = false
   local last_error
+  local function notify(path)
+    change_callback(path)
+    local info = system.get_file_info(path)
+    if info and info.type == "file" then
+      self:unwatch(path)
+      self:watch(path)
+    end
+  end
   self.monitor:check(function(id)
     had_change = true
     if self.monitor:mode() == "single" then
@@ -131,14 +139,13 @@ function dirwatch:check(change_callback, scan_time, wait_time)
         path = common.dirname(self.single_watch_top .. PATHSEP .. id)
       end
       change_callback(path)
+    elseif id == -1 then
+      -- Inotify overflow loses changes for every watch; snapshot before file watches re-arm.
+      local paths = {}
+      for path in pairs(self.watched) do paths[#paths + 1] = path end
+      for _, path in ipairs(paths) do notify(path) end
     elseif self.reverse_watched[id] then
-      local path = self.reverse_watched[id]
-      change_callback(path)
-      local info = system.get_file_info(path)
-      if info and info.type == "file" then
-        self:unwatch(path)
-        self:watch(path)
-      end
+      notify(self.reverse_watched[id])
     end
   end, function(err)
     last_error = err
