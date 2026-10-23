@@ -37,14 +37,31 @@ SDL still fails accumulation: about 30 MiB over the last 30 cycles, and about 35
 ## Explanations for the over-limit results
 
 1. **Typing presentation.** On every changed frame the candidate copies the whole visible frame (3440×1440). SDL updated only the dirty rectangles. A one-character edit therefore costs a full copy: the typing median rises from about 1.3 to 2.6–2.8 ms. The same design makes scroll presentation faster than SDL. This is the full-copy, no-buffer-age design selected in [Choose SDL-free pixel storage and presentation conversion](../issues/34-choose-sdl-free-pixel-storage.md#resolution). Recovering the cost needs damage-region copies with buffer-age tracking, which is a design change and has not been made.
-2. **Scroll active work (+1–2 ms at p95).** A per-frame timer around the native event pump (diagnostic build, `prototype/sdl3-cost-pumptime`) shows the pump takes about 0.005 ms median and 0.01–0.02 ms p95 inside a frame on both backends. The extra time is therefore not winit's event loop. It is in the editor's own frame work (Rust drawing into the pixel store, or work that differs around it). The cause is not yet identified; `perf` is not installed. The 3-round native Wayland set showed the opposite sign, so this metric also varies a lot between sessions.
+2. **Scroll active work (+1–2 ms at p95).** Not the native event pump (about 0.01 ms per frame, measured with a pump timer on `prototype/sdl3-cost-pumptime`). Profiling found the Rust rectangle drawing 3–4× slower than SDL's SIMD routines; see the profiling follow-up below.
 3. **Focused idle CPU (+0.8–1.1 pp).** The editor's own polling loop (out of scope, reproduced unchanged) makes 700–1,000 non-blocking `wait_event` calls a second, each one event-loop pass. The candidate uses more CPU at about the same call rate, so each winit pass costs a few microseconds more than SDL's. The handoff forbids changing timeout behaviour or the loop rate.
 4. **XWayland memory step.** RSS rises in single steps (cycles 1, 2, 55, and in one of two 200-cycle runs 162) and is otherwise flat, consistent with the allocator reserving a larger block, not a per-cycle leak. On the literal rule, one of the two adjudication runs fails.
 
 Each needs the user's approval or rejection under the gate rules. None has been waived.
 
+## Profiling follow-up: scroll active work
+
+`perf` 7.3 (from nixpkgs) and a fixed drawing micro-benchmark on a private 3440×1440 Xvfb, 2026-10-23, with the same SDL and default candidate binaries. The micro-benchmark draws the same scene 300 times, shifted 1 px per frame so nothing is cached, and times drawing only (frame total minus presentation). Window 2752×1152:
+
+| Drawing | SDL | Candidate | Ratio |
+| --- | --- | --- | --- |
+| Full-screen opaque rectangles | 0.50 ms | 2.15 ms | 4.3× |
+| Translucent rectangles | 2.69 ms | 8.19 ms | 3.0× |
+| 80 lines of text over a background | 4.29 ms | 4.97 ms | 1.16× |
+
+The ratio persists with a 50 ms pause between frames (3.5× for rectangles), so it is not memory contention with the X server's copy of the presented frame. The render cache is not being invalidated (no `exposed` events), the draw target is not reallocated per frame, and `get_surface` runs once per frame.
+
+**Cause:** the Rust primitives that replaced SDL's surface routines are slower. Nearly all of `ren_draw_rect`'s samples are in its opaque `fill` loop, which uses ordinary 16-byte stores, while SDL's `SDL_FillSurfaceRect4SSE` uses non-temporal stores that bypass the cache for a frame larger than the cache. Translucent rectangles blend one pixel at a time through generic channel shifts and masks, which cannot vectorize, although the draw target's format is now always fixed `0xFFRRGGBB`; SDL used its SIMD blitter. Text shares more code with the SDL build and is only slightly slower.
+
+**Disposition:** a contained optimisation of `ren_draw_rect` (fixed-format fill with non-temporal stores for large spans, and a vectorisable fixed-format blend), not a correctness or design problem. Deferred to the post-migration performance work at the user's choice; the micro-benchmark above is the before measurement.
+
 ## Behaviour findings during the run (no code kept)
 
 - **Second windows take focus under winit.** On KWin, a newly shown second window (`renwindow.create`) gets keyboard focus; under SDL it did not. If such a window stays open and no input arrives, the unfocused main window blocks in `wait_event()` by design. Closing the window returns focus. Observed on both backends.
 - **Restored maximized state on native Wayland arrives after the first frame.** SDL draws its first frame already maximized (2752×1152 here). The candidate draws at the normal size (2048×1152) and is maximized shortly after, so startup extents differ on native Wayland only. A fix that re-applied early mode requests after the first frame made no measurable difference and was dropped.
+- **No initial focus without a window manager.** On a bare X server (private Xvfb), SDL focuses its window when showing it and the candidate does not, so the unfocused editor blocks in `wait_event()` until input arrives. With a window manager (KWin) both builds start focused.
 - **Early full-screen requests are lost by KWin for both builds** when made before the first frame. This is compositor behaviour, not a difference between the builds.
