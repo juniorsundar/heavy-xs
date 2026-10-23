@@ -9,7 +9,7 @@
 //! the shared owned-input queue after decoding the historical numeric event fixtures.
 //! Native capture is validated separately; this is not OS-input evidence.
 
-use std::ffi::{c_int, c_void};
+use std::ffi::c_int;
 
 use mlua::{AnyUserData, Error as LuaError, Lua, Result as LuaResult, Table, Value};
 
@@ -18,11 +18,7 @@ use crate::custom_events::{
     CustomEvent, CustomEventCallback, FIRST_TYPE,
 };
 use crate::platform::{Custom, FingerKind, Input, Payload};
-use crate::renwindow::{renwin_get_surface, RenSurface, RenWindow};
-
-extern "C" {
-    fn ren_get_window_id(window: *mut c_void) -> u32;
-}
+use crate::renwindow::{RenSurface, WindowRef, B, G, R};
 
 /// A callback that pushes ("custom", code, data1 as integer) so a test can see it ran.
 unsafe fn tracer(l: *mut mlua::lua_State, e: &Custom) -> i32 {
@@ -37,58 +33,47 @@ unsafe fn silent(_l: *mut mlua::lua_State, _e: &Custom) -> i32 {
     0
 }
 
-#[repr(C)]
-struct RenRectRaw {
-    x: c_int,
-    y: c_int,
-    width: c_int,
-    height: c_int,
-}
-
-extern "C" {
-    /// The dirty rects of the frame just ended. Implemented by rencache (Rust after W6; the C
-    /// version that recorded the golden is gone).
-    fn rencache_debug_rects(rects: *mut *mut RenRectRaw) -> usize;
-}
-
 /// "x,y,w,h" per dirty rect, in the order rencache_end_frame produced them. Deterministic for a
 /// fixed scene, which is what makes the rencache contract testable at all.
 fn dirty_rects(_: &Lua, _: ()) -> LuaResult<String> {
-    let mut rects: *mut RenRectRaw = std::ptr::null_mut();
-    let count = unsafe { rencache_debug_rects(&mut rects) };
-    let mut out = Vec::new();
-    for i in 0..count {
-        let r = unsafe { &*rects.add(i) };
-        out.push(format!("{},{},{},{}", r.x, r.y, r.width, r.height));
-    }
+    let rects = crate::rencache::rencache_debug_rects();
+    let out: Vec<String> = rects.iter().map(|r| format!("{},{},{},{}", r.x, r.y, r.width, r.height)).collect();
     Ok(out.join(" "))
+}
+
+/// The window a `renwindow` userdata holds, or `None` once collected. The userdata is a raw
+/// `RenWindow` block (see `renwindow_api.rs`), so mlua can only hand over its address.
+fn window_of(ud: &AnyUserData) -> Option<WindowRef> {
+    let slot = ud.to_pointer() as *const *const std::cell::RefCell<crate::renwindow::RenWindow>;
+    // SAFETY: test-only; the callers pass the `renwindow` userdata, whose block is one slot
+    // pointer that is NULL or holds a strong count until `__gc`.
+    let window = unsafe { *slot };
+    if window.is_null() {
+        return None;
+    }
+    unsafe {
+        std::rc::Rc::increment_strong_count(window);
+        Some(std::rc::Rc::from_raw(window))
+    }
 }
 
 /// The logical r,g,b of one window-surface pixel (8 bits per channel, as `SDL_GetRGBA` read it),
 /// or `None` out of bounds.
 fn surface_rgb(rs: &RenSurface, x: c_int, y: c_int) -> Option<(u8, u8, u8)> {
-    if x < 0 || y < 0 || x >= rs.w || y >= rs.h || rs.pixels.is_null() {
+    if x < 0 || y < 0 || x >= rs.w || y >= rs.h {
         return None;
     }
-    let offset = y as usize * rs.pitch as usize + x as usize * rs.bytes_per_pixel as usize;
-    let mut pixel: u32 = 0;
-    unsafe {
-        std::ptr::copy_nonoverlapping(
-            rs.pixels.add(offset),
-            &mut pixel as *mut u32 as *mut u8,
-            (rs.bytes_per_pixel as usize).min(4),
-        )
-    };
-    Some((rs.r.get(pixel) as u8, rs.g.get(pixel) as u8, rs.b.get(pixel) as u8))
+    let pixel = *rs.pixels.get(y as usize * rs.w as usize + x as usize)?;
+    Some((R.get(pixel) as u8, G.get(pixel) as u8, B.get(pixel) as u8))
 }
 
 /// The b,g,r,a bytes of one surface pixel of a window, or nil when it is out of bounds. Used to
 /// check that a replayed dirty rect really painted: dirty rects alone would not catch a replay
 /// that draws nothing.
 fn pixel(_: &Lua, (window, x, y): (mlua::AnyUserData, c_int, c_int)) -> LuaResult<Option<String>> {
-    // The userdata holds a RenWindow*, like the C's `RenWindow **`.
-    let ren = unsafe { *(window.to_pointer() as *mut *mut RenWindow) };
-    let rs = unsafe { renwin_get_surface(ren) };
+    let Some(ren) = window_of(&window) else { return Ok(None) };
+    let mut ren = ren.borrow_mut();
+    let rs = ren.surface();
     // Colour only: alpha is 0 in some surface formats and 255 in others for an untouched
     // pixel, which is a format artifact rather than cache behaviour.
     Ok(surface_rgb(&rs, x, y).map(|(r, g, b)| format!("{r:02x}{g:02x}{b:02x}")))
@@ -102,8 +87,9 @@ fn surface_hash(
     _: &Lua,
     (window, rx, ry, rw, rh): (mlua::AnyUserData, c_int, c_int, c_int, c_int),
 ) -> LuaResult<String> {
-    let ren = unsafe { *(window.to_pointer() as *mut *mut RenWindow) };
-    let rs = unsafe { renwin_get_surface(ren) };
+    let Some(ren) = window_of(&window) else { return Ok(String::new()) };
+    let mut ren = ren.borrow_mut();
+    let rs = ren.surface();
     let (mut hash, mut lit) = (2166136261u32, 0usize);
     for y in ry.max(0)..(ry + rh).min(rs.h) {
         for x in rx.max(0)..(rx + rw).min(rs.w) {
@@ -166,15 +152,10 @@ fn num(t: &Table, key: &str) -> LuaResult<f64> {
     })
 }
 
-/// The window id of a `renwindow` userdata (it holds a `RenWindow **`), or 0 without one.
+/// The window id of a `renwindow` userdata, or 0 without one.
 fn window_id(t: &Table) -> LuaResult<u32> {
     match t.raw_get::<Value>("window")? {
-        Value::UserData(ud) => {
-            let ud: AnyUserData = ud;
-            let slot = ud.to_pointer() as *const *mut c_void;
-            let window = unsafe { *slot };
-            Ok(unsafe { ren_get_window_id(window) })
-        }
+        Value::UserData(ud) => Ok(window_of(&ud).map_or(0, |window| window.borrow().id())),
         _ => Ok(0),
     }
 }
