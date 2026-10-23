@@ -4,7 +4,7 @@
 # and sha256 of the C grid). That check needs no SDL, so it outlives SDL.
 #   HIT_TEST_REFERENCE=c   also rebuild the C grid (fixtures/hit_test_reference.h, copied from the
 #                          deleted src/api/system.c, with a stub SDL_GetWindowSize; needs the SDL3
-#                          headers) and check it against both the recording and the Rust grid
+#                          headers from `nix develop .#reference`) and check it against both the recording and the Rust grid
 set -eu
 root=$(cd "$(dirname "$0")/../.." && pwd)
 expect=$root/scripts/rust-port/sdl-expectations/hit-test-grid.txt

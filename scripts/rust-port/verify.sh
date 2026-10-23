@@ -67,7 +67,9 @@ if [ -n "$evidence" ]; then
   {
     echo "runner $(git -C "$root" rev-parse HEAD)$(git -C "$root" diff --quiet HEAD -- scripts tests || echo ' +uncommitted test changes')"
     echo "binary $bin sha256=$(sum "$bin") features=$features"
-    pd_run sh -c 'LD_TRACE_LOADED_OBJECTS=1 "$1"' sh "$bin" | sed -n 's/^\t*\(libSDL3[^ ]*\) => \([^ ]*\).*/sdl_linked \1 => \2/p'
+    if [ "${PD_SDL:-}" = 1 ]; then
+      pd_run sh -c 'LD_TRACE_LOADED_OBJECTS=1 "$1"' sh "$bin" | sed -n 's/^\t*\(libSDL3[^ ]*\) => \([^ ]*\).*/sdl_linked \1 => \2/p'
+    fi
     pd_describe
     echo "cases sha256=$(cat "$root"/tests/contract/contract.lua "$root"/tests/contract/cases/*.lua | sum)"
     echo "plugin_fixtures sha256=$(find "$root/tests/contract/plugin" -type f -print0 | sort -z | xargs -0 cat | sum)"
@@ -76,15 +78,20 @@ if [ -n "$evidence" ]; then
   } >"$evidence/provenance.txt"
 fi
 
-# SDL's "system" log category is enabled only to observe the video backend it really chose; these
-# exact lines are SDL's and are taken out again before the diff. Anything else SDL or a driver
-# prints stays in the output and must match (or be reviewed).
-sdl_lines="^(App name|App version|App ID|SDL revision): |^SDL chose (video|render) backend '[^']*'\$"
-# Mesa's notice when SDL's X11 window framebuffer starts its Vulkan renderer on Xvfb: driver
-# output of the SDL reference, reviewed and dropped (docs/wayfinder/assets/sdl3-step1-evidence.md).
-sdl_lines="$sdl_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"
-sdl_lines="$sdl_lines|^Note: you can probably enable DRI3 in your Xorg config\$"
-sdl_lines="$sdl_lines|^Lite XL native backend '[^' ]*'\$"
+# The hook-enabled editor names its native backend on stderr; the line is taken out again before
+# the diff. Anything else a driver prints stays in the output and must match (or be reviewed).
+filtered_lines="^Lite XL native backend '[^' ]*'\$"
+sdl_log=
+if [ "${PD_SDL:-}" = 1 ]; then
+  # The pinned SDL reference (sdl-reference.sh): SDL's "system" log category is enabled only to
+  # observe the video backend it really chose, and these exact lines are SDL's. Mesa's notice is
+  # driver output of the reference on Xvfb, reviewed and dropped
+  # (docs/wayfinder/assets/sdl3-step1-evidence.md).
+  sdl_log=SDL_LOGGING=system=debug
+  filtered_lines="$filtered_lines|^(App name|App version|App ID|SDL revision): |^SDL chose (video|render) backend '[^']*'\$"
+  filtered_lines="$filtered_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"
+  filtered_lines="$filtered_lines|^Note: you can probably enable DRI3 in your Xorg config\$"
+fi
 
 # Preserve the system suite's historical unavailable-clipboard observations. Actual clipboard
 # and primary-selection round trips are asserted separately by clipboard-check.sh on private Xvfb.
@@ -102,7 +109,7 @@ for s in $(echo "$suites" | tr , ' '); do
   # A crash or non-zero exit must fail the run, not silently truncate the diff. SIGINT starts at
   # its default: children inherit an ignored SIGINT through exec, and the process suite's
   # "interrupt then dead" then fails (reproduced on the SDL reference; see sdl-reference.sh).
-  if run_suite SDL_LOGGING=system=debug \
+  if run_suite ${sdl_log:+"$sdl_log"} \
       LXL_PLUGIN_SRC="$root/tests/contract/plugin" LXL_PLUGIN_INC="$root/resources/include" \
       CONTRACT_SUITES="$s" LITE_PREFIX="$stage" LITE_XL_RUNTIME=contract \
       env --"${SUITE_SIGINT:-default}"-signal=INT timeout -k 2 60 "$bin" >"$raw" 2>&1; then
@@ -112,7 +119,7 @@ for s in $(echo "$suites" | tr , ' '); do
     echo "exit status $rc" >>"$raw"
   fi
   backend=$(sed -n -e "s/^SDL chose video backend '\(.*\)'\$/\1/p" -e "s/^Lite XL native backend '\(.*\)'\$/\1/p" "$raw" | sort -u | tr '\n' ' ' | sed 's/ $//')
-  LC_ALL=C grep -a -v -E "$sdl_lines" "$raw" >"$out" || true
+  LC_ALL=C grep -a -v -E "$filtered_lines" "$raw" >"$out" || true
   if [ -n "$evidence" ]; then
     cp "$out" "$evidence/$s.txt"
     echo "$s exit=$rc backend=${backend:-none}" >>"$evidence/backends.txt"

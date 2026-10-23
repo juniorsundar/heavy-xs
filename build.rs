@@ -37,8 +37,13 @@ fn main() {
     for variable in ["PKG_CONFIG_PATH", "PKG_CONFIG_LIBDIR", "PKG_CONFIG_SYSROOT_DIR"] {
         println!("cargo:rerun-if-env-changed={variable}");
     }
+    let mut providers = vec!["xkbcommon-x11", "x11", "xcb", "xcursor", "xi"];
+    if std::env::var_os("CARGO_FEATURE_WAYLAND").is_some() {
+        providers.push("wayland-client");
+    }
     let libraries = Command::new("pkg-config")
-        .args(["--variable=libdir", "xkbcommon-x11", "wayland-client", "x11", "xcb", "xcursor", "xi"])
+        .arg("--variable=libdir")
+        .args(&providers)
         .output().expect("pkg-config for native runtime providers");
     assert!(libraries.status.success(), "missing native runtime providers: {}", String::from_utf8_lossy(&libraries.stderr));
     let paths = String::from_utf8(libraries.stdout).expect("native library directories");
