@@ -23,7 +23,7 @@ trap 'exit 130' INT TERM
 cp "$root/tests/contract/native.lua" "$share/native_check.lua"
 pd_profile_start xvfb "$work/display"
 pd_describe
-# These test-only libraries are already in the SDL development closure; none is shipped by this script.
+# Test-only XTest driver; the dev shell provides its libraries, and nothing here is shipped.
 # shellcheck disable=SC2046
 cc -Wall -Wextra -Werror "$root/tests/contract/native-input.c" -o "$work/input-driver" $(pkg-config --cflags --libs x11 xtst)
 fail=0
