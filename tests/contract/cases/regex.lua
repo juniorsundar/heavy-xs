@@ -1,4 +1,4 @@
--- Native fancy-regex contract. Historical PCRE2 evidence is in docs/wayfinder/assets/.
+-- Native fancy-regex contract. Historical PCRE2 evidence is in docs/architecture/wayfinder/assets/.
 require("core.regex")
 
 local function join(...) return table.concat({ ... }, "|") end

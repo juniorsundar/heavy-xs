@@ -86,7 +86,7 @@ if [ "${PD_SDL:-}" = 1 ]; then
   # The pinned SDL reference (sdl-reference.sh): SDL's "system" log category is enabled only to
   # observe the video backend it really chose, and these exact lines are SDL's. Mesa's notice is
   # driver output of the reference on Xvfb, reviewed and dropped
-  # (docs/wayfinder/assets/sdl3-step1-evidence.md).
+  # (docs/architecture/wayfinder/assets/sdl3-step1-evidence.md).
   sdl_log=SDL_LOGGING=system=debug
   filtered_lines="$filtered_lines|^(App name|App version|App ID|SDL revision): |^SDL chose (video|render) backend '[^']*'\$"
   filtered_lines="$filtered_lines|^MESA: info: vulkan: No DRI3 support detected - required for presentation\$"

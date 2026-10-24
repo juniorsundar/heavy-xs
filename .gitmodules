@@ -1,0 +1,3 @@
+[submodule "heavy-xs-architecture"]
+	path = docs/architecture
+	url = git@github.com:juniorsundar/heavy-xs-architecture.git

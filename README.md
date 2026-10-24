@@ -46,7 +46,7 @@ These color themes are bundled with all releases of Lite XL by default.
 ## Quick Build Guide
 
 This branch builds on **Linux only**, with Cargo. The C core has been ported to Rust
-(crate at the repository root, see [docs/rust-port/PLAN.md](docs/rust-port/PLAN.md)); macOS and Windows support
+(crate at the repository root, see the [archived Rust-port plan](https://github.com/juniorsundar/heavy-xs-architecture/blob/main/rust-port/PLAN.md)); macOS and Windows support
 was removed with the Meson build.
 
 Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, replacements and migration notes](docs/regex.md) before reusing saved PCRE2 expressions.

@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # Builds the pinned SDL reference editor apart from the developer's build and install, and
 # collects the evidence later SDL-free candidates are compared with (see
-# docs/wayfinder/assets/sdl3-migration-handoff.md, Step 1).
+# docs/architecture/wayfinder/assets/sdl3-migration-handoff.md, Step 1).
 #   scripts/rust-port/sdl-reference.sh [build|probe|contract|all]     (default all)
 # Environment:
 #   REF_DIR          everything the reference owns (default target/sdl3-reference):

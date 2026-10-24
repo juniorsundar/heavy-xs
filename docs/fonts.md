@@ -2,7 +2,7 @@
 
 Lite XL uses Skrifa for font parsing, metrics and hinting, Zeno for grayscale and
 subpixel rendering, and tiny-skia for monochrome rendering. The backend choice
-and accepted differences from FreeType are recorded in [ADR 0001](adr/0001-rust-native-font-backend.md).
+and accepted differences from FreeType are recorded in [ADR 0001](https://github.com/juniorsundar/heavy-xs-architecture/blob/main/adr/0001-rust-native-font-backend.md).
 
 ## Supported formats
 
