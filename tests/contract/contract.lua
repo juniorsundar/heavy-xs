@@ -1,4 +1,4 @@
--- Headless contract runtime. Selected with LITE_XL_RUNTIME=contract (see docs/rust-port/PLAN.md §7).
+-- Headless contract runtime. Selected with LITE_XL_RUNTIME=contract (see docs/architecture/rust-port/PLAN.md §7).
 -- Prints deterministic observations; scripts/rust-port/verify.sh diffs them against a recorded baseline.
 local M = {}
 

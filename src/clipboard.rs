@@ -1,5 +1,5 @@
 //! Main-thread-only text clipboard and primary selection over arboard, per the
-//! UTF-8-only contract in `docs/wayfinder/assets/sdl3-migration-handoff.md`: truncate at the
+//! UTF-8-only contract in `docs/architecture/wayfinder/assets/sdl3-migration-handoff.md`: truncate at the
 //! first NUL, never replace lossily, leave the selection alone on an invalid set, hide failures.
 //!
 //! One `arboard::Clipboard` is created lazily on the calling thread and kept for the whole

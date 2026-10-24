@@ -26,3 +26,15 @@ C API in the four namespaces that follow:
 
 Finally, all global variables are documented in the file named
 [globals.lua](api/globals.lua).
+
+## Architecture and planning
+
+Historical Rust-port plans, architecture decisions and Wayfinder evidence live in
+[heavy-xs-architecture](https://github.com/juniorsundar/heavy-xs-architecture).
+Wayfinder maps and decision tickets are maintained in that repository's GitHub
+issues, not in local Markdown.
+
+The architecture repository is private and checked out as the optional
+`docs/architecture` submodule. With access, fetch it using
+`git submodule update --init docs/architecture`. Building the editor does not
+require it.

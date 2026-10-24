@@ -38,4 +38,4 @@ This is **not a deadline, total-operation budget or sandbox**. Delegated scans a
 
 The accepted cached-edit and synthetic-transform slowdowns have not been profiled; the requested follow-up handoff was never written.
 
-Historical PCRE2 compatibility evidence is retained under `docs/wayfinder/assets/`; it is not the current dialect specification.
+Historical PCRE2 compatibility evidence is retained under [the architecture repository](https://github.com/juniorsundar/heavy-xs-architecture/blob/main/wayfinder/assets/); it is not the current dialect specification.

@@ -8,7 +8,7 @@
 //! editor stayed runnable and the contract suite comparable after every step; this file keeps
 //! that shape (`overlay`) because it is also the list of what the module exports.
 //!
-//! Deviations from the C are noted next to the code and listed in docs/rust-port/PLAN.md.
+//! Deviations from the C are noted next to the code and listed in docs/architecture/rust-port/PLAN.md.
 
 use std::ffi::{c_void, CString};
 use std::os::unix::ffi::OsStrExt;

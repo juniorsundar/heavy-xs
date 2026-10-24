@@ -1,5 +1,5 @@
 /* Observes the SDL behaviour the editor relies on, so the expectations exist independently of
- * SDL before SDL is removed (see docs/wayfinder/assets/sdl3-migration-handoff.md, Step 1).
+ * SDL before SDL is removed (see docs/architecture/wayfinder/assets/sdl3-migration-handoff.md, Step 1).
  * Built and run by scripts/rust-port/sdl-reference.sh; never part of the editor.
  *   version   linked runtime version and revision (bindings do not prove it)
  *   draw      ren_draw_rect's SDL operations: opaque fill and the 1x1 RGBA32 linear scaled
