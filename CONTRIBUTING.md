@@ -1,64 +1,40 @@
-Here are a few ways you can help improve Lite-XL.
+# Contributing to Heavy XS
 
-First, please join the [Discord server](https://discord.gg/RWzqC3nx7K) or the [Matrix space](
-https://matrix.to/#/#lite-xl:matrix.org) where most of the coordination happens. Those spaces
-are bridged so you need only join one.
+Heavy XS is developed independently of Lite XL. Report bugs and propose changes
+in [this repository](https://github.com/juniorsundar/heavy-xs), not in the upstream
+Lite XL issue tracker or chat channels.
 
-# State as of October 2025
+## Development setup
 
-Work is mostly focused towards version 3 which includes some important rewrites to make the editor more robust, have a better plugin API, and add support for multiple windows. 
+Follow the [build instructions](README.md#building). This project supports Linux
+and builds with Cargo; the former upstream Meson, Windows and macOS workflows do
+not apply.
 
-As of 2025-10-25, only the core plugins are considered ported to the new plugin API. Some of the non-core ones have, but your mileage will vary a lot. 
+Use `LITE_USERDIR` to keep development settings separate from another editor
+installation, as shown in the [configuration guide](README.md#configuration-and-plugins).
+The executable and APIs still use Lite XL names.
 
-# Using the preview version
+## Checks
 
-You can help by using the 3.0 preview version, and reporting any bug you encounter.
-It can be run via [lpm](https://github.com/lite-xl/lite-xl-plugin-manager) like this:
+From the repository root, with the dependencies installed (or inside
+`nix develop`):
 
-```
-lpm run https://github.com/adamharrison/lite-xl.git:3.0-preview 3.0-preview --update
-```
-
-Please report any issue either on [Github](https://github.com/lite-xl/lite-xl/issues),
-[Discord](https://discord.gg/RWzqC3nx7K), or Matrix (`#lite-xl:matrix.org`).
-
-# Contributing code
-
-If you're willing to get your hands dirty, bug fixes in the form of PRs are also welcome.
-
-## Compiling the development version
-
-As of 2025-10-25, work is happening simultaneously on multiple branches, which are regularly merged by @adamharrison on a branch called `3.0-preview`. This is the state you want to check out:
-
-```
-git clone https://github.com/adamharrison/lite-xl
-git checkout 3.0-preview
+```sh
+cargo test --locked
+scripts/rust-port/verify.sh
 ```
 
-Regular building instructions from [README.md](README.md#quick-build-guide) apply.
+The contract runner builds and stages its own test executable and uses a private
+Xvfb display. Keep the existing Lua-facing behaviour covered when changing the
+Rust core. Add a regression test for fixes, and document intentional compatibility
+changes in the relevant [API reference](docs/README.md).
 
-If you want to work with two distinct installations of Lite XL (the stable version 2, and a development version 3) here's a suggestion for how to do it on Linux:
+## Pull requests
 
-```
-# Assuming you have all the dependencies installed (or are inside `nix develop`).
-cd lite-xl
-cargo build --release
+Open pull requests against this repository's default branch. Keep changes focused,
+explain the problem they solve, and include the checks you ran and any known
+limitations. Discuss changes to supported platforms or public interfaces before
+implementing them.
 
-INSTALL_DIR=$HOME/.local
-# Installs the development version under ${INSTALL_DIR}/lite-xl-dev
-scripts/install-linux.sh target/release/lite-xl "${INSTALL_DIR}" /lite-xl-dev
-
-# A convenient alias to run the dev version with a dedicated config directory, 
-# to not conflict with the default one ($HOME/.config/lite-xl)
-alias lite-xl-dev="LITE_USERDIR=$HOME/.config/lite-xl-dev ${INSTALL_DIR}/lite-xl-dev/bin/lite-xl"
-```
-
-## Filing PRs
-
-- Changes related to virtual lines: file the PR against https://github.com/adamharrison/lite-xl/tree/PR/virtual-lines
-- Changes related to multi-window support: file the PR against https://github.com/adamharrison/lite-xl/tree/PR/multi-windows-ipc
-- Any other changes to the core editor: file the PR against https://github.com/adamharrison/lite-xl/tree/3.0-preview, or against master (https://github.com/lite-xl/lite-xl).
-- For non-core plugins, file PRs against https://github.com/adamharrison/lite-xl-plugins/tree/3.0
-
-Then send a message on the #lite-xl Discord or Matrix channel to make people aware of the PR.
-
+For inherited code, preserve the copyright and license notices. See
+[project provenance](docs/provenance.md) for the upstream baseline.

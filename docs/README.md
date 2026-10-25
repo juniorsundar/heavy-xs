@@ -1,23 +1,13 @@
-# Interface Files
+# Heavy XS documentation
 
-This directory holds the documentation for the Lua C API that
-is hidden in the C source files of Lite. The idea of these files
-is to serve you as a quick reference about the functionality
-that is not written in Lua it self. Please note that they
-don't have any real code, just metadata or annotations.
+The files under `api/` document the Lua-facing interfaces provided by the Rust
+core. They contain metadata and annotations, not executable implementations.
+They use [EmmyLua annotations](https://emmylua.github.io/annotation.html) for
+completion and descriptions in Lua language servers.
 
-Also, these interfaces are using
-[EmmyLua annotation syntax](https://emmylua.github.io/annotation.html)
-which is supported by LSP servers like the
-[Sumneko Lua LSP](https://github.com/sumneko/lua-language-server).
-This means that you can get nice code autocompletion and descriptions
-of Lite core libraries and symbols when developing plugins or adding
-any options to your **User Module File** (init.lua).
+## Core interfaces
 
-## The Base Core
-
-Most of the code that is written in Lua for Lite is powered by the exposed
-C API in the four namespaces that follow:
+The editor's Lua layer uses these native namespaces:
 
 * [system](api/system.lua)
 * [renderer](api/renderer.lua)
@@ -26,6 +16,12 @@ C API in the four namespaces that follow:
 
 Finally, all global variables are documented in the file named
 [globals.lua](api/globals.lua).
+
+## Guides
+
+- [Font behaviour and supported formats](fonts.md)
+- [Regex syntax and migration](regex.md)
+- [Project provenance and upstream credits](provenance.md)
 
 ## Architecture and planning
 

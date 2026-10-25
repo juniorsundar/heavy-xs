@@ -1,71 +1,37 @@
-# Lite XL
+# Heavy XS
 
-[![CI]](https://github.com/lite-xl/lite-xl/actions/workflows/build.yml)
-[![Discord Badge Image]](https://discord.gg/UQKnzBhY5H)
+Heavy XS is a Linux text editor with a Rust core and a Lua editor layer. It began
+as a fork of [Lite XL](https://github.com/lite-xl/lite-xl) and is now developed
+independently. See [project provenance](docs/provenance.md) for the fork point and
+upstream credits.
 
-![screenshot-dark]
+## Building
 
-A lightweight text editor written in Lua, adapted from [lite].
+The editor builds on **Linux only**, with Cargo. Windows and macOS are not
+supported by this project.
 
-* **[Get Lite XL]** — Download for Windows, Linux and Mac OS.
-* **[Get plugins]** — Add additional functionality, adapted for Lite XL.
-* **[Get color themes]** — Add additional colors themes.
-
-Please refer to our [website] for the user and developer documentation,
-including [build] instructions details. A quick build guide is described below.
-
-Lite XL has support for high DPI display on Windows and Linux and,
-since 1.16.7 release, it supports **retina displays** on macOS.
-
-Please note that Lite XL is compatible with lite for most plugins and all color themes.
-We provide a separate lite-xl-plugins repository for Lite XL, because in some cases
-some adaptations may be needed to make them work better with Lite XL.
-The repository with modified plugins is https://github.com/lite-xl/lite-xl-plugins.
-
-The changes and differences between Lite XL and rxi/lite are listed in the
-[changelog].
-
-## Overview
-
-Lite XL is derived from [lite].
-It is a lightweight text editor written mostly in Lua — it aims to provide
-something practical, pretty, *small* and fast easy to modify and extend,
-or to use without doing either.
-
-The aim of Lite XL compared to lite is to be more user friendly,
-improve the quality of font rendering, and reduce CPU usage.
-
-## Customization
-
-Additional functionality can be added through plugins which are available in
-the [plugins repository] or in the [Lite XL plugins repository].
-
-Additional color themes can be found in the [colors repository].
-These color themes are bundled with all releases of Lite XL by default.
-
-## Quick Build Guide
-
-This branch builds on **Linux only**, with Cargo. The C core has been ported to Rust
-(crate at the repository root, see the [archived Rust-port plan](https://github.com/juniorsundar/heavy-xs-architecture/blob/main/rust-port/PLAN.md)); macOS and Windows support
-was removed with the Meson build.
-
-Regex search uses fancy-regex's native dialect, not PCRE2. See [regex syntax, replacements and migration notes](docs/regex.md) before reusing saved PCRE2 expressions.
+The executable, installation paths, configuration directory and Lua APIs still
+use Lite XL names. The commands below use those existing names; this is not an
+upstream Lite XL build.
 
 ### Prerequisites
 
 - Rust (stable) and Cargo
-- A C compiler (Cargo builds vendored Lua 5.4; fonts, windows and presentation are Rust-native)
-- At run time, the X11 client libraries (libX11, libxcb, libXcursor, libXi) and libxkbcommon,
-  plus libwayland-client for a `--features wayland` build. They are loaded on demand, not linked.
+- A C compiler for vendored Lua 5.4
+- At run time, the X11 client libraries (libX11, libxcb, libXcursor, libXi) and
+  libxkbcommon, plus libwayland-client for a `--features wayland` build. They are
+  loaded on demand, not linked.
 
-With Nix, `nix develop` provides all of these (and the test tools), and `nix build .#lite-xl`
-builds the package with those libraries on its runpath (`nix build .#lite-xl-wayland` for the
-native Wayland build). `nix develop .#reference` adds SDL3,
-which only the pinned SDL reference tooling under `scripts/rust-port` needs.
+With Nix, `nix develop` provides these dependencies and the test tools.
+`nix build .#lite-xl` builds the package with the runtime libraries on its runpath;
+`nix build .#lite-xl-wayland` builds with native Wayland support.
+`nix develop .#reference` adds SDL3 for the pinned reference tooling under
+`scripts/rust-port`; the editor itself does not use SDL.
 
-### Building
+### Build and install
 
-Run from the repository root, since Cargo reads `.cargo/config.toml` from the current directory:
+Run from the repository root, since Cargo reads `.cargo/config.toml` from the
+current directory:
 
 ```sh
 cargo build --release
@@ -73,177 +39,48 @@ LITE_RELEASE=1 scripts/install-linux.sh target/release/lite-xl "$(pwd)/stage"
 LITE_PREFIX="$(pwd)/stage/usr/local" ./stage/usr/local/bin/lite-xl
 ```
 
-`scripts/install-linux.sh BINARY [DESTDIR] [PREFIX]` installs the binary, the `data/`
-directory, the desktop file, metainfo, icon and licenses (PREFIX defaults to `/usr/local`).
-Without `LITE_RELEASE=1` the version string carries the git commit.
+`scripts/install-linux.sh BINARY [DESTDIR] [PREFIX]` installs the binary, `data/`,
+the desktop file, metainfo, icon and licenses. `PREFIX` defaults to `/usr/local`.
+Without `LITE_RELEASE=1`, the installed version string includes the Git commit.
 
-The default build opens an X11 window, which runs natively on X11 and through XWayland in a
-Wayland session. `cargo build --release --features wayland` adds the native Wayland backend,
-used when `WAYLAND_DISPLAY` is set. Known issues on native Wayland: dragging files into the
-window does nothing and the window has no icon of its own (the compositor can still take it
-from the installed desktop file), because winit 0.30.13 implements neither there. Both work
-through XWayland.
+The default build opens an X11 window, natively or through XWayland.
+`cargo build --release --features wayland` adds the native Wayland backend, used
+when `WAYLAND_DISPLAY` is set. Native Wayland currently lacks file drops and a
+window-provided icon because winit 0.30.13 implements neither there. The compositor
+can use the installed desktop file's icon. Both features work through XWayland.
 
-`scripts/rust-port/verify.sh` builds the editor and runs the contract suites.
+## Configuration and plugins
 
-## Installing Prebuilt
-
-Head over to [releases](https://github.com/lite-xl/lite-xl/releases) and download the version for your operating system.
-
-The prebuilt releases supports the following OSes:
-
-- Windows 7 and above
-- Ubuntu 18.04 and above (glibc 2.27 and above)
-- OS X El Capitan and above (version 10.11 and above)
-
-Some distributions may provide custom binaries for their platforms.
-
-### Windows
-
-Lite XL comes with installers on Windows for typical installations.
-Alternatively, we provide ZIP archives that you can download and extract anywhere and run directly.
-
-To make Lite XL portable (e.g. running Lite XL from a thumb drive),
-simply create a `user` folder where `lite-xl.exe` is located.
-Lite XL will load and store all your configurations and plugins in the folder.
-
-### macOS
-
-We provide DMG files for macOS. Simply drag the program into your Applications folder.
-
-> **Important**
-> Newer versions of Lite XL are signed with a self-signed certificate,
-> so you'll have to follow these steps when running Lite XL for the first time.
->
-> 1. Find Lite XL in Finder (do not open it in Launchpad).
-> 2. Control-click Lite XL, then choose `Open` from the shortcut menu.
-> 3. Click `Open` in the popup menu.
->
-> The correct steps may vary between macOS versions, so you should refer to
-> the [macOS User Guide](https://support.apple.com/en-my/guide/mac-help/mh40616/mac).
->
-> On an older version of Lite XL, you will need to run these commands instead:
-> 
-> ```sh
-> # clears attributes from the directory
-> xattr -cr /Applications/Lite\ XL.app
-> ```
->
-> Otherwise, macOS will display a **very misleading error** saying that the application is damaged.
-
-### Linux
-
-Unzip the file and `cd` into the `lite-xl` directory:
+Configure the editor in `~/.config/lite-xl/init.lua`. To avoid sharing settings
+with an upstream Lite XL installation, launch with a separate user directory:
 
 ```sh
-tar -xzf <file>
-cd lite-xl
+LITE_USERDIR="$HOME/.config/heavy-xs" LITE_PREFIX="$(pwd)/stage/usr/local" \
+  ./stage/usr/local/bin/lite-xl
 ```
 
-To run lite-xl without installing:
+The inherited Lua plugin interfaces remain, but compatibility with upstream
+plugins is not guaranteed. See the [Lua API reference](docs/README.md),
+[font documentation](docs/fonts.md) and
+[regex syntax and migration notes](docs/regex.md). Regex search uses fancy-regex,
+not PCRE2.
 
-```sh
-./lite-xl
-```
+## Development
 
-To install lite-xl copy files over into appropriate directories:
+Run `cargo test --locked` for the Rust tests and
+`scripts/rust-port/verify.sh` for the contract suites. See
+[CONTRIBUTING.md](CONTRIBUTING.md) for the development workflow and
+[changelog.md](changelog.md) for the changes since the fork.
 
-```sh
-rm -rf  $HOME/.local/share/lite-xl $HOME/.local/bin/lite-xl
-mkdir -p $HOME/.local/bin && cp lite-xl $HOME/.local/bin/
-mkdir -p $HOME/.local/share/lite-xl && cp -r data/* $HOME/.local/share/lite-xl/
-```
+Historical plans and architecture records are described in
+[docs/README.md](docs/README.md#architecture-and-planning). They are optional and
+not needed to build the editor.
 
-#### Add Lite XL to PATH
+## License and credits
 
-To run Lite XL from the command line, you must add it to PATH.
+Heavy XS is distributed under the [MIT license](LICENSE). The original copyright
+notices are retained. Thanks to the Lite XL contributors and to
+[rxi/lite](https://github.com/rxi/lite), on which Lite XL was based.
 
-If `$HOME/.local/bin` is not in PATH:
-
-```sh
-echo -e 'export PATH=$PATH:$HOME/.local/bin' >> $HOME/.bashrc
-```
-
-Alternatively on recent versions of GNOME and KDE Plasma,
-you can add `$HOME/.local/bin` to PATH via `~/.config/environment.d/envvars.conf`:
-
-```ini
-PATH=$HOME/.local/bin:$PATH
-```
-
-> **Note**
-> Some systems might not load `.bashrc` when logging in.
-> This can cause problems with launching applications from the desktop / menu.
-
-#### Add Lite XL to application launchers
-
-To get the icon to show up in app launcher, you need to create a desktop
-entry and put it into `/usr/share/applications` or `~/.local/share/applications`.
-
-Here is an example for a desktop entry in `~/.local/share/applications/com.lite_xl.LiteXL.desktop`,
-assuming Lite XL is in PATH:
-
-```ini
-[Desktop Entry]
-Type=Application
-Name=Lite XL
-Comment=A lightweight text editor written in Lua
-Exec=lite-xl %F
-Icon=lite-xl
-Terminal=false
-StartupWMClass=lite-xl
-Categories=Development;IDE;
-MimeType=text/plain;inode/directory;
-```
-
-To get the icon to show up in app launcher immediately, run:
-
-```sh
-xdg-desktop-menu forceupdate
-```
-
-Alternatively, you may log out and log in again.
-
-#### Uninstall
-
-To uninstall Lite XL, run:
-
-```sh
-rm -f $HOME/.local/bin/lite-xl
-rm -rf $HOME/.local/share/icons/hicolor/scalable/apps/lite-xl.svg \
-          $HOME/.local/share/applications/com.lite_xl.LiteXL.desktop \
-          $HOME/.local/share/metainfo/com.lite_xl.LiteXL.appdata.xml \
-          $HOME/.local/share/lite-xl
-```
-
-## Contributing
-
-Any additional functionality that can be added through a plugin should be done
-as a plugin, after which a pull request to the [Lite XL plugins repository] can be made.
-
-Pull requests to improve or modify the editor itself are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for more details.
-
-## Licenses
-
-This project is free software; you can redistribute it and/or modify it under
-the terms of the MIT license. See [LICENSE] for details.
-
-See the [licenses] file for details on licenses used by the required dependencies.
-
-
-[CI]:                         https://github.com/lite-xl/lite-xl/actions/workflows/build.yml/badge.svg
-[Discord Badge Image]:        https://img.shields.io/discord/847122429742809208?label=discord&logo=discord
-[screenshot-dark]:            https://user-images.githubusercontent.com/433545/111063905-66943980-84b1-11eb-9040-3876f1133b20.png
-[lite]:                       https://github.com/rxi/lite
-[website]:                    https://lite-xl.com
-[build]:                      https://lite-xl.com/setup/building-from-source/
-[Get Lite XL]:                https://github.com/lite-xl/lite-xl/releases/latest
-[Get plugins]:                https://github.com/lite-xl/lite-xl-plugins
-[Get color themes]:           https://github.com/lite-xl/lite-xl-colors
-[changelog]:                  https://github.com/lite-xl/lite-xl/blob/master/changelog.md
-[Lite XL plugins repository]: https://github.com/lite-xl/lite-xl-plugins
-[plugins repository]:         https://github.com/rxi/lite-plugins
-[colors repository]:          https://github.com/lite-xl/lite-xl-colors
-[LICENSE]:                    LICENSE
-[licenses]:                   licenses/licenses.md
-[lite-xl-build-box]:          https://github.com/lite-xl/lite-xl-build-box
+See [project provenance](docs/provenance.md) and the
+[dependency and bundled-font licenses](licenses/licenses.md).
