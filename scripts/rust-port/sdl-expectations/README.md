@@ -13,4 +13,10 @@ for review. Replacing a file here is a reviewed, manual step.
 | `hit-test-grid.txt` | Line count and sha256 of the original C `hit_test()` grid (`hit-test-check.sh`). | `fixtures/hit_test_reference.h` compiled against the SDL 3.4.14 headers. |
 
 Recorded on 2026-10-21 from the reference build described in
-`target/sdl3-reference/evidence/reference.txt` (source `c80459bc0f464df68b8d8cdff553cd8288519a67`).
+`target/sdl3-reference/evidence/reference.txt` (source
+[`c80459bc0f464df68b8d8cdff553cd8288519a67`](https://github.com/juniorsundar/heavy-xs-history/commit/c80459bc0f464df68b8d8cdff553cd8288519a67)).
+
+The script defaults to its history-filtered equivalent,
+`9c1b13db14d20901004b6630fce19812c25e9cd9`. Its retained source files and
+`Cargo.lock` are identical to the original reference; only archived documentation
+was removed.
