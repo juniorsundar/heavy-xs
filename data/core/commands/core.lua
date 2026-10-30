@@ -128,9 +128,7 @@ end
 local function change_project_directory(use_dialog)
   open_directory("Change Project Folder", use_dialog, false, function(abs_path)
     if abs_path[1] == core.root_project().path then return end
-    core.confirm_close_docs(core.docs, function(dirpath)
-      core.open_project(dirpath)
-    end, abs_path[1])
+    core.open_project(abs_path[1])
   end)
 end
 
@@ -158,8 +156,8 @@ command.add(nil, {
     core.quit()
   end,
 
-  ["core:restart"] = function()
-    core.restart()
+  ["core:restart"] = function(force)
+    core.restart(force)
   end,
 
   ["core:force-quit"] = function()

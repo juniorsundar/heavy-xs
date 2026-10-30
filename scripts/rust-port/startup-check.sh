@@ -104,6 +104,22 @@ check "failure: error.txt names the error" "$(grep -c 'deliberate startup failur
 check "failure: stdout has traceback" "$(grep -c 'stack traceback' "$out")" 1
 check "failure: full report reaches stderr despite unavailable IPC" "$(grep -c '^Lite XL internal error: An internal error occurred' "$out")" 1
 
+# --- project switch: No preserves dirty work; Yes/clean switches restart once into the new project.
+mkdir -p "$work/project_a" "$work/project_b"
+for scenario in direct-cancel command-cancel restart-cancel direct-accept command-accept direct-clean command-clean; do
+  user=$work/project_$scenario
+  mkdir -p "$user"
+  cp "$root/tests/contract/project.lua" "$user/project_check.lua"
+  out=$work/project_$scenario.log
+  ( cd "$work" && pd_run LITE_USERDIR="$user" LITE_PREFIX="$stage" LITE_XL_RUNTIME=project_check \
+    PROJECT_CASE="$scenario" PROJECT_NEXT="$work/project_b" \
+    timeout -k 2 "${STARTUP_TIMEOUT:-30}" "$bin" "$work/project_a" >"$out" 2>&1 ) && rc=0 || rc=$?
+  check "project $scenario: exit code" "$rc" 0
+  case $scenario in *-cancel) expected=cancelled ;; *) expected=restored ;; esac
+  check "project $scenario: $expected" "$(grep -c "^PROJECT $expected$" "$out")" 1
+  if [ "$rc" != 0 ]; then grep -m 1 '^Error:' "$out" || true; fi
+done
+
 # --- quit: the native SIGINT/SIGTERM bridge requests normal core.exit, which removes projects, and
 # core.run stops after that step. The step must not update or draw in between, or any plugin that
 # calls core.root_project() during update/draw raises (seen with lintplus and lsp).

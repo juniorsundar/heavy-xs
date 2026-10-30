@@ -84,10 +84,12 @@ end
 
 
 function core.open_project(project)
-  local project = core.set_project(project)
-  core.root_view:close_all_docviews()
-  update_recents_project("add", project.path)
-  command.perform("core:restart")
+  core.confirm_close_docs(core.docs, function()
+    local project = core.set_project(project)
+    core.root_view:close_all_docviews()
+    update_recents_project("add", project.path)
+    command.perform("core:restart", true)
+  end)
 end
 
 
@@ -493,11 +495,11 @@ function core.quit(force)
 end
 
 
-function core.restart()
+function core.restart(force)
   core.exit(function()
     core.restart_request = true
     core.window:_persist()
-  end)
+  end, force)
 end
 
 

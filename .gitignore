@@ -21,6 +21,9 @@ lite-xl*
 LiteXL*
 
 
+# Project-local GitHub CLI credentials
+/.gh/
+
 # direnv cache
 .direnv/
 /.pi/subagents
